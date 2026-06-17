@@ -31,7 +31,7 @@ impl<R: BufRead> OpenAiStream<R> {
         }
     }
 
-    fn build_complete_response(&self) -> Response {
+    fn build_complete_response(&self) -> Result<Response, String> {
         let message = if self.text_buf.trim().is_empty() {
             None
         } else {
@@ -47,26 +47,36 @@ impl<R: BufRead> OpenAiStream<R> {
         let tool_calls = if self.tool_calls.is_empty() {
             None
         } else {
-            Some(
-                self.tool_calls
-                    .iter()
-                    .map(|tc| ToolCall {
+            let parsed: Result<Vec<ToolCall>, String> = self
+                .tool_calls
+                .iter()
+                .map(|tc| {
+                    serde_json::from_str(&tc.arguments_json).map_err(|e| {
+                        format!(
+                            "tool_call '{}' (id {:?}) malformed JSON: {} — raw: '{}'",
+                            tc.name,
+                            tc.id,
+                            e,
+                            &tc.arguments_json[..tc.arguments_json.len().min(200)]
+                        )
+                    })
+                    .map(|val| ToolCall {
                         id: tc.id.clone().unwrap_or_default(),
                         name: tc.name.clone(),
-                        input: serde_json::from_str(&tc.arguments_json)
-                            .unwrap_or(serde_json::Value::Null),
+                        input: val,
                     })
-                    .collect(),
-            )
+                })
+                .collect();
+            Some(parsed?)
         };
 
-        Response {
+        Ok(Response {
             message,
             reasoning,
             tool_calls,
             usage: self.usage.clone(),
             model: None,
-        }
+        })
     }
 }
 
@@ -85,7 +95,10 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
             match self.reader.read_line(&mut line) {
                 Ok(0) => {
                     self.done = true;
-                    return Some(Ok(StreamEvent::Complete(self.build_complete_response())));
+                    return match self.build_complete_response() {
+                        Ok(resp) => Some(Ok(StreamEvent::Complete(resp))),
+                        Err(e) => Some(Err(ProviderError::InvalidResponse(e))),
+                    };
                 }
                 Err(e) => {
                     self.done = true;
@@ -110,7 +123,10 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
 
         if data_line.trim() == "[DONE]" {
             self.done = true;
-            return Some(Ok(StreamEvent::Complete(self.build_complete_response())));
+            return match self.build_complete_response() {
+                Ok(resp) => Some(Ok(StreamEvent::Complete(resp))),
+                Err(e) => Some(Err(ProviderError::InvalidResponse(e))),
+            };
         }
 
         let chunk: super::wire::OpenAiStreamChunk = match serde_json::from_str(&data_line) {
@@ -199,7 +215,10 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
         if let Some(ref finish_reason) = choices[0].finish_reason {
             if finish_reason == "stop" || finish_reason == "tool_calls" {
                 self.done = true;
-                return Some(Ok(StreamEvent::Complete(self.build_complete_response())));
+                return match self.build_complete_response() {
+                    Ok(resp) => Some(Ok(StreamEvent::Complete(resp))),
+                    Err(e) => Some(Err(ProviderError::InvalidResponse(e))),
+                };
             }
         }
 

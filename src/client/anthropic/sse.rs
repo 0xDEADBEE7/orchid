@@ -35,7 +35,7 @@ impl<R: BufRead> SseStream<R> {
         }
     }
 
-    fn build_complete_response(&self) -> Response {
+    fn build_complete_response(&self) -> Result<Response, String> {
         let message = if self.text_buf.trim().is_empty() {
             None
         } else {
@@ -51,26 +51,36 @@ impl<R: BufRead> SseStream<R> {
         let tool_calls = if self.tool_calls.is_empty() {
             None
         } else {
-            Some(
-                self.tool_calls
-                    .iter()
-                    .map(|tc| ToolCall {
+            let parsed: Result<Vec<ToolCall>, String> = self
+                .tool_calls
+                .iter()
+                .map(|tc| {
+                    serde_json::from_str(&tc.input_json).map_err(|e| {
+                        format!(
+                            "tool_call '{}' (index {}) malformed JSON: {} — raw: '{}'",
+                            tc.name,
+                            tc.index,
+                            e,
+                            &tc.input_json[..tc.input_json.len().min(200)]
+                        )
+                    })
+                    .map(|val| ToolCall {
                         id: tc.id.clone(),
                         name: tc.name.clone(),
-                        input: serde_json::from_str(&tc.input_json)
-                            .unwrap_or(serde_json::Value::Null),
+                        input: val,
                     })
-                    .collect(),
-            )
+                })
+                .collect();
+            Some(parsed?)
         };
 
-        Response {
+        Ok(Response {
             message,
             reasoning,
             tool_calls,
             usage: self.usage.clone(),
             model: self.model.clone(),
-        }
+        })
     }
 }
 
@@ -90,7 +100,10 @@ impl<R: BufRead> Iterator for SseStream<R> {
             match self.reader.read_line(&mut line) {
                 Ok(0) => {
                     self.done = true;
-                    return Some(Ok(StreamEvent::Complete(self.build_complete_response())));
+                    return match self.build_complete_response() {
+                        Ok(resp) => Some(Ok(StreamEvent::Complete(resp))),
+                        Err(e) => Some(Err(ProviderError::InvalidResponse(e))),
+                    };
                 }
                 Err(e) => {
                     self.done = true;
@@ -218,7 +231,10 @@ impl<R: BufRead> Iterator for SseStream<R> {
 
             "message_stop" => {
                 self.done = true;
-                Some(Ok(StreamEvent::Complete(self.build_complete_response())))
+                match self.build_complete_response() {
+                    Ok(resp) => Some(Ok(StreamEvent::Complete(resp))),
+                    Err(e) => Some(Err(ProviderError::InvalidResponse(e))),
+                }
             }
 
             "error" => {
