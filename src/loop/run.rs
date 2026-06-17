@@ -53,7 +53,7 @@ pub fn build_context(convo_id: &str) -> Result<LoopContext, String> {
 
     lifecycle::on_run_start(convo_id)?;
 
-    let working_dir = meta.working_dir.as_ref().map(|s| s.clone()).unwrap_or_else(|| {
+    let working_dir = meta.working_dir.clone().unwrap_or_else(|| {
         std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "/tmp".to_string())

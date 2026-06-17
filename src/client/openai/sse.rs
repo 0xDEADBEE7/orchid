@@ -94,7 +94,7 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
                 Ok(_) => {}
             }
 
-            let line = line.trim_end_matches(|c: char| c == '\n' || c == '\r');
+            let line = line.trim_end_matches(['\n', '\r']);
 
             if line.is_empty() {
                 if !data_line.is_empty() {
