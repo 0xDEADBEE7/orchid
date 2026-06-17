@@ -171,6 +171,7 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
         if let Some(ref reasoning) = delta.reasoning_content {
             if !reasoning.is_empty() {
                 self.reasoning_buf.push_str(reasoning);
+                return Some(Ok(StreamEvent::ReasoningDelta(reasoning.clone())));
             }
         }
 

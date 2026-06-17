@@ -191,7 +191,7 @@ impl<R: BufRead> Iterator for SseStream<R> {
                     "thinking_delta" => {
                         let text = data["delta"]["thinking"].as_str().unwrap_or("");
                         self.reasoning_buf.push_str(text);
-                        self.next()
+                        Some(Ok(StreamEvent::ReasoningDelta(text.to_string())))
                     }
                     "input_json_delta" => {
                         let partial = data["delta"]["partial_json"].as_str().unwrap_or("");
