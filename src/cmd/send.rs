@@ -45,7 +45,9 @@ pub fn send(
     };
 
     let meta = store.get(&convo_id)?;
-    let _working_dir = meta.working_dir.unwrap_or_else(|| "/tmp".to_string());
+    let _working_dir = meta.working_dir.clone().ok_or_else(|| {
+        "conversation has no working directory configured".to_string()
+    })?;
 
     if meta.status == crate::types::Status::Running {
         return Err(format!("conversation {} is already running", convo_id));
@@ -251,7 +253,7 @@ mod tests {
 
         let store = crate::convo::Store::with_base(temp.path().join("conversations"));
         std::fs::create_dir_all(temp.path().join("conversations")).unwrap();
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, Some("/tmp".to_string()), None, None).unwrap();
 
         let result = send(
             Some(meta.id.clone()),

@@ -53,11 +53,17 @@ pub fn build_context(convo_id: &str) -> Result<LoopContext, String> {
 
     lifecycle::on_run_start(convo_id)?;
 
-    let working_dir = meta.working_dir.clone().unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "/tmp".to_string())
-    });
+    let working_dir = meta
+        .working_dir
+        .clone()
+        .or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .ok()
+        })
+        .ok_or_else(|| {
+            "no working directory configured and current directory unavailable".to_string()
+        })?;
     let allow_scope_escape = meta.allow_scope_escape.unwrap_or(false);
     let env_vars = config
         .env_file
