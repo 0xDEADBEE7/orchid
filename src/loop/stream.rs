@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::io::Write;
 
@@ -14,15 +14,15 @@ pub struct StreamState {
 }
 
 impl StreamState {
-    pub fn create(convo_dir: &PathBuf) -> Self {
-        let prior = Self::read_chunk_count(&convo_dir);
+    pub fn create(convo_dir: &Path) -> Self {
+        let prior = Self::read_chunk_count(convo_dir);
         let path = convo_dir.join("stream.state");
         let mut state = StreamState { path, chunk_count: prior };
         state.tick();
         state
     }
 
-    fn read_chunk_count(convo_dir: &PathBuf) -> u64 {
+    fn read_chunk_count(convo_dir: &Path) -> u64 {
         let path = convo_dir.join("stream.state");
         fs::read_to_string(&path)
             .ok()
@@ -37,7 +37,7 @@ impl StreamState {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         if let Ok(mut f) = fs::File::create(&self.path) {
-            let _ = write!(f, "{} {}\n", ts, self.chunk_count);
+            let _ = writeln!(f, "{} {}", ts, self.chunk_count);
         }
     }
 }
