@@ -151,7 +151,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                         ctx.log.error("stream_error", &e.to_string());
                         return Err(format!("provider error: {}", e));
                     }
-                    Ok(StreamEvent::TextDelta(_)) | Ok(StreamEvent::ToolCallDelta { .. }) => {
+                    Ok(StreamEvent::TextDelta(_)) | Ok(StreamEvent::ToolCallDelta { .. }) | Ok(StreamEvent::ReasoningDelta(_)) => {
                         stream_state.tick();
                     }
                     Ok(StreamEvent::Complete(resp)) => {

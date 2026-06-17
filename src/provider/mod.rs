@@ -8,6 +8,8 @@ pub enum StreamEvent {
     TextDelta(String),
     /// A tool call being accumulated (name known, input still arriving).
     ToolCallDelta { index: usize, name: String },
+    /// Incremental reasoning/thinking content from the assistant.
+    ReasoningDelta(String),
     /// Stream finished — carries the fully assembled response.
     Complete(Response),
 }
