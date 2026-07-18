@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Incremental event emitted during a streaming provider response.
+#[derive(Debug)]
 pub enum StreamEvent {
     /// A text delta from the assistant.
     TextDelta(String),

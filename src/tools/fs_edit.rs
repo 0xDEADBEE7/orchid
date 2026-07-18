@@ -1,4 +1,5 @@
-use crate::tools::scope::is_in_scope;
+use crate::tools::scope::is_allowed;
+use globset::GlobSet;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
@@ -45,11 +46,17 @@ where
     }
 }
 
-pub fn execute(input: Value, working_dir: &str, allow_scope_escape: bool) -> Result<String, String> {
+pub fn execute(
+    input: Value,
+    working_dir: &str,
+    allow_scope_escape: bool,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
+) -> Result<String, String> {
     let edit_input: FsEditInput =
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
 
-    if !allow_scope_escape && !is_in_scope(&edit_input.path, working_dir) {
+    if !allow_scope_escape && !is_allowed(&edit_input.path, working_dir, global_scope_set, convo_scope_set) {
         return Err(format!("path out of scope: {}", edit_input.path));
     }
 
@@ -173,7 +180,7 @@ mod tests {
             "new_string": "hello world"
         });
 
-        let result = execute(input, &temp_path, false);
+        let result = execute(input, &temp_path, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok(), "execute failed: {:?}", result.err());
 
         let content = fs::read_to_string(&path).unwrap();
@@ -193,7 +200,7 @@ mod tests {
             "new_string": "rust"
         });
 
-        let result = execute(input, &work_dir, false);
+        let result = execute(input, &work_dir, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok());
         assert!(fs::read_to_string(&path).unwrap().contains("hello rust"));
     }
@@ -213,7 +220,7 @@ mod tests {
             ]
         });
 
-        let result = execute(input, &work_dir, false);
+        let result = execute(input, &work_dir, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok(), "{:?}", result.err());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("FOO"));
@@ -237,7 +244,7 @@ mod tests {
             ]
         });
 
-        let result = execute(input, &work_dir, false);
+        let result = execute(input, &work_dir, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_err());
         // disk must be untouched
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
@@ -256,7 +263,7 @@ mod tests {
             "new_string": "pass"
         });
 
-        let result = execute(input, &work_dir, false);
+        let result = execute(input, &work_dir, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("multiple matches"));
     }
@@ -275,7 +282,7 @@ mod tests {
             "replace_all": true
         });
 
-        let result = execute(input, &work_dir, false);
+        let result = execute(input, &work_dir, false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok());
         assert!(fs::read_to_string(&path)
             .unwrap()
@@ -290,7 +297,7 @@ mod tests {
             "new_string": "hacked"
         });
 
-        let result = execute(input, "/tmp", false);
+        let result = execute(input, "/tmp", false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("out of scope"));
     }

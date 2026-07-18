@@ -1,3 +1,4 @@
+use globset::GlobSet;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -72,11 +73,34 @@ pub fn execute_tool(
     working_dir: &str,
     allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
 ) -> Result<Value, String> {
     match name {
-        "bash" => bash::execute(input, working_dir, allow_scope_escape, env_vars).map(Value::String),
-        "fs_read" => fs_read::execute(input, working_dir, allow_scope_escape),
-        "fs_edit" => fs_edit::execute(input, working_dir, allow_scope_escape).map(Value::String),
+        "bash" => bash::execute(
+            input,
+            working_dir,
+            allow_scope_escape,
+            env_vars,
+            global_scope_set,
+            convo_scope_set,
+        )
+        .map(Value::String),
+        "fs_read" => fs_read::execute(
+            input,
+            working_dir,
+            allow_scope_escape,
+            global_scope_set,
+            convo_scope_set,
+        ),
+        "fs_edit" => fs_edit::execute(
+            input,
+            working_dir,
+            allow_scope_escape,
+            global_scope_set,
+            convo_scope_set,
+        )
+        .map(Value::String),
         _ => Err(format!("unknown tool: {}", name)),
     }
 }
@@ -101,14 +125,14 @@ mod tests {
     #[test]
     fn test_execute_tool_bash() {
         let input = serde_json::json!({"cmd": "echo test"});
-        let result = execute_tool("bash", input, "/tmp", false, &HashMap::new());
+        let result = execute_tool("bash", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_tool_unknown() {
         let input = serde_json::json!({});
-        let result = execute_tool("unknown_tool", input, "/tmp", false, &HashMap::new());
+        let result = execute_tool("unknown_tool", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown tool"));
     }
@@ -116,7 +140,7 @@ mod tests {
     #[test]
     fn test_execute_tool_fs_read() {
         let input = serde_json::json!({"paths": ["/tmp"]});
-        let result = execute_tool("fs_read", input, "/tmp", false, &HashMap::new());
+        let result = execute_tool("fs_read", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
         // /tmp is a directory — may error, but that's fine; tool dispatch worked
         assert!(result.is_ok() || result.is_err());
     }

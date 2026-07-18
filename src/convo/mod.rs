@@ -32,6 +32,7 @@ impl Store {
         working_dir: Option<String>,
         persona: Option<String>,
         _profile: Option<String>,
+        scope_exceptions: Option<Vec<String>>,
     ) -> Result<Metadata, String> {
         loop {
             let id = id::generate_id();
@@ -58,6 +59,7 @@ impl Store {
                     hooks: None,
                     token_estimate: None,
                     allow_scope_escape: None,
+                    scope_exceptions,
                 };
 
                 self.write_metadata(&id, &meta)?;
@@ -129,6 +131,9 @@ impl Store {
         if let Some(token_estimate) = updates.token_estimate {
             meta.token_estimate = Some(token_estimate);
         }
+        if let Some(scope_exceptions) = updates.scope_exceptions {
+            meta.scope_exceptions = scope_exceptions;
+        }
 
         meta.updated_at = Utc::now();
 
@@ -164,6 +169,7 @@ pub struct MetadataUpdate {
     pub last_run_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub last_message: Option<String>,
     pub token_estimate: Option<u32>,
+    pub scope_exceptions: Option<Option<Vec<String>>>,
 }
 
 /// Helper to resolve convo.jsonl path with XDG support.
@@ -192,6 +198,7 @@ mod tests {
                 Some("/tmp".to_string()),
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -209,7 +216,7 @@ mod tests {
         };
 
         let created = store
-            .create(Some("test-get".to_string()), None, None, None)
+            .create(Some("test-get".to_string()), None, None, None, None)
             .unwrap();
         let retrieved = store.get(&created.id).unwrap();
 
@@ -225,10 +232,10 @@ mod tests {
         };
 
         store
-            .create(Some("first".to_string()), None, None, None)
+            .create(Some("first".to_string()), None, None, None, None)
             .unwrap();
         store
-            .create(Some("second".to_string()), None, None, None)
+            .create(Some("second".to_string()), None, None, None, None)
             .unwrap();
 
         let list = store.list().unwrap();
@@ -243,7 +250,7 @@ mod tests {
         };
 
         let meta = store
-            .create(Some("test-update".to_string()), None, None, None)
+            .create(Some("test-update".to_string()), None, None, None, None)
             .unwrap();
 
         let mut updates = MetadataUpdate::default();
@@ -260,11 +267,69 @@ mod tests {
             base_path: temp_dir.path().to_path_buf(),
         };
 
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
         let metadata_path = store.base_path.join(&meta.id).join("metadata.json");
 
         assert!(metadata_path.exists());
         let contents = fs::read_to_string(&metadata_path).unwrap();
         let _: Metadata = serde_json::from_str(&contents).unwrap();
+    }
+
+    #[test]
+    fn test_create_with_scope_exceptions() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = Store {
+            base_path: temp_dir.path().to_path_buf(),
+        };
+
+        let meta = store
+            .create(
+                None,
+                Some("/tmp".to_string()),
+                None,
+                None,
+                Some(vec!["**/target/**".to_string()]),
+            )
+            .unwrap();
+
+        assert_eq!(
+            meta.scope_exceptions,
+            Some(vec!["**/target/**".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_update_scope_exceptions() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = Store {
+            base_path: temp_dir.path().to_path_buf(),
+        };
+
+        let meta = store
+            .create(None, Some("/tmp".to_string()), None, None, None)
+            .unwrap();
+        assert_eq!(meta.scope_exceptions, None);
+
+        let mut updates = MetadataUpdate::default();
+        updates.scope_exceptions = Some(Some(
+            vec!["**/node_modules/**".to_string(), "~/.cache/**".to_string()],
+        ));
+        let updated = store.update(&meta.id, updates).unwrap();
+        assert_eq!(
+            updated.scope_exceptions,
+            Some(vec!["**/node_modules/**".to_string(), "~/.cache/**".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_deserialize_metadata_without_scope_exceptions() {
+        let json = r#"{
+            "id": "abcdef0123456789abcdef0123456789",
+            "status": "idle",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let meta: Metadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.scope_exceptions, None);
     }
 }

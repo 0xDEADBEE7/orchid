@@ -194,4 +194,6 @@ pub struct Metadata {
     pub token_estimate: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_scope_escape: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_exceptions: Option<Vec<String>>,
 }

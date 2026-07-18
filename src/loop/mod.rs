@@ -81,7 +81,7 @@ mod tests {
         fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir);
         let meta = store
-            .create(None, Some("/tmp".to_string()), None, None)
+            .create(None, Some("/tmp".to_string()), None, None, None)
             .unwrap();
 
         let jsonl = orchid_dir

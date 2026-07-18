@@ -6,6 +6,7 @@ pub fn set(
     label: Option<String>,
     persona: Option<String>,
     working_dir: Option<String>,
+    scope_exceptions: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
     let store = Store::new()?;
     let base_path = get_orchid_dir()?.join("conversations");
@@ -21,6 +22,9 @@ pub fn set(
     }
     if let Some(wd) = working_dir {
         updates.working_dir = Some(Some(wd));
+    }
+    if let Some(exceptions) = scope_exceptions {
+        updates.scope_exceptions = Some(Some(exceptions));
     }
 
     let updated = store.update(&resolved_id, updates)?;
@@ -40,9 +44,9 @@ mod tests {
         let convos_dir = orchid_dir.join("conversations");
         std::fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
 
-        let result = super::set(meta.id.clone(), Some("my-label".to_string()), None, None).unwrap();
+        let result = super::set(meta.id.clone(), Some("my-label".to_string()), None, None, None).unwrap();
         assert_eq!(result["label"], "my-label");
         assert_eq!(result["id"], meta.id);
     }
@@ -55,13 +59,14 @@ mod tests {
         let convos_dir = orchid_dir.join("conversations");
         std::fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
 
         super::set(
             meta.id.clone(),
             Some("labeled".to_string()),
             Some("coder".to_string()),
             Some("/tmp/work".to_string()),
+            None,
         )
         .unwrap();
 

@@ -1,4 +1,5 @@
-use crate::tools::scope::is_in_scope;
+use crate::tools::scope::{is_allowed, is_in_scope};
+use globset::GlobSet;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -14,12 +15,14 @@ pub fn execute(
     working_dir: &str,
     allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
 ) -> Result<String, String> {
     let bash_input: BashInput =
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
 
     if !allow_scope_escape {
-        validate_cmd_scope(&bash_input.cmd, working_dir)?;
+        validate_cmd_scope(&bash_input.cmd, working_dir, global_scope_set, convo_scope_set)?;
     }
 
     let output = Command::new("bash")
@@ -46,7 +49,12 @@ pub fn execute(
     Ok(combined)
 }
 
-fn validate_cmd_scope(cmd: &str, working_dir: &str) -> Result<(), String> {
+fn validate_cmd_scope(
+    cmd: &str,
+    working_dir: &str,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
+) -> Result<(), String> {
     let tokens = tokenize_cmd(cmd);
     for token in tokens {
         if token.starts_with("-") {
@@ -61,10 +69,13 @@ fn validate_cmd_scope(cmd: &str, working_dir: &str) -> Result<(), String> {
         {
             continue;
         }
-        if !is_in_scope(&token, working_dir) && !token.contains("/") && !is_builtin(&token) {
+        if !is_in_scope(&token, working_dir)
+            && !token.contains("/")
+            && !is_builtin(&token)
+        {
             continue;
         }
-        if token.contains("/") && !is_in_scope(&token, working_dir) {
+        if token.contains("/") && !is_allowed(&token, working_dir, global_scope_set, convo_scope_set) {
             return Err(format!("path out of scope: {}", token));
         }
     }
@@ -138,7 +149,7 @@ mod tests {
     #[test]
     fn test_execute_simple() {
         let input = serde_json::json!({"cmd": "echo hello"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new());
+        let result = execute(input, "/tmp", false, &std::collections::HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("hello"));
@@ -147,7 +158,7 @@ mod tests {
     #[test]
     fn test_execute_with_stderr() {
         let input = serde_json::json!({"cmd": "echo error >&2"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new());
+        let result = execute(input, "/tmp", false, &std::collections::HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_ok());
     }
 

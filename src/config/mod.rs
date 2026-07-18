@@ -83,6 +83,10 @@ pub struct Config {
     pub profiles: HashMap<String, Profile>,
     #[serde(default)]
     pub limits: Limits,
+    /// Glob patterns for paths universally allowed outside the working directory.
+    /// Checked before per-conversation exceptions.
+    #[serde(default)]
+    pub scope_exceptions: Vec<String>,
     /// Diagnostic log verbosity: "debug" enables debug-level events in orchid.log.
     /// Omit or set to "info" for default behaviour.
     pub log_level: Option<String>,
@@ -286,5 +290,26 @@ mod tests {
             Some(v) => env::set_var("XDG_CONFIG_HOME", v),
             None => env::remove_var("XDG_CONFIG_HOME"),
         }
+    }
+
+    #[test]
+    fn test_config_with_scope_exceptions() {
+        let json = r#"{
+            "active_profile": "default",
+            "profiles": {},
+            "scope_exceptions": ["**/target/**", "~/.cache/**"]
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            config.scope_exceptions,
+            vec!["**/target/**".to_string(), "~/.cache/**".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_config_without_scope_exceptions_defaults_empty() {
+        let json = r#"{"active_profile": "default", "profiles": {}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.scope_exceptions.is_empty());
     }
 }

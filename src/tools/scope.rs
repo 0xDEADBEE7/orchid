@@ -1,3 +1,4 @@
+use globset::{Glob, GlobSet};
 use std::env;
 use std::path::Path;
 
@@ -71,6 +72,65 @@ fn expand_vars(s: &str) -> String {
     }
 
     result
+}
+
+/// Compile a list of glob patterns into a GlobSet.
+///
+/// Invalid patterns are silently skipped (fallback to empty GlobSet).
+/// Patterns starting with `~` are expanded using the HOME env var.
+pub fn compile_exceptions(patterns: &[String]) -> GlobSet {
+    use globset::GlobSetBuilder;
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        let expanded = expand_pattern_tilde(pattern);
+        if let Ok(glob) = Glob::new(&expanded) {
+            builder.add(glob);
+        }
+    }
+    builder.build().unwrap_or_else(|_| GlobSet::empty())
+}
+
+/// Expand `~` at the start of a pattern to the home directory.
+fn expand_pattern_tilde(pattern: &str) -> String {
+    if let Some(rest) = pattern.strip_prefix("~/") {
+        if let Ok(home) = env::var("HOME") {
+            return format!("{}/{}", home, rest);
+        }
+    }
+    pattern.to_string()
+}
+
+/// Check if a path is allowed through scope enforcement.
+///
+/// Resolution order:
+/// 1. In-scope (path starts with working_dir) → allowed
+/// 2. Global exceptions match → allowed
+/// 3. Per-conversation exceptions match → allowed
+/// 4. Nothing matched → denied
+pub fn is_allowed(
+    path: &str,
+    working_dir: &str,
+    global_set: &GlobSet,
+    convo_set: &GlobSet,
+) -> bool {
+    let expanded = expand_path(path, working_dir);
+
+    // 1. In-scope
+    if is_in_scope(&expanded, working_dir) {
+        return true;
+    }
+
+    // 2. Global exceptions
+    if global_set.is_match(&expanded) {
+        return true;
+    }
+
+    // 3. Per-conversation exceptions
+    if convo_set.is_match(&expanded) {
+        return true;
+    }
+
+    false
 }
 
 pub fn is_in_scope(path: &str, working_dir: &str) -> bool {
@@ -158,5 +218,94 @@ mod tests {
         env::set_var("TEST_VAR", "value");
         let result = expand_vars("prefix_$TEST_VAR");
         assert_eq!(result, "prefix_value");
+    }
+
+    #[test]
+    fn test_compile_exceptions_empty() {
+        let set = compile_exceptions(&Vec::<String>::new());
+        assert!(!set.is_match("/any/path"));
+    }
+
+    #[test]
+    fn test_compile_exceptions_matches() {
+        env::set_var("HOME", "/home/user");
+        let patterns = vec!["**/target/**".to_string(), "~/.cache/**".to_string()];
+        let set = compile_exceptions(&patterns);
+        assert!(set.is_match("/home/user/project/target/output.o"));
+        assert!(set.is_match("/home/user/.cache/orchid/thing"));
+        assert!(!set.is_match("/home/user/project/src/main.rs"));
+        env::remove_var("HOME");
+    }
+
+    #[test]
+    fn test_is_allowed_in_scope() {
+        let empty = GlobSet::empty();
+        assert!(is_allowed(
+            "/home/user/project/file.txt",
+            "/home/user/project",
+            &empty,
+            &empty
+        ));
+    }
+
+    #[test]
+    fn test_is_allowed_global_exception() {
+        let patterns = vec!["**/target/**".to_string()];
+        let global = compile_exceptions(&patterns);
+        let empty = GlobSet::empty();
+        assert!(is_allowed(
+            "/home/user/project/target/out",
+            "/home/user/project",
+            &global,
+            &empty
+        ));
+        assert!(!is_allowed(
+            "/etc/passwd",
+            "/home/user/project",
+            &global,
+            &empty
+        ));
+    }
+
+    #[test]
+    fn test_is_allowed_convo_exception() {
+        let patterns = vec!["**/node_modules/**".to_string()];
+        let empty = GlobSet::empty();
+        let convo = compile_exceptions(&patterns);
+        assert!(is_allowed(
+            "/home/user/project/node_modules/pkg/index.js",
+            "/home/user/project",
+            &empty,
+            &convo
+        ));
+        assert!(!is_allowed(
+            "/etc/hosts",
+            "/home/user/project",
+            &empty,
+            &convo
+        ));
+    }
+
+    #[test]
+    fn test_is_allowed_no_match_denied() {
+        let empty = GlobSet::empty();
+        assert!(!is_allowed(
+            "/etc/passwd",
+            "/home/user/project",
+            &empty,
+            &empty
+        ));
+    }
+
+
+    #[test]
+    fn test_compile_exceptions_tmp_pattern() {
+        env::set_var("HOME", "/home/user");
+        let patterns = vec!["**/tmp/**".to_string()];
+        let set = compile_exceptions(&patterns);
+        assert!(set.is_match("/tmp/scope_test_file.txt"));
+        assert!(set.is_match("/Users/user/tmp/build/output.o"));
+        assert!(!set.is_match("/home/user/project/src/main.rs"));
+        env::remove_var("HOME");
     }
 }

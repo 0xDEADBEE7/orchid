@@ -1,4 +1,5 @@
-use crate::tools::scope::is_in_scope;
+use crate::tools::scope::is_allowed;
+use globset::GlobSet;
 use serde_json::Value;
 use std::fs;
 
@@ -20,7 +21,13 @@ pub fn extract_paths(input: &Value) -> Vec<String> {
 /// Returns a JSON object: `{"<path>": "<content>", ...}`.
 /// Errors in individual files are represented as `{"error": "<msg>"}` values.
 /// A single-path read that fails propagates the error directly.
-pub fn execute(input: Value, working_dir: &str, allow_scope_escape: bool) -> Result<Value, String> {
+pub fn execute(
+    input: Value,
+    working_dir: &str,
+    allow_scope_escape: bool,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
+) -> Result<Value, String> {
     let paths = extract_paths(&input);
 
     if paths.is_empty() {
@@ -28,12 +35,12 @@ pub fn execute(input: Value, working_dir: &str, allow_scope_escape: bool) -> Res
     }
 
     if paths.len() == 1 {
-        let content = read_one(&paths[0], working_dir, allow_scope_escape)?;
+        let content = read_one(&paths[0], working_dir, allow_scope_escape, global_scope_set, convo_scope_set)?;
         Ok(serde_json::json!({ &paths[0]: content }))
     } else {
         let mut map = serde_json::Map::new();
         for path in &paths {
-            match read_one(path, working_dir, allow_scope_escape) {
+            match read_one(path, working_dir, allow_scope_escape, global_scope_set, convo_scope_set) {
                 Ok(content) => {
                     map.insert(path.clone(), Value::String(content));
                 }
@@ -46,8 +53,14 @@ pub fn execute(input: Value, working_dir: &str, allow_scope_escape: bool) -> Res
     }
 }
 
-fn read_one(path: &str, working_dir: &str, allow_scope_escape: bool) -> Result<String, String> {
-    if !allow_scope_escape && !is_in_scope(path, working_dir) {
+fn read_one(
+    path: &str,
+    working_dir: &str,
+    allow_scope_escape: bool,
+    global_scope_set: &GlobSet,
+    convo_scope_set: &GlobSet,
+) -> Result<String, String> {
+    if !allow_scope_escape && !is_allowed(path, working_dir, global_scope_set, convo_scope_set) {
         return Err(format!("path out of scope: {}", path));
     }
 
@@ -79,7 +92,7 @@ mod tests {
         let path = file_path.to_string_lossy().to_string();
         let work_dir = temp_dir.path().to_string_lossy().to_string();
 
-        let result = execute(serde_json::json!({"path": path.clone()}), &work_dir, false).unwrap();
+        let result = execute(serde_json::json!({"path": path.clone()}), &work_dir, false, &GlobSet::empty(), &GlobSet::empty()).unwrap();
         assert!(result[&path].as_str().unwrap().contains("test content"));
     }
 
@@ -100,6 +113,8 @@ mod tests {
             serde_json::json!({"paths": [pa.clone(), pb.clone()]}),
             &work_dir,
             false,
+            &GlobSet::empty(),
+            &GlobSet::empty(),
         )
         .unwrap();
         assert!(result[&pa].as_str().unwrap().contains("content of a.txt"));
@@ -130,6 +145,8 @@ mod tests {
             serde_json::json!({"paths": [pa.clone(), pb.clone()]}),
             &work_dir,
             false,
+            &GlobSet::empty(),
+            &GlobSet::empty(),
         )
         .unwrap();
         assert!(result[&pa].as_str().unwrap().contains("hello"));
@@ -145,6 +162,8 @@ mod tests {
             serde_json::json!({"path": "/tmp/nonexistent_file_xyz"}),
             "/tmp",
             false,
+            &GlobSet::empty(),
+            &GlobSet::empty(),
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("file not found"));
@@ -152,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_read_out_of_scope() {
-        let result = execute(serde_json::json!({"path": "/etc/passwd"}), "/tmp", false);
+        let result = execute(serde_json::json!({"path": "/etc/passwd"}), "/tmp", false, &GlobSet::empty(), &GlobSet::empty());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("out of scope"));
     }

@@ -40,7 +40,7 @@ pub fn send(
         resolved_id
     } else {
         let wd = resolve_working_dir(working_dir)?;
-        let meta = store.create(label, Some(wd), None, None)?;
+        let meta = store.create(label, Some(wd), None, None, None)?;
         meta.id
     };
 
@@ -197,7 +197,7 @@ mod tests {
         let orchid_dir = env.dir();
         write_minimal_config(orchid_dir.as_path(), None);
         let store = crate::convo::Store::with_base(orchid_dir.join("conversations"));
-        let meta = store.create(None, Some("/tmp".to_string()), None, None).unwrap();
+        let meta = store.create(None, Some("/tmp".to_string()), None, None, None).unwrap();
 
         let result = send(
             Some(meta.id.clone()),
@@ -223,7 +223,7 @@ mod tests {
         write_minimal_config(orchid_dir.as_path(), Some("test-profile"));
         let store = crate::convo::Store::with_base(orchid_dir.join("conversations"));
         let meta = store
-            .create(None, Some("/tmp".to_string()), None, None)
+            .create(None, Some("/tmp".to_string()), None, None, None)
             .unwrap();
 
         // The fork will fail (test binary is not orchid CLI), but the JSONL write

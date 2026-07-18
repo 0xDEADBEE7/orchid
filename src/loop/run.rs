@@ -8,6 +8,7 @@ use crate::r#loop::{events, history};
 use crate::provider::{Provider, StreamEvent};
 use crate::tools;
 use crate::types::{TokenBudget, ToolResult};
+use globset::GlobSet;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -25,6 +26,8 @@ pub struct LoopContext {
     pub system_prompt: String,
     pub effective_budget: TokenBudget,
     pub warn_interval: u32,
+    pub global_scope_set: GlobSet,
+    pub convo_scope_set: GlobSet,
 }
 
 /// Build the loop context from a conversation ID.
@@ -79,6 +82,13 @@ pub fn build_context(convo_id: &str) -> Result<LoopContext, String> {
         .saturating_sub(effective_budget.warn_threshold))
         / 10;
 
+    let global_scope_set =
+        crate::tools::scope::compile_exceptions(&config.scope_exceptions);
+    let convo_scope_set =
+        crate::tools::scope::compile_exceptions(
+            meta.scope_exceptions.as_deref().unwrap_or(&[]),
+        );
+
     Ok(LoopContext {
         store,
         meta,
@@ -92,6 +102,8 @@ pub fn build_context(convo_id: &str) -> Result<LoopContext, String> {
         system_prompt,
         effective_budget,
         warn_interval,
+        global_scope_set,
+        convo_scope_set,
     })
 }
 
@@ -251,6 +263,8 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     &ctx.working_dir,
                     ctx.allow_scope_escape,
                     &ctx.env_vars,
+                    &ctx.global_scope_set,
+                    &ctx.convo_scope_set,
                 ) {
                     Ok(raw) => {
                         ctx.log.info("tool_result", &format!("tool={}", tool_call.name));

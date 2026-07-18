@@ -5,10 +5,11 @@ pub fn create(
     persona: Option<String>,
     working_dir: Option<String>,
     profile: Option<String>,
+    scope_exceptions: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
     let store = Store::new()?;
     let wd = resolve_working_dir(working_dir)?;
-    let meta = store.create(label, Some(wd), persona, profile)?;
+    let meta = store.create(label, Some(wd), persona, profile, scope_exceptions)?;
     serde_json::to_value(&meta).map_err(|e| e.to_string())
 }
 

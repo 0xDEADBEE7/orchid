@@ -79,7 +79,7 @@ mod tests {
         let convos_dir = orchid_dir.join("conversations");
         std::fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
 
         on_run_start(&meta.id).ok();
 
@@ -96,7 +96,7 @@ mod tests {
         let convos_dir = orchid_dir.join("conversations");
         std::fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
 
         on_run_start(&meta.id).ok();
         on_run_end(&meta.id).ok();

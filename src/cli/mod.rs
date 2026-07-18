@@ -13,6 +13,7 @@ pub enum Command {
         persona: Option<String>,
         working_dir: Option<String>,
         profile: Option<String>,
+        scope_exceptions: Option<Vec<String>>,
     },
     Send {
         id: Option<String>,
@@ -27,6 +28,7 @@ pub enum Command {
         label: Option<String>,
         persona: Option<String>,
         working_dir: Option<String>,
+        scope_exceptions: Option<Vec<String>>,
     },
     Delete(String),
     Stop(String),
@@ -53,6 +55,7 @@ pub enum ConfigSubcommand {
     Use(String),
     Current,
     Path,
+    ScopeExceptions,
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
@@ -77,6 +80,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "max-steps",
         "timeout",
         "await",
+        "scope-exception",
     ];
 
     // `flags` collects all flags; for server-action, remaining flags become body params.
@@ -138,11 +142,16 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let persona = flags.remove("persona").flatten();
             let working_dir = flags.remove("working-dir").flatten();
             let profile = flags.remove("profile").flatten();
+            let scope_exceptions = flags
+                .remove("scope-exception")
+                .map(|v| v.map(|s| vec![s]))
+                .unwrap_or_default();
             Command::Create {
                 label,
                 persona,
                 working_dir,
                 profile,
+                scope_exceptions,
             }
         }
         "config" => {
@@ -159,6 +168,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 }
                 "current" => Command::Config(ConfigSubcommand::Current),
                 "path" => Command::Config(ConfigSubcommand::Path),
+                "scope-exceptions" => Command::Config(ConfigSubcommand::ScopeExceptions),
                 _ => return Err(format!("unknown config subcommand: {}", sub)),
             }
         }
@@ -198,6 +208,10 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let label = flags.remove("label").flatten();
             let persona = flags.remove("persona").flatten();
             let working_dir = flags.remove("working-dir").flatten();
+            let scope_exceptions = flags
+                .remove("scope-exception")
+                .map(|v| v.map(|s| vec![s]))
+                .unwrap_or_default();
             if flags.remove("profile").is_some() {
                 return Err("--profile is not supported on set; use `orchid config use <name>` to switch the active profile".to_string());
             }
@@ -207,6 +221,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 label,
                 persona,
                 working_dir,
+                scope_exceptions,
             }
         }
         "delete" => {

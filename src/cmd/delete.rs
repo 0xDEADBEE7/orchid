@@ -57,7 +57,7 @@ mod tests {
         let convos_dir = orchid_dir.join("conversations");
         std::fs::create_dir_all(&convos_dir).unwrap();
         let store = Store::with_base(convos_dir.clone());
-        let meta = store.create(None, None, None, None).unwrap();
+        let meta = store.create(None, None, None, None, None).unwrap();
 
         assert!(convos_dir.join(&meta.id).exists());
 

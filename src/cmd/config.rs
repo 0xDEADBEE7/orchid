@@ -19,6 +19,7 @@ pub fn config_use(profile: &str) -> Result<serde_json::Value, String> {
             log_level: None,
             env_file: None,
             extra: std::collections::HashMap::new(),
+            scope_exceptions: Vec::new(),
         }
     };
 
@@ -55,6 +56,11 @@ pub fn config_path() -> Result<serde_json::Value, String> {
     let path = get_orchid_dir()?.join("config.json");
 
     Ok(json!({"path": path.display().to_string()}))
+}
+
+pub fn config_scope_exceptions() -> Result<serde_json::Value, String> {
+    let config = load_config()?;
+    Ok(json!({"scope_exceptions": config.scope_exceptions}))
 }
 
 #[cfg(test)]
