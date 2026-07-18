@@ -1,4 +1,5 @@
 pub mod base;
+pub use base::{BaseClient, is_retryable};
 pub mod resolve;
 pub mod sse;
 pub mod anthropic;
@@ -7,6 +8,8 @@ pub mod openai;
 use crate::config::Profile;
 use crate::provider::{Provider, ProviderError};
 use std::sync::Arc;
+
+pub use resolve::resolve_env_inline;
 
 pub fn create_provider(profile: &Profile) -> Result<Arc<dyn Provider>, ProviderError> {
     create_provider_with_log(profile, None)
@@ -41,32 +44,5 @@ pub fn create_provider_with_log(
             "unknown provider: {}",
             provider_name
         ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::Profile;
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_create_provider_defaults_to_anthropic() {
-        let profile = Profile {
-            name: "test".to_string(),
-            provider: String::new(),
-            api_key: String::new(),
-            base_url: String::new(),
-            model: String::new(),
-            max_tokens: None,
-            reasoning_effort: None,
-            extra: HashMap::new(),
-            headers: HashMap::new(),
-            server_actions: HashMap::new(),
-            env: HashMap::new(),
-        };
-
-        let result = create_provider(&profile);
-        assert!(result.is_err() || result.is_ok());
     }
 }

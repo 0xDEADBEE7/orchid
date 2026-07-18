@@ -89,7 +89,7 @@ impl<'a> OpenAiApiClient<'a> {
         Ok(Box::new(OpenAiStream::new(BufReader::new(response))))
     }
 
-    fn build_request_body(
+    pub fn build_request_body(
         &self,
         system: String,
         messages: Vec<crate::types::Message>,
@@ -184,73 +184,4 @@ impl<'a> OpenAiApiClient<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::client::base::BaseClient;
-    use crate::client::openai::OpenAiClient;
-    use crate::types::Message;
-    use serde_json::Value;
 
-    #[test]
-    fn test_build_request_body_with_system() {
-        let client = OpenAiClient {
-            base_client: BaseClient::new().unwrap(),
-            api_url: "http://localhost:1234/v1/chat/completions".to_string(),
-            model: "test-model".to_string(),
-            max_tokens: 4096,
-            reasoning_effort: None,
-            extra_headers: vec![],
-            auth_header: String::new(),
-        };
-
-        let system = "You are helpful.";
-        let messages = vec![Message {
-            role: "user".to_string(),
-            content: "hello".to_string(),
-            tool_calls: None,
-            tool_result: None,
-        }];
-
-        let api = client.api_client();
-        let body = api.build_request_body(system.to_string(), messages, false).unwrap();
-        let parsed: Value = serde_json::from_str(&body).unwrap();
-
-        let msgs = parsed["messages"].as_array().unwrap();
-        assert!(msgs.len() >= 2);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[0]["content"], "You are helpful.");
-
-        assert_eq!(msgs[1]["role"], "user");
-        assert_eq!(msgs[1]["content"], "hello");
-
-        assert!(parsed["tools"].is_array());
-    }
-
-    #[test]
-    fn test_build_request_body_streaming() {
-        let client = OpenAiClient {
-            base_client: BaseClient::new().unwrap(),
-            api_url: "http://localhost:1234/v1/chat/completions".to_string(),
-            model: "test-model".to_string(),
-            max_tokens: 4096,
-            reasoning_effort: None,
-            extra_headers: vec![],
-            auth_header: String::new(),
-        };
-
-        let api = client.api_client();
-        let body = api.build_request_body(
-            "system".to_string(),
-            vec![Message {
-                role: "user".to_string(),
-                content: "hi".to_string(),
-                tool_calls: None,
-                tool_result: None,
-            }],
-            true,
-        ).unwrap();
-
-        let parsed: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(parsed["stream"], true);
-    }
-}

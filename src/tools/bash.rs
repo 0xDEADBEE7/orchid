@@ -142,42 +142,4 @@ fn is_builtin(cmd: &str) -> bool {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_execute_simple() {
-        let input = serde_json::json!({"cmd": "echo hello"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.contains("hello"));
-    }
-
-    #[test]
-    fn test_execute_with_stderr() {
-        let input = serde_json::json!({"cmd": "echo error >&2"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_tokenize_simple() {
-        let tokens = tokenize_cmd("ls -la /tmp");
-        assert_eq!(tokens, vec!["ls", "-la", "/tmp"]);
-    }
-
-    #[test]
-    fn test_tokenize_quoted() {
-        let tokens = tokenize_cmd("echo 'hello world'");
-        assert_eq!(tokens, vec!["echo", "hello world"]);
-    }
-
-    #[test]
-    fn test_is_builtin() {
-        assert!(is_builtin("echo"));
-        assert!(is_builtin("ls"));
-        assert!(!is_builtin("nonexistent"));
-    }
-}

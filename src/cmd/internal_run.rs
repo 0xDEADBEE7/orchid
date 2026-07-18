@@ -21,26 +21,4 @@ pub fn internal_run(convo_id: &str, profile: &Option<String>) -> Result<(), Stri
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::TestEnv;
 
-    #[test]
-    fn test_internal_run_unknown_profile() {
-        let env = TestEnv::new();
-        let orchid_dir = env.dir();
-        let config = serde_json::json!({
-            "active_profile": "default",
-            "profiles": {"default": {"provider": "anthropic", "api_key": "x", "model": "m"}}
-        });
-        std::fs::write(orchid_dir.join("config.json"), config.to_string()).unwrap();
-
-        let err = super::internal_run("nonexistent_id", &Some("missing-profile".to_string()))
-            .unwrap_err();
-        assert!(
-            err.contains("not found") || err.contains("profile"),
-            "got: {}",
-            err
-        );
-    }
-}

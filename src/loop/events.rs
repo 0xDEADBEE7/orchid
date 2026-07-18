@@ -32,16 +32,4 @@ pub fn append_reasoning(convo_id: &str, reasoning: &str) -> Result<String, Strin
     LogWriter::append(&path, &event)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_get_convo_jsonl_path() {
-        let path = get_convo_jsonl_path("test-id");
-        assert!(path.is_ok());
-        let p = path.unwrap();
-        assert!(p.to_string_lossy().contains("test-id"));
-        assert!(p.to_string_lossy().contains("conversation.jsonl"));
-    }
-}

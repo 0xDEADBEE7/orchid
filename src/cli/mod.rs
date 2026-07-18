@@ -59,15 +59,40 @@ pub enum ConfigSubcommand {
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
+    // Handle empty args: default to help
     if args.is_empty() {
         return Ok((Command::Help(None), BTreeMap::new()));
     }
 
-    let cmd_name = &args[0];
+    // Strip "send" prefix (for CLI usage like `orchid send list`)
+    let (cmd_name, rest) = if args.first().map(|s| s.as_str()) == Some("send") {
+        let rest = &args[1..];
+        // If no args remain or first remaining arg is a flag (starts with --),
+        // default to "send" command so unknown flag errors work properly.
+        let cmd_name = if rest.is_empty()
+            || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--"))
+        {
+            "send"
+        } else {
+            rest[0].as_str()
+        };
+        let rest = if rest.is_empty()
+            || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--"))
+        {
+            rest
+        } else {
+            &rest[1..]
+        };
+        (cmd_name, rest)
+    } else {
+        (args[0].as_str(), &args[1..])
+    };
 
     if cmd_name == "--help" {
         return Ok((Command::Help(None), BTreeMap::new()));
     }
+
+    let cmd_name = cmd_name.to_string();
 
     // Flags that take a value argument. All others are boolean.
     // Unknown flags are rejected after command dispatch.
@@ -86,32 +111,32 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     // `flags` collects all flags; for server-action, remaining flags become body params.
     let mut flags = BTreeMap::new();
     let mut positional = Vec::new();
-    let mut i = 1;
+    let mut i = 0;
 
-    while i < args.len() {
-        let arg = &args[i];
-        if let Some(rest) = arg.strip_prefix("--") {
-            if let Some(eq_pos) = rest.find('=') {
-                let key = rest[..eq_pos].to_string();
-                let value = rest[eq_pos + 1..].to_string();
+    while i < rest.len() {
+        let arg = &rest[i];
+        if let Some(flag_suffix) = arg.strip_prefix("--") {
+            if let Some(eq_pos) = flag_suffix.find('=') {
+                let key = flag_suffix[..eq_pos].to_string();
+                let value = flag_suffix[eq_pos + 1..].to_string();
                 flags.insert(key, Some(value));
             } else {
-                let key = rest.to_string();
+                let key = flag_suffix.to_string();
                 let takes_value = VALUE_FLAGS.contains(&key.as_str());
-                if takes_value && i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                if takes_value && i + 1 < rest.len() && !rest[i + 1].starts_with("--") {
                     // Boolean flags that take a value flag but should NOT consume next token.
                     if key == "await" {
                         flags.insert(key, None);
                     } else {
                         i += 1;
-                        flags.insert(key, Some(args[i].clone()));
+                        flags.insert(key, Some(rest[i].clone()));
                     }
-                } else if !takes_value && i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                } else if !takes_value && i + 1 < rest.len() && !rest[i + 1].starts_with("--") {
                     // Unknown flags that have a following token are treated as value-taking
                     // (for server-action body params). For other commands, the fail-fast
                     // check catches them.
                     i += 1;
-                    flags.insert(key, Some(args[i].clone()));
+                    flags.insert(key, Some(rest[i].clone()));
                 } else {
                     flags.insert(key, None);
                 }
@@ -123,6 +148,14 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     }
 
     if flags.contains_key("help") {
+        // If cmd_name was defaulted to "send" (no explicit command given),
+        // this is a top-level --help, not a subcommand --help.
+        if args.first().map(|s| s.as_str()) == Some("send") {
+            let rest = &args[1..];
+            if rest.is_empty() || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--")) {
+                return Ok((Command::Help(None), flags));
+            }
+        }
         return Ok((Command::Help(Some(cmd_name.clone())), flags));
     }
 
@@ -273,324 +306,4 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     };
 
     Ok((cmd, flags))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_list() {
-        let args = vec!["list".to_string()];
-        let (cmd, flags) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::List(None));
-        assert!(flags.is_empty());
-    }
-
-    #[test]
-    fn test_parse_config_current() {
-        let args = vec!["config".to_string(), "current".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Config(ConfigSubcommand::Current));
-    }
-
-    #[test]
-    fn test_parse_config_use() {
-        let args = vec![
-            "config".to_string(),
-            "use".to_string(),
-            "myprofile".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(
-            cmd,
-            Command::Config(ConfigSubcommand::Use("myprofile".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_config_path() {
-        let args = vec!["config".to_string(), "path".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Config(ConfigSubcommand::Path));
-    }
-
-    #[test]
-    fn test_parse_flags() {
-        // Value-taking flags consume the next token; boolean flags do not.
-        // Verify via the parsed Command fields rather than the leftover flags map,
-        // since dispatch removes consumed flags.
-        let args = vec![
-            "send".to_string(),
-            "--id".to_string(),
-            "abc".to_string(),
-            "--await".to_string(),
-            "the message".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::Send {
-                id,
-                await_completion,
-                message,
-                ..
-            } => {
-                assert_eq!(id, Some("abc".to_string()));
-                assert!(await_completion);
-                assert_eq!(message, "the message");
-            }
-            _ => panic!("expected Send"),
-        }
-    }
-
-    #[test]
-    fn test_parse_no_args() {
-        let args = vec![];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Help(None));
-    }
-
-    #[test]
-    fn test_parse_config_no_subcommand() {
-        let args = vec!["config".to_string()];
-        assert!(parse_args(&args).is_err());
-    }
-
-    #[test]
-    fn test_parse_config_use_no_profile() {
-        let args = vec!["config".to_string(), "use".to_string()];
-        assert!(parse_args(&args).is_err());
-    }
-
-    #[test]
-    fn test_parse_unknown_command() {
-        let args = vec!["unknown".to_string()];
-        assert!(parse_args(&args).is_err());
-    }
-
-    #[test]
-    fn test_parse_help_command() {
-        let args = vec!["help".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Help(None));
-    }
-
-    #[test]
-    fn test_parse_help_flag() {
-        let args = vec!["--help".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Help(None));
-    }
-
-    #[test]
-    fn test_parse_command_help_flag() {
-        let args = vec!["list".to_string(), "--help".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        assert_eq!(cmd, Command::Help(Some("list".to_string())));
-    }
-
-    #[test]
-    fn test_parse_send() {
-        let args = vec!["send".to_string(), "hello world".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::Send {
-                id: None,
-                message,
-                await_completion: false,
-                profile: None,
-                ..
-            } => assert_eq!(message, "hello world"),
-            _ => panic!("expected Send command"),
-        }
-    }
-
-    #[test]
-    fn test_parse_send_await_does_not_consume_message() {
-        // Regression: --await is a boolean flag and must not greedily consume
-        // the following positional argument as its value.
-        let args = vec![
-            "send".to_string(),
-            "--id".to_string(),
-            "abc123".to_string(),
-            "--profile".to_string(),
-            "myprofile".to_string(),
-            "--await".to_string(),
-            "the message".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::Send {
-                message,
-                await_completion,
-                id,
-                profile,
-                ..
-            } => {
-                assert_eq!(message, "the message");
-                assert!(await_completion, "--await should be set");
-                assert_eq!(id, Some("abc123".to_string()));
-                assert_eq!(profile, Some("myprofile".to_string()));
-            }
-            _ => panic!("expected Send command"),
-        }
-    }
-
-    #[test]
-    fn test_parse_send_with_id() {
-        let args = vec![
-            "send".to_string(),
-            "--id".to_string(),
-            "abc123".to_string(),
-            "test message".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::Send { id: Some(id), .. } => assert_eq!(id, "abc123"),
-            _ => panic!("expected Send command with id"),
-        }
-    }
-
-    #[test]
-    fn test_parse_delete() {
-        let args = vec!["delete".to_string(), "abc123".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::Delete(id) => assert_eq!(id, "abc123"),
-            _ => panic!("expected Delete command"),
-        }
-    }
-
-    #[test]
-    fn test_unknown_flag_is_error() {
-        // Unknown flags on non-server-action commands that have a following token
-        // get consumed as values, causing the command to error (e.g. no message).
-        let args = vec![
-            "send".to_string(),
-            "--print-response".to_string(),
-            "hello".to_string(),
-        ];
-        let err = parse_args(&args).unwrap_err();
-        assert!(
-            err.contains("unknown flag") || err.contains("requires a message"),
-            "expected an error for unknown flag, got: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_unknown_flag_does_not_consume_message() {
-        // Unknown flags on non-server-action commands are caught by the fail-fast
-        // check and produce an error rather than silently consuming the message.
-        let args = vec![
-            "send".to_string(),
-            "--await".to_string(),
-            "--print-response".to_string(),
-            "hello".to_string(),
-        ];
-        let err = parse_args(&args).unwrap_err();
-        assert!(
-            err.contains("unknown flag") || err.contains("requires a message"),
-            "expected an error for unknown flag, got: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_parse_server_action_minimal() {
-        let args = vec!["server-action".to_string(), "list_models".to_string()];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::ServerAction {
-                action,
-                profile,
-                body_params,
-            } => {
-                assert_eq!(action, "list_models");
-                assert!(profile.is_none());
-                assert!(body_params.is_empty());
-            }
-            _ => panic!("expected ServerAction"),
-        }
-    }
-
-    #[test]
-    fn test_parse_server_action_with_profile() {
-        let args = vec![
-            "server-action".to_string(),
-            "load_model".to_string(),
-            "--profile".to_string(),
-            "local-lmstudio".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::ServerAction {
-                action,
-                profile,
-                body_params,
-            } => {
-                assert_eq!(action, "load_model");
-                assert_eq!(profile, Some("local-lmstudio".to_string()));
-                assert!(body_params.is_empty());
-            }
-            _ => panic!("expected ServerAction"),
-        }
-    }
-
-    #[test]
-    fn test_parse_server_action_with_body_params() {
-        let args = vec![
-            "server-action".to_string(),
-            "load_model".to_string(),
-            "--profile".to_string(),
-            "local-lmstudio".to_string(),
-            "--model".to_string(),
-            "openai/gpt-oss-20b".to_string(),
-            "--context_length".to_string(),
-            "16384".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::ServerAction {
-                action,
-                profile,
-                body_params,
-            } => {
-                assert_eq!(action, "load_model");
-                assert_eq!(profile, Some("local-lmstudio".to_string()));
-                assert_eq!(body_params.len(), 2);
-                // BTreeMap preserves order by key: context_length < model
-                assert_eq!(body_params[0], ("context_length".to_string(), "16384".to_string()));
-                assert_eq!(body_params[1], ("model".to_string(), "openai/gpt-oss-20b".to_string()));
-            }
-            _ => panic!("expected ServerAction"),
-        }
-    }
-
-    #[test]
-    fn test_parse_server_action_missing_action() {
-        let args = vec!["server-action".to_string()];
-        let err = parse_args(&args).unwrap_err();
-        assert!(err.contains("requires <action>"));
-    }
-
-    #[test]
-    fn test_parse_server_action_with_eq_flag() {
-        let args = vec![
-            "server-action".to_string(),
-            "load_model".to_string(),
-            "--model=openai/gpt-oss-20b".to_string(),
-        ];
-        let (cmd, _) = parse_args(&args).unwrap();
-        match cmd {
-            Command::ServerAction {
-                body_params,
-                ..
-            } => {
-                assert_eq!(body_params.len(), 1);
-                assert_eq!(body_params[0], ("model".to_string(), "openai/gpt-oss-20b".to_string()));
-            }
-            _ => panic!("expected ServerAction"),
-        }
-    }
 }

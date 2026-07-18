@@ -21,20 +21,3 @@ pub fn print_error(err: &JsonError) -> Result<(), String> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_print_json() {
-        let val = serde_json::json!({"key": "value"});
-        assert!(print_json(&val).is_ok());
-    }
-
-    #[test]
-    fn test_print_error() {
-        let err = JsonError::new("test", "test message");
-        assert!(print_error(&err).is_ok());
-    }
-}

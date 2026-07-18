@@ -159,25 +159,4 @@ pub fn is_retryable(status: u16) -> bool {
     matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_is_retryable() {
-        assert!(is_retryable(408));
-        assert!(is_retryable(429));
-        assert!(is_retryable(500));
-        assert!(is_retryable(502));
-        assert!(is_retryable(503));
-        assert!(is_retryable(504));
-        assert!(!is_retryable(400));
-        assert!(!is_retryable(401));
-    }
-
-    #[test]
-    fn test_base_client_creation() {
-        let client = BaseClient::new();
-        assert!(client.is_ok());
-    }
-}

@@ -7,6 +7,9 @@ use std::path::PathBuf;
 pub mod id;
 pub mod resolve;
 
+pub use id::generate_id;
+pub use resolve::{is_id_format, resolve};
+
 pub struct Store {
     base_path: PathBuf,
 }
@@ -21,7 +24,6 @@ impl Store {
         Ok(Store { base_path })
     }
 
-    #[cfg(test)]
     pub fn with_base(base_path: PathBuf) -> Self {
         Store { base_path }
     }
@@ -179,157 +181,4 @@ pub fn get_convo_jsonl_path(convo_id: &str) -> Result<PathBuf, String> {
     Ok(base_path.join("conversation.jsonl"))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
 
-    #[test]
-    fn test_create_conversation() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let meta = store
-            .create(
-                Some("test-conv".to_string()),
-                Some("/tmp".to_string()),
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(meta.label, Some("test-conv".to_string()));
-        assert_eq!(meta.working_dir, Some("/tmp".to_string()));
-        assert_eq!(meta.status, Status::Idle);
-        assert_eq!(meta.id.len(), 32);
-    }
-
-    #[test]
-    fn test_get_conversation() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let created = store
-            .create(Some("test-get".to_string()), None, None, None, None)
-            .unwrap();
-        let retrieved = store.get(&created.id).unwrap();
-
-        assert_eq!(created.id, retrieved.id);
-        assert_eq!(created.label, retrieved.label);
-    }
-
-    #[test]
-    fn test_list_conversations() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        store
-            .create(Some("first".to_string()), None, None, None, None)
-            .unwrap();
-        store
-            .create(Some("second".to_string()), None, None, None, None)
-            .unwrap();
-
-        let list = store.list().unwrap();
-        assert_eq!(list.len(), 2);
-    }
-
-    #[test]
-    fn test_update_conversation() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let meta = store
-            .create(Some("test-update".to_string()), None, None, None, None)
-            .unwrap();
-
-        let mut updates = MetadataUpdate::default();
-        updates.status = Some(Status::Running);
-
-        let updated = store.update(&meta.id, updates).unwrap();
-        assert_eq!(updated.status, Status::Running);
-    }
-
-    #[test]
-    fn test_atomic_write() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let meta = store.create(None, None, None, None, None).unwrap();
-        let metadata_path = store.base_path.join(&meta.id).join("metadata.json");
-
-        assert!(metadata_path.exists());
-        let contents = fs::read_to_string(&metadata_path).unwrap();
-        let _: Metadata = serde_json::from_str(&contents).unwrap();
-    }
-
-    #[test]
-    fn test_create_with_scope_exceptions() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let meta = store
-            .create(
-                None,
-                Some("/tmp".to_string()),
-                None,
-                None,
-                Some(vec!["**/target/**".to_string()]),
-            )
-            .unwrap();
-
-        assert_eq!(
-            meta.scope_exceptions,
-            Some(vec!["**/target/**".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_update_scope_exceptions() {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Store {
-            base_path: temp_dir.path().to_path_buf(),
-        };
-
-        let meta = store
-            .create(None, Some("/tmp".to_string()), None, None, None)
-            .unwrap();
-        assert_eq!(meta.scope_exceptions, None);
-
-        let mut updates = MetadataUpdate::default();
-        updates.scope_exceptions = Some(Some(
-            vec!["**/node_modules/**".to_string(), "~/.cache/**".to_string()],
-        ));
-        let updated = store.update(&meta.id, updates).unwrap();
-        assert_eq!(
-            updated.scope_exceptions,
-            Some(vec!["**/node_modules/**".to_string(), "~/.cache/**".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_deserialize_metadata_without_scope_exceptions() {
-        let json = r#"{
-            "id": "abcdef0123456789abcdef0123456789",
-            "status": "idle",
-            "created_at": "2025-01-01T00:00:00Z",
-            "updated_at": "2025-01-01T00:00:00Z"
-        }"#;
-        let meta: Metadata = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.scope_exceptions, None);
-    }
-}

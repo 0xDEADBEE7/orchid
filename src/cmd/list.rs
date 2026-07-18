@@ -21,28 +21,4 @@ pub fn list_personas() -> Result<serde_json::Value, String> {
     Ok(personas)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
 
-    #[test]
-    fn test_list_empty() {
-        // Use a temp dir to avoid conflicts
-        let _temp = TempDir::new().unwrap();
-
-        // This tests the structure; actual list() uses live Store
-        let result = json!([]);
-        assert!(result.is_array());
-        assert_eq!(result.as_array().unwrap().len(), 0);
-    }
-
-    #[test]
-    fn test_list_is_json_array() {
-        let result = json!([
-            {"id": "abc123", "label": "test", "status": "idle"}
-        ]);
-        assert!(result.is_array());
-        assert_eq!(result.as_array().unwrap().len(), 1);
-    }
-}

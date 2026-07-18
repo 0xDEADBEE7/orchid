@@ -15,6 +15,7 @@ pub use wire::*;
 pub use messages::to_wire_message;
 pub use sse::SseStream;
 pub use api::AnthropicApiClient;
+pub use crate::provider::StreamEvent;
 
 pub struct AnthropicClient {
     base_client: BaseClient,
@@ -105,92 +106,4 @@ impl AnthropicClient {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::Message;
-    use serde_json::Value;
 
-    #[test]
-    fn test_to_wire_message_plain() {
-        let m = Message {
-            role: "user".to_string(),
-            content: "hello".to_string(),
-            tool_calls: None,
-            tool_result: None,
-        };
-        let w = to_wire_message(&m);
-        assert_eq!(w.content, Value::String("hello".to_string()));
-    }
-
-    #[test]
-    fn test_to_wire_message_tool_call() {
-        use crate::types::ToolCall;
-        let m = Message {
-            role: "assistant".to_string(),
-            content: String::new(),
-            tool_calls: Some(vec![ToolCall {
-                id: "tc1".to_string(),
-                name: "bash".to_string(),
-                input: serde_json::json!({"cmd": "ls"}),
-            }]),
-            tool_result: None,
-        };
-        let w = to_wire_message(&m);
-        assert!(w.content.is_array());
-        let arr = w.content.as_array().unwrap();
-        assert_eq!(arr[0]["type"], "tool_use");
-        assert_eq!(arr[0]["name"], "bash");
-    }
-
-    #[test]
-    fn test_to_wire_message_tool_result() {
-        use crate::types::ToolResult;
-        let m = Message {
-            role: "user".to_string(),
-            content: String::new(),
-            tool_calls: None,
-            tool_result: Some(ToolResult {
-                call_id: "tc1".to_string(),
-                content: serde_json::Value::String("output".to_string()),
-            }),
-        };
-        let w = to_wire_message(&m);
-        assert!(w.content.is_array());
-        let arr = w.content.as_array().unwrap();
-        assert_eq!(arr[0]["type"], "tool_result");
-        assert_eq!(arr[0]["tool_use_id"], "tc1");
-        assert_eq!(arr[0]["content"], "output");
-    }
-
-    #[test]
-    fn test_to_wire_message_tool_result_json_object() {
-        use crate::types::ToolResult;
-        let m = Message {
-            role: "user".to_string(),
-            content: String::new(),
-            tool_calls: None,
-            tool_result: Some(ToolResult {
-                call_id: "tc2".to_string(),
-                content: serde_json::json!({"foo.rs": "some content"}),
-            }),
-        };
-        let w = to_wire_message(&m);
-        let arr = w.content.as_array().unwrap();
-        let content_str = arr[0]["content"].as_str().unwrap();
-        assert!(content_str.contains("foo.rs"));
-    }
-
-    #[test]
-    fn test_anthropic_response_deserialization() {
-        let json = r#"{
-            "content": [
-                {"type": "text", "text": "Hello world"}
-            ],
-            "stop_reason": "end_turn"
-        }"#;
-
-        let response: AnthropicResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.content.len(), 1);
-    }
-}

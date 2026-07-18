@@ -63,22 +63,4 @@ pub fn config_scope_exceptions() -> Result<serde_json::Value, String> {
     Ok(json!({"scope_exceptions": config.scope_exceptions}))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_config_path_ok() {
-        let result = config_path();
-        assert!(result.is_ok());
-        let val = result.unwrap();
-        assert!(val.get("path").is_some());
-        assert!(val["path"].as_str().unwrap().ends_with("config.json"));
-    }
-
-    #[test]
-    fn test_config_current_missing() {
-        // May succeed or fail depending on whether a config exists — just don't panic.
-        let _result = config_current();
-    }
-}

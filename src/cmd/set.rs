@@ -31,48 +31,4 @@ pub fn set(
     serde_json::to_value(&updated).map_err(|e| e.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::convo::Store;
-    use crate::TestEnv;
 
-    #[test]
-    #[serial_test::serial]
-    fn test_set_label() {
-        let env = TestEnv::new();
-        let orchid_dir = env.dir();
-        let convos_dir = orchid_dir.join("conversations");
-        std::fs::create_dir_all(&convos_dir).unwrap();
-        let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None, None).unwrap();
-
-        let result = super::set(meta.id.clone(), Some("my-label".to_string()), None, None, None).unwrap();
-        assert_eq!(result["label"], "my-label");
-        assert_eq!(result["id"], meta.id);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_set_updates_metadata() {
-        let env = TestEnv::new();
-        let orchid_dir = env.dir();
-        let convos_dir = orchid_dir.join("conversations");
-        std::fs::create_dir_all(&convos_dir).unwrap();
-        let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None, None).unwrap();
-
-        super::set(
-            meta.id.clone(),
-            Some("labeled".to_string()),
-            Some("coder".to_string()),
-            Some("/tmp/work".to_string()),
-            None,
-        )
-        .unwrap();
-
-        let updated = store.get(&meta.id).unwrap();
-        assert_eq!(updated.label.as_deref(), Some("labeled"));
-        assert_eq!(updated.persona.as_deref(), Some("coder"));
-        assert_eq!(updated.working_dir.as_deref(), Some("/tmp/work"));
-    }
-}

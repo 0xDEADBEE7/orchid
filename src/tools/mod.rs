@@ -105,43 +105,4 @@ pub fn execute_tool(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_tool_definitions_count() {
-        let defs = tool_definitions();
-        assert_eq!(defs.len(), 3);
-        let names: Vec<&str> = defs
-            .iter()
-            .filter_map(|d| d.get("name").and_then(|n| n.as_str()))
-            .collect();
-        assert!(names.contains(&"bash"));
-        assert!(names.contains(&"fs_read"));
-        assert!(names.contains(&"fs_edit"));
-    }
-
-    #[test]
-    fn test_execute_tool_bash() {
-        let input = serde_json::json!({"cmd": "echo test"});
-        let result = execute_tool("bash", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_execute_tool_unknown() {
-        let input = serde_json::json!({});
-        let result = execute_tool("unknown_tool", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("unknown tool"));
-    }
-
-    #[test]
-    fn test_execute_tool_fs_read() {
-        let input = serde_json::json!({"paths": ["/tmp"]});
-        let result = execute_tool("fs_read", input, "/tmp", false, &HashMap::new(), &GlobSet::empty(), &GlobSet::empty());
-        // /tmp is a directory — may error, but that's fine; tool dispatch worked
-        assert!(result.is_ok() || result.is_err());
-    }
-}

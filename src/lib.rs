@@ -13,11 +13,14 @@ pub mod loop_module {
     pub use crate::r#loop::run::run;
 }
 
-pub use cli::{parse_args, Command, ConfigSubcommand};
-pub use client::{create_provider, create_provider_with_log};
+pub use cli::{parse_args, Command, ConfigSubcommand, ListSubcommand};
+pub use client::{create_provider, create_provider_with_log, resolve_env_inline};
+pub use client::base::{BaseClient, is_retryable};
 pub use cmd::{config_current, config_path, config_use, delete, internal_run, list, send, set};
+pub use r#loop::history::{build_message_history, replace_stale_in_value};
 pub use config::{get_orchid_dir, load_config, resolve_env, Config, Limits, Profile, ServerAction};
-pub use convo::{get_convo_jsonl_path, MetadataUpdate, Store};
+pub use convo::{get_convo_jsonl_path, is_id_format, MetadataUpdate, resolve, Store};
+pub use convo::id::generate_id;
 pub use jsonerr::JsonError;
 pub use log::{DiagLogger, LogReader, LogWriter};
 pub use provider::{Provider, ProviderError, Response, StreamEvent};

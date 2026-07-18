@@ -99,7 +99,7 @@ fn build_headers(
     headers
 }
 
-fn default_base_url(provider: &str) -> &str {
+pub fn default_base_url(provider: &str) -> &str {
     match provider {
         "anthropic" => "https://api.anthropic.com",
         "openai-compat" | "openai" => "https://api.openai.com",
@@ -107,7 +107,7 @@ fn default_base_url(provider: &str) -> &str {
     }
 }
 
-fn method_from_str(s: &str) -> Result<reqwest::Method, String> {
+pub fn method_from_str(s: &str) -> Result<reqwest::Method, String> {
     match s.to_uppercase().as_str() {
         "GET" => Ok(reqwest::Method::GET),
         "POST" => Ok(reqwest::Method::POST),
@@ -118,7 +118,7 @@ fn method_from_str(s: &str) -> Result<reqwest::Method, String> {
     }
 }
 
-fn build_body(body_params: &[(String, String)]) -> Value {
+pub fn build_body(body_params: &[(String, String)]) -> Value {
     let mut map = Map::new();
     for (k, v) in body_params {
         map.insert(k.clone(), Value::String(v.clone()));
@@ -126,39 +126,4 @@ fn build_body(body_params: &[(String, String)]) -> Value {
     Value::Object(map)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_build_body_empty() {
-        let body = build_body(&[]);
-        assert!(body.as_object().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_build_body_params() {
-        let params = vec![
-            ("model".to_string(), "gpt-4".to_string()),
-            ("n".to_string(), "3".to_string()),
-        ];
-        let body = build_body(&params);
-        let obj = body.as_object().unwrap();
-        assert_eq!(obj.get("model").unwrap(), "gpt-4");
-        assert_eq!(obj.get("n").unwrap(), "3");
-    }
-
-    #[test]
-    fn test_method_from_str() {
-        assert_eq!(method_from_str("GET").unwrap(), reqwest::Method::GET);
-        assert_eq!(method_from_str("post").unwrap(), reqwest::Method::POST);
-        assert!(method_from_str("INVALID").is_err());
-    }
-
-    #[test]
-    fn test_default_base_url() {
-        assert_eq!(default_base_url("anthropic"), "https://api.anthropic.com");
-        assert_eq!(default_base_url("openai-compat"), "https://api.openai.com");
-        assert_eq!(default_base_url("unknown"), "");
-    }
-}
