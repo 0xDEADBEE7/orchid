@@ -45,7 +45,9 @@ fn main() {
         Command::List(resource) => cmd::list(&config_dir, resource.as_deref()),
         Command::Config(ConfigSubcommand::Validate) => cmd::config_validate(&config_dir),
         Command::Config(ConfigSubcommand::List) => cmd::config_list(&config_dir),
-        Command::Config(ConfigSubcommand::Show(resource)) => cmd::config_show(&config_dir, &resource),
+        Command::Config(ConfigSubcommand::Show(resource)) => {
+            cmd::config_show(&config_dir, &resource)
+        }
         Command::Create {
             label,
             working_dir,
@@ -74,14 +76,7 @@ fn main() {
             persona: _,
             working_dir,
             scope_exceptions,
-        } => cmd::set(
-            id,
-            label,
-            None,
-            working_dir,
-            scope_exceptions,
-            &config_dir,
-        ),
+        } => cmd::set(id, label, None, working_dir, scope_exceptions, &config_dir),
         Command::Delete(id) => cmd::delete(id, &config_dir),
         Command::Stop(id) => cmd::stop(id, &config_dir),
         Command::Kill(id) => cmd::stop(id, &config_dir),

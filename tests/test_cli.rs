@@ -54,11 +54,17 @@ fn test_parse_config_list() {
 
 #[test]
 fn test_parse_config_show() {
-    let args = vec!["config".to_string(), "show".to_string(), "policy/default".to_string()];
+    let args = vec![
+        "config".to_string(),
+        "show".to_string(),
+        "policy/default".to_string(),
+    ];
     let (cmd, _) = parse_args(&args).unwrap();
-    assert_eq!(cmd, Command::Config(ConfigSubcommand::Show("policy/default".to_string())));
+    assert_eq!(
+        cmd,
+        Command::Config(ConfigSubcommand::Show("policy/default".to_string()))
+    );
 }
-
 
 #[test]
 fn test_parse_flags() {
@@ -104,7 +110,11 @@ fn test_parse_config_legacy_commands_rejected() {
     for args in [
         vec!["config".to_string(), "current".to_string()],
         vec!["config".to_string(), "path".to_string()],
-        vec!["config".to_string(), "use".to_string(), "default".to_string()],
+        vec![
+            "config".to_string(),
+            "use".to_string(),
+            "default".to_string(),
+        ],
     ] {
         assert!(parse_args(&args).is_err());
     }

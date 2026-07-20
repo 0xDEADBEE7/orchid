@@ -71,17 +71,8 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         } else {
             // Check if the first positional is a known command.
             let known_commands = [
-                "help",
-                "list",
-                "create",
-                "config",
-                "send",
-                "set",
-                "delete",
-                "stop",
-                "kill",
-                "__run",
-                "validate",
+                "help", "list", "create", "config", "send", "set", "delete", "stop", "kill",
+                "__run", "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
                 // Known command: treat it as such.
@@ -177,7 +168,10 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "list" => {
             let resource = positional.first().cloned();
             if let Some(name) = &resource {
-                if !matches!(name.as_str(), "sessions" | "connections" | "policies" | "prompts") {
+                if !matches!(
+                    name.as_str(),
+                    "sessions" | "connections" | "policies" | "prompts"
+                ) {
                     return Err(format!("unknown list resource: {}", name));
                 }
             }
@@ -206,7 +200,10 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 "validate" => Command::Config(ConfigSubcommand::Validate),
                 "list" => Command::Config(ConfigSubcommand::List),
                 "show" => {
-                    let resource = positional.get(1).cloned().ok_or_else(|| "config show requires <resource>".to_string())?;
+                    let resource = positional
+                        .get(1)
+                        .cloned()
+                        .ok_or_else(|| "config show requires <resource>".to_string())?;
                     Command::Config(ConfigSubcommand::Show(resource))
                 }
                 other => return Err(format!("unknown config subcommand: {}", other)),

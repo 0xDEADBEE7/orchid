@@ -19,9 +19,14 @@ pub fn config_list(config_dir: &Path) -> Result<serde_json::Value, String> {
 pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Value, String> {
     let root = crate::ConfigDir::new(config_dir);
     match resource {
-        "root" | "config" => serde_json::from_str(&std::fs::read_to_string(root.root_path()).map_err(|e| e.to_string())?).map_err(|e| e.to_string()),
+        "root" | "config" => serde_json::from_str(
+            &std::fs::read_to_string(root.root_path()).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string()),
         name if name.starts_with("connection/") => {
-            let value = root.load_connection(&name[11..]).map_err(|e| e.to_string())?;
+            let value = root
+                .load_connection(&name[11..])
+                .map_err(|e| e.to_string())?;
             serde_json::to_value(value).map_err(|e| e.to_string())
         }
         name if name.starts_with("policy/") => {
@@ -32,6 +37,8 @@ pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Valu
             let value = root.load_prompt(&name[7..]).map_err(|e| e.to_string())?;
             Ok(json!({"name": &name[7..], "content": value}))
         }
-        _ => Err("resource must be root, connection/<name>, policy/<name>, or prompt/<name>".to_string()),
+        _ => Err(
+            "resource must be root, connection/<name>, policy/<name>, or prompt/<name>".to_string(),
+        ),
     }
 }
