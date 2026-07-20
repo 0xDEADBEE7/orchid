@@ -105,17 +105,22 @@ impl Store {
     pub fn list(&self) -> Result<Vec<Metadata>, String> {
         let mut convos = Vec::new();
         let entries = fs::read_dir(&self.base_path)
-            .map_err(|e| format!("failed to read conversations dir: {}", e))?;
+            .map_err(|e| format!("failed to read sessions dir: {}", e))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| format!("dir entry error: {}", e))?;
+            let entry = entry.map_err(|e| format!("session entry error: {}", e))?;
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                    if let Ok(meta) = self.get(dir_name) {
-                        convos.push(meta);
-                    }
-                }
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if dir_name.starts_with('.') || !is_id_format(dir_name) {
+                continue;
+            }
+            if let Ok(meta) = self.get(dir_name) {
+                convos.push(meta);
             }
         }
 
@@ -206,7 +211,19 @@ pub fn get_convo_jsonl_path(convo_id: &str) -> Result<PathBuf, String> {
     Ok(base_path.join("conversation.jsonl"))
 }
 
-/// Get the conversation directory under the default XDG location.
+pub fn get_convo_jsonl_path_from_config(
+    convo_id: &str,
+    config_dir: &Path,
+) -> Result<PathBuf, String> {
+    if !is_id_format(convo_id) {
+        return Err(format!("invalid conversation ID: '{}'", convo_id));
+    }
+    Ok(config_dir
+        .join("sessions")
+        .join(convo_id)
+        .join("conversation.jsonl"))
+}
+
 pub fn get_convo_dir(convo_id: &str) -> Result<PathBuf, String> {
     let base_path = get_orchid_dir()?.join("conversations").join(convo_id);
 
