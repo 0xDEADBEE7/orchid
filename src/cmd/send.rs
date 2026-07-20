@@ -24,7 +24,8 @@ pub fn send(
 ) -> Result<serde_json::Value, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
-    let session_id = if let Some(id_or_label) = id {
+    let new_session = id.is_none();
+    let (session_id, _meta, effective) = if let Some(id_or_label) = id {
         let base_path = config_dir.join("sessions");
         let resolved_id = resolve::resolve(&id_or_label, &base_path)?.id;
 
@@ -39,51 +40,54 @@ pub fn send(
             store.update(&resolved_id, updates)?;
         }
 
-        resolved_id
+        let meta = store.get(&resolved_id)?;
+        let working_dir = meta
+            .working_dir
+            .clone()
+            .ok_or_else(|| "session has no working directory configured".to_string())?;
+        let effective = resolve_effective_config(
+            &ConfigDir::new(config_dir),
+            meta.policy.as_deref().or(policy.as_deref()),
+            Some(&working_dir),
+        )
+        .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+        (resolved_id, meta, effective)
     } else {
         let wd = resolve_working_dir(working_dir)?;
-        let meta = store.create(label, Some(wd.clone()), None)?;
         let effective =
             resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
                 .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+        if await_completion {
+            create_provider_from_connections_with_log(&effective.connection_candidates, None)
+                .map_err(|e| e.to_string())?;
+        }
+        let meta = store.create(label, Some(wd), None)?;
         let meta = store.update(
             &meta.id,
             crate::SessionUpdate {
-                policy: Some(Some(effective.policy_name)),
-                policy_hash: Some(Some(effective.policy_hash)),
+                policy: Some(Some(effective.policy_name.clone())),
+                policy_hash: Some(Some(effective.policy_hash.clone())),
                 ..Default::default()
             },
         )?;
-        meta.id
+        (meta.id.clone(), meta, effective)
     };
-
-    let meta = store.get(&session_id)?;
-    let working_dir = meta
-        .working_dir
-        .clone()
-        .ok_or_else(|| "session has no working directory configured".to_string())?;
 
     let state = store.state(&session_id)?;
     if state.status == crate::types::Status::Running {
         return Err(format!("session {} is already running", session_id));
     }
 
-    // Resolve and construct the provider before mutating the transcript. This
-    // keeps missing secrets and invalid provider configuration side-effect free.
-    let config_dir_ref = ConfigDir::new(config_dir);
-    let effective = resolve_effective_config(
-        &config_dir_ref,
-        meta.policy.as_deref().or(policy.as_deref()),
-        Some(&working_dir),
-    )
-    .map_err(|e| format!("failed to resolve effective config: {}", e))?;
-
-    let log_path = Some(
-        config_dir
-            .join("sessions")
-            .join(&session_id)
-            .join("orchid.log"),
-    );
+    let log_path = if new_session {
+        None
+    } else {
+        Some(
+            config_dir
+                .join("sessions")
+                .join(&session_id)
+                .join("orchid.log"),
+        )
+    };
     let provider = if await_completion {
         Some(
             create_provider_from_connections_with_log(&effective.connection_candidates, log_path)

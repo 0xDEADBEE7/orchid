@@ -12,7 +12,7 @@ pub fn build_message_history(
     let path = config_dir
         .join("sessions")
         .join(session_id)
-        .join("session.jsonl");
+        .join("conversation.jsonl");
 
     if !std::path::Path::new(&path).exists() {
         return Ok(Vec::new());

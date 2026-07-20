@@ -20,6 +20,65 @@ fn write_resource_config(dir: &std::path::Path) {
     .unwrap();
 }
 
+#[test]
+#[serial_test::serial]
+fn test_create_resolves_policy_before_creating_session() {
+    let env = TestEnv::new();
+    let dir = env.dir();
+    write_resource_config(&dir);
+    std::fs::remove_file(dir.join("connections/local.json")).unwrap();
+
+    let result = orchid::cmd::create(
+        None,
+        Some("/tmp".to_string()),
+        None,
+        Some("default".to_string()),
+        &dir,
+    );
+    assert!(result.is_err());
+    let entries: Vec<_> = std::fs::read_dir(dir.join("sessions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect();
+    assert!(entries.iter().all(|entry| !entry.path().is_dir()));
+}
+
+#[test]
+#[serial_test::serial]
+fn test_send_missing_secret_has_no_transcript_side_effect() {
+    let env = TestEnv::new();
+    let dir = env.dir();
+    write_resource_config(&dir);
+    std::env::remove_var("ORCHID_MISSING_MVP_KEY");
+    std::fs::write(
+        dir.join("connections/local.json"),
+        r#"{"interface":"openai","base_url":"http://127.0.0.1:9","model":"test","api_key":"env.ORCHID_MISSING_MVP_KEY"}"#,
+    )
+    .unwrap();
+
+    let before: Vec<_> = std::fs::read_dir(dir.join("sessions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .collect();
+    let result = send(
+        None,
+        "secret-free failure".to_string(),
+        true,
+        &dir,
+        None,
+        Some("/tmp".to_string()),
+        Some("default".to_string()),
+    );
+    assert!(result.is_err());
+    let after: Vec<_> = std::fs::read_dir(dir.join("sessions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .collect();
+    assert_eq!(after, before);
+}
+#[test]
 #[serial_test::serial]
 fn test_fork_errors_when_no_policy_connection_available() {
     let env = TestEnv::new();
@@ -43,10 +102,7 @@ fn test_fork_errors_when_no_policy_connection_available() {
         "should error when no policy connection is available"
     );
     let error = result.unwrap_err();
-    assert!(
-        error.contains("connection") || error.contains("policy"),
-        "error should mention the missing resource"
-    );
+    assert!(error.contains("connection") || error.contains("policy"));
 }
 
 #[test]

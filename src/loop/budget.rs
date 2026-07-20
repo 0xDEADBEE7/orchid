@@ -32,11 +32,23 @@ pub fn check(session_id: &str, budget: &TokenBudget) -> BudgetStatus {
 }
 
 fn estimate_tokens(session_id: &str) -> Option<u32> {
-    let base_path = Path::new("config").join("sessions").join(session_id);
+    let base_path = std::env::var_os("ORCHID_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| Path::new("config").to_path_buf())
+        .join("sessions")
+        .join(session_id);
+    let legacy_path = std::env::var_os("ORCHID_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| Path::new("config").to_path_buf())
+        .join("conversations")
+        .join(session_id)
+        .join("conversation.jsonl");
     let path = if base_path.join("conversation.jsonl").exists() {
         base_path.join("conversation.jsonl")
-    } else {
+    } else if base_path.join("session.jsonl").exists() {
         base_path.join("session.jsonl")
+    } else {
+        legacy_path
     };
     let bytes = std::fs::metadata(path).ok()?.len();
     Some((bytes / 3) as u32)
