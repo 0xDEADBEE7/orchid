@@ -5,17 +5,17 @@ use std::env;
 const DEFAULT_API_URL: &str = "http://localhost:1234/v1/chat/completions";
 const DEFAULT_MODEL: &str = "local-model";
 
-mod wire;
-mod messages;
-mod tools;
-mod sse;
 mod api;
+mod messages;
+mod sse;
+mod tools;
+mod wire;
 
-pub use wire::*;
-pub use messages::to_openai_message;
-pub use tools::openai_tool_definitions;
-pub use sse::OpenAiStream;
 pub use api::OpenAiApiClient;
+pub use messages::to_openai_message;
+pub use sse::OpenAiStream;
+pub use tools::openai_tool_definitions;
+pub use wire::*;
 
 pub struct OpenAiClient {
     base_client: BaseClient,
@@ -29,9 +29,7 @@ pub struct OpenAiClient {
 impl OpenAiClient {
     pub fn new() -> Result<Self, ProviderError> {
         let _api_key = env::var("OPENAI_API_KEY").map_err(|_| {
-            ProviderError::AuthError(
-                "OPENAI_API_KEY environment variable not set".to_string(),
-            )
+            ProviderError::AuthError("OPENAI_API_KEY environment variable not set".to_string())
         })?;
 
         let _base_client = BaseClient::new()?;
@@ -64,11 +62,9 @@ impl OpenAiClient {
             })
             .collect();
 
-        let has_auth_header = extra_headers
-            .iter()
-            .any(|(k, _)| {
-                k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("api-key")
-            });
+        let has_auth_header = extra_headers.iter().any(|(k, _)| {
+            k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("api-key")
+        });
 
         if raw_key.is_empty() && !has_auth_header {
             return Err(ProviderError::AuthError(
@@ -103,7 +99,11 @@ impl OpenAiClient {
             model,
             extra_headers,
             auth_header,
-            params: profile.params.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            params: profile
+                .params
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
         })
     }
 
@@ -116,5 +116,3 @@ impl OpenAiClient {
         OpenAiApiClient { inner: self }
     }
 }
-
-

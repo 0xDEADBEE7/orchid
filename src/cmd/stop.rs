@@ -27,7 +27,11 @@ fn stop_impl(id: &str, force: bool) -> Result<serde_json::Value, String> {
             use nix::unistd::Pid;
 
             let pid = Pid::from_raw(pid as i32);
-            let sig = if force { Signal::SIGKILL } else { Signal::SIGTERM };
+            let sig = if force {
+                Signal::SIGKILL
+            } else {
+                Signal::SIGTERM
+            };
             match signal::kill(pid, Some(sig)) {
                 Ok(()) => {}
                 Err(nix::Error::ESRCH) => {}

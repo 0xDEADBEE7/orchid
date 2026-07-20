@@ -3,9 +3,7 @@
 
 mod support;
 
-use orchid::client::openai::{
-    openai_tool_definitions, to_openai_message, OpenAiListResponse,
-};
+use orchid::client::openai::{openai_tool_definitions, to_openai_message, OpenAiListResponse};
 use orchid::types::{Message, ToolCall, ToolResult};
 
 #[test]
@@ -105,8 +103,10 @@ fn test_openai_response_deserialization() {
     }"#;
     let resp: OpenAiListResponse = serde_json::from_str(json).unwrap();
     assert_eq!(resp.choices.len(), 1);
-    assert_eq!(resp.choices[0].message.content, Some("Hello world".to_string()));
+    assert_eq!(
+        resp.choices[0].message.content,
+        Some("Hello world".to_string())
+    );
     assert_eq!(resp.usage.as_ref().unwrap().prompt_tokens, Some(10));
     assert_eq!(resp.usage.as_ref().unwrap().completion_tokens, Some(20));
 }
-

@@ -141,5 +141,3 @@ impl DiagLogger {
         }
     }
 }
-
-

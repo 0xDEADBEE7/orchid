@@ -180,5 +180,3 @@ pub fn get_convo_jsonl_path(convo_id: &str) -> Result<PathBuf, String> {
 
     Ok(base_path.join("conversation.jsonl"))
 }
-
-

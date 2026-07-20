@@ -20,11 +20,7 @@ fn test_build_request_body_with_system() {
     }];
 
     let body = api
-        .build_request_body(
-            "You are a helpful assistant".to_string(),
-            messages,
-            false,
-        )
+        .build_request_body("You are a helpful assistant".to_string(), messages, false)
         .unwrap();
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
 

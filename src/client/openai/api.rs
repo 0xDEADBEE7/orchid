@@ -1,5 +1,5 @@
+use crate::client::openai::{openai_tool_definitions, to_openai_message, OpenAiStream};
 use crate::client::openai::{OpenAiClient, OpenAiListResponse, OpenAiMessage};
-use crate::client::openai::{OpenAiStream, to_openai_message, openai_tool_definitions};
 use crate::provider::{Provider, ProviderError, Response, StreamEvent};
 use crate::types::{TokenUsage, ToolCall};
 
@@ -10,7 +10,11 @@ pub struct OpenAiApiClient<'a> {
 }
 
 impl Provider for OpenAiClient {
-    fn send(&self, system: String, messages: Vec<crate::types::Message>) -> Result<Response, ProviderError> {
+    fn send(
+        &self,
+        system: String,
+        messages: Vec<crate::types::Message>,
+    ) -> Result<Response, ProviderError> {
         let api = self.api_client();
         api.send(system, messages)
     }
@@ -45,10 +49,10 @@ impl<'a> OpenAiApiClient<'a> {
             .collect();
         headers.extend_from_slice(&extra);
 
-        let response_text = self
-            .inner
-            .base_client
-            .post_with_retry(&self.inner.api_url, body, &headers)?;
+        let response_text =
+            self.inner
+                .base_client
+                .post_with_retry(&self.inner.api_url, body, &headers)?;
 
         self.parse_response(&response_text)
     }
@@ -79,12 +83,14 @@ impl<'a> OpenAiApiClient<'a> {
                 format!("{}=...{}", k, tail)
             })
             .collect();
-        self.inner.base_client.log_debug("resolved_headers", &masked.join(", "));
-
-        let response = self
-            .inner
+        self.inner
             .base_client
-            .post_streaming(&self.inner.api_url, body, &headers)?;
+            .log_debug("resolved_headers", &masked.join(", "));
+
+        let response =
+            self.inner
+                .base_client
+                .post_streaming(&self.inner.api_url, body, &headers)?;
 
         Ok(Box::new(OpenAiStream::new(BufReader::new(response))))
     }
@@ -160,7 +166,8 @@ impl<'a> OpenAiApiClient<'a> {
 
         if let Some(ref calls) = choice.message.tool_calls {
             for tc in calls {
-                let args = serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
+                let args =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
                 tool_calls_vec.push(ToolCall {
                     id: tc.id.clone(),
                     name: tc.function.name.clone(),
@@ -177,11 +184,13 @@ impl<'a> OpenAiApiClient<'a> {
         Ok(Response {
             message: message_text,
             reasoning: reasoning_text,
-            tool_calls: if tool_calls_vec.is_empty() { None } else { Some(tool_calls_vec) },
+            tool_calls: if tool_calls_vec.is_empty() {
+                None
+            } else {
+                Some(tool_calls_vec)
+            },
             usage,
             model: None,
         })
     }
 }
-
-

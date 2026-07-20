@@ -1,6 +1,8 @@
 use crate::get_convo_jsonl_path;
 use crate::log::LogWriter;
-use crate::types::{ConvoEvent, MessageEvent, ReasoningEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent};
+use crate::types::{
+    ConvoEvent, MessageEvent, ReasoningEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent,
+};
 
 pub fn append_message(convo_id: &str, content: &str) -> Result<String, String> {
     let path = get_convo_jsonl_path(convo_id)?;
@@ -31,5 +33,3 @@ pub fn append_reasoning(convo_id: &str, reasoning: &str) -> Result<String, Strin
     let event = ConvoEvent::Reasoning(ReasoningEvent::new(reasoning.to_string()));
     LogWriter::append(&path, &event)
 }
-
-

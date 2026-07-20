@@ -22,7 +22,12 @@ pub fn execute(
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
 
     if !allow_scope_escape {
-        validate_cmd_scope(&bash_input.cmd, working_dir, global_scope_set, convo_scope_set)?;
+        validate_cmd_scope(
+            &bash_input.cmd,
+            working_dir,
+            global_scope_set,
+            convo_scope_set,
+        )?;
     }
 
     let output = Command::new("bash")
@@ -69,13 +74,12 @@ fn validate_cmd_scope(
         {
             continue;
         }
-        if !is_in_scope(&token, working_dir)
-            && !token.contains("/")
-            && !is_builtin(&token)
-        {
+        if !is_in_scope(&token, working_dir) && !token.contains("/") && !is_builtin(&token) {
             continue;
         }
-        if token.contains("/") && !is_allowed(&token, working_dir, global_scope_set, convo_scope_set) {
+        if token.contains("/")
+            && !is_allowed(&token, working_dir, global_scope_set, convo_scope_set)
+        {
             return Err(format!("path out of scope: {}", token));
         }
     }
@@ -141,5 +145,3 @@ fn is_builtin(cmd: &str) -> bool {
             | "false"
     )
 }
-
-

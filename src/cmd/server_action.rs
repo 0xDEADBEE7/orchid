@@ -22,10 +22,12 @@ pub fn server_action(
         .ok_or_else(|| format!("profile '{}' not found", profile_name))?;
 
     // Look up action
-    let server_action = profile
-        .server_actions
-        .get(action)
-        .ok_or_else(|| format!("Action '{}' not defined in profile '{}'", action, profile_name))?;
+    let server_action = profile.server_actions.get(action).ok_or_else(|| {
+        format!(
+            "Action '{}' not defined in profile '{}'",
+            action, profile_name
+        )
+    })?;
 
     // Build URL
     let url = build_url(&profile, server_action);
@@ -49,7 +51,9 @@ pub fn server_action(
         req = req.json(&body);
     }
 
-    let resp = req.send().map_err(|e| format!("HTTP request failed: {}", e))?;
+    let resp = req
+        .send()
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
     let status = resp.status().as_u16();
 
     let body_text = resp
@@ -60,11 +64,13 @@ pub fn server_action(
     let response_body = serde_json::from_str::<Value>(&body_text).unwrap_or(json!(body_text));
 
     if status >= 400 {
-        let err = JsonError::new(
-            "http_error",
-            &format!("Server returned {}", status),
-        );
-        return Err(serde_json::to_string(&err).unwrap_or_else(|_| format!("{{\"error\": \"http_error\", \"message\": \"Server returned {}\"}}", status)));
+        let err = JsonError::new("http_error", &format!("Server returned {}", status));
+        return Err(serde_json::to_string(&err).unwrap_or_else(|_| {
+            format!(
+                "{{\"error\": \"http_error\", \"message\": \"Server returned {}\"}}",
+                status
+            )
+        }));
     }
 
     Ok(response_body)
@@ -88,7 +94,10 @@ fn build_headers(
     // Bearer auth from profile's api_key (with env. resolution)
     let resolved_api_key = resolve_env_inline(&profile.api_key);
     if !resolved_api_key.is_empty() {
-        headers.push(("Authorization".to_string(), format!("Bearer {}", resolved_api_key)));
+        headers.push((
+            "Authorization".to_string(),
+            format!("Bearer {}", resolved_api_key),
+        ));
     }
 
     // Action-specific headers (with env. resolution), can override Authorization
@@ -125,5 +134,3 @@ pub fn build_body(body_params: &[(String, String)]) -> Value {
     }
     Value::Object(map)
 }
-
-

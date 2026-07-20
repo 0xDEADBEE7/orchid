@@ -1,4 +1,4 @@
-use orchid::cmd::server_action::{build_body, method_from_str, default_base_url};
+use orchid::cmd::server_action::{build_body, default_base_url, method_from_str};
 
 mod support;
 

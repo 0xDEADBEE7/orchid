@@ -1,9 +1,9 @@
 pub mod base;
-pub use base::{BaseClient, is_retryable};
-pub mod resolve;
-pub mod sse;
+pub use base::{is_retryable, BaseClient};
 pub mod anthropic;
 pub mod openai;
+pub mod resolve;
+pub mod sse;
 
 use crate::config::Profile;
 use crate::provider::{Provider, ProviderError};

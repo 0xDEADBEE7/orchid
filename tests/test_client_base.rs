@@ -1,4 +1,4 @@
-use orchid::client::{BaseClient, is_retryable};
+use orchid::client::{is_retryable, BaseClient};
 
 mod support;
 

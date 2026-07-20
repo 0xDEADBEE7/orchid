@@ -15,5 +15,3 @@ pub fn resolve_env_inline(s: &str) -> String {
     }
     result
 }
-
-

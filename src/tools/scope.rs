@@ -179,5 +179,3 @@ fn normalize_path(p: &str) -> String {
         }
     }
 }
-
-

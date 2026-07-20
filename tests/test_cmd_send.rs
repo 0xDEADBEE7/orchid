@@ -4,8 +4,7 @@ mod support;
 use support::TestEnv;
 
 fn write_minimal_config(dir: &std::path::Path, active_profile: Option<&str>) {
-    let profile_section =
-        r#""test-profile":{"provider":"anthropic","api_key":"x","model":"m"}"#;
+    let profile_section = r#""test-profile":{"provider":"anthropic","api_key":"x","model":"m"}"#;
     let active = active_profile
         .map(|p| format!(r#""active_profile":"{}","#, p))
         .unwrap_or_default();
@@ -36,7 +35,9 @@ fn test_fork_errors_when_no_profile_available() {
     let orchid_dir = env.dir();
     write_minimal_config(orchid_dir.as_path(), None);
     let store = Store::with_base(orchid_dir.join("conversations"));
-    let meta = store.create(None, Some("/tmp".to_string()), None, None, None).unwrap();
+    let meta = store
+        .create(None, Some("/tmp".to_string()), None, None, None)
+        .unwrap();
     let result = send(
         Some(meta.id.clone()),
         "test".to_string(),

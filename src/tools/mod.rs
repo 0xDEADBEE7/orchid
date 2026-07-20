@@ -104,5 +104,3 @@ pub fn execute_tool(
         _ => Err(format!("unknown tool: {}", name)),
     }
 }
-
-

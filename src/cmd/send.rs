@@ -1,14 +1,14 @@
+use crate::client::create_provider_with_log;
 use crate::cmd::create::resolve_working_dir;
 use crate::convo::{resolve, Store};
 use crate::log::LogWriter;
 use crate::loop_module::run as run_tool_loop;
 use crate::types::{ConvoEvent, MessageEvent};
 use crate::{get_convo_jsonl_path, get_orchid_dir, load_config};
-use crate::client::create_provider_with_log;
 use serde_json::json;
-use std::process::Stdio;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+use std::process::Stdio;
 
 pub fn send(
     id: Option<String>,
@@ -45,9 +45,10 @@ pub fn send(
     };
 
     let meta = store.get(&convo_id)?;
-    let _working_dir = meta.working_dir.clone().ok_or_else(|| {
-        "conversation has no working directory configured".to_string()
-    })?;
+    let _working_dir = meta
+        .working_dir
+        .clone()
+        .ok_or_else(|| "conversation has no working directory configured".to_string())?;
 
     if meta.status == crate::types::Status::Running {
         return Err(format!("conversation {} is already running", convo_id));
@@ -75,22 +76,22 @@ pub fn send(
         log.debug("profile_model", &prof.model);
         log.debug(
             "profile_api_key",
-            if prof.api_key.is_empty() { "(empty)" } else { "(set)" },
+            if prof.api_key.is_empty() {
+                "(empty)"
+            } else {
+                "(set)"
+            },
         );
         log.debug(
             "profile_headers",
-            &prof
-                .headers
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
+            &prof.headers.keys().cloned().collect::<Vec<_>>().join(", "),
         );
 
-        let provider = create_provider_with_log(prof, Some(convo_dir.join("orchid.log"))).map_err(|e| {
-            log.error("provider_init_error", &e.to_string());
-            format!("provider error: {}", e)
-        })?;
+        let provider =
+            create_provider_with_log(prof, Some(convo_dir.join("orchid.log"))).map_err(|e| {
+                log.error("provider_init_error", &e.to_string());
+                format!("provider error: {}", e)
+            })?;
         log.debug("provider_init", "ok");
 
         run_tool_loop(&convo_id, provider.as_ref())?;
@@ -129,8 +130,7 @@ fn fork_tool_loop(
         .or(active_profile)
         .ok_or_else(|| "no profile configured and no --profile given".to_string())?;
 
-    let mut cmd =
-        std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
+    let mut cmd = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     cmd.arg("__run")
         .arg(convo_id)
         .arg("--profile")
@@ -155,5 +155,3 @@ fn fork_tool_loop(
 
     Ok(Some(child.id()))
 }
-
-

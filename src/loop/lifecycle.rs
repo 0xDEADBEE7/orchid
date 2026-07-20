@@ -65,5 +65,3 @@ pub fn detect_crashed(convo_id: &str) -> Result<bool, String> {
         _ => Ok(false),
     }
 }
-
-

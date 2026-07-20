@@ -6,16 +6,16 @@ use std::env;
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL: &str = "claude-3-5-sonnet-20241022";
 
-mod wire;
+mod api;
 mod messages;
 mod sse;
-mod api;
+mod wire;
 
-pub use wire::*;
+pub use crate::provider::StreamEvent;
+pub use api::AnthropicApiClient;
 pub use messages::to_wire_message;
 pub use sse::SseStream;
-pub use api::AnthropicApiClient;
-pub use crate::provider::StreamEvent;
+pub use wire::*;
 
 pub struct AnthropicClient {
     base_client: BaseClient,
@@ -62,9 +62,9 @@ impl AnthropicClient {
             })
             .collect();
 
-        let has_auth_header = extra_headers
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("x-api-key"));
+        let has_auth_header = extra_headers.iter().any(|(k, _)| {
+            k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("x-api-key")
+        });
 
         if raw_key.is_empty() && !has_auth_header {
             return Err(ProviderError::AuthError(
@@ -89,7 +89,11 @@ impl AnthropicClient {
             api_key: raw_key,
             model,
             extra_headers,
-            params: profile.params.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            params: profile
+                .params
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
         })
     }
 
@@ -102,5 +106,3 @@ impl AnthropicClient {
         AnthropicApiClient { inner: self }
     }
 }
-
-

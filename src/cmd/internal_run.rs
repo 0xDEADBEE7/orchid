@@ -20,5 +20,3 @@ pub fn internal_run(convo_id: &str, profile: &Option<String>) -> Result<(), Stri
 
     Ok(())
 }
-
-

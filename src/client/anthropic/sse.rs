@@ -1,6 +1,6 @@
 use crate::client::sse::{SseEventMapper, SseParser};
-use serde_json::Value;
 use crate::provider::{ProviderError, StreamEvent};
+use serde_json::Value;
 use std::io::BufRead;
 
 /// Provider-specific mapper for Anthropic SSE events.
@@ -30,12 +30,7 @@ impl SseEventMapper for AnthropicEventMapper {
         match chunk {
             crate::client::sse::ParsedChunk::Eof => None,
             crate::client::sse::ParsedChunk::Json(data) => {
-                self.handle_anthropic_data(
-                    &data,
-                    text_buf,
-                    reasoning_buf,
-                    tool_calls,
-                )
+                self.handle_anthropic_data(&data, text_buf, reasoning_buf, tool_calls)
             }
         }
     }
@@ -91,10 +86,7 @@ impl AnthropicEventMapper {
                     name: name.clone(),
                     input_json: String::new(),
                 });
-                return Some(vec![StreamEvent::ToolCallDelta {
-                    index,
-                    name,
-                }]);
+                return Some(vec![StreamEvent::ToolCallDelta { index, name }]);
             }
             return Some(vec![]);
         }
@@ -125,10 +117,7 @@ impl AnthropicEventMapper {
                         .find(|tc| tc.index == index)
                         .map(|tc| tc.name.clone())
                         .unwrap_or_default();
-                    return Some(vec![StreamEvent::ToolCallDelta {
-                        index,
-                        name,
-                    }]);
+                    return Some(vec![StreamEvent::ToolCallDelta { index, name }]);
                 }
                 "stop_reason" => {
                     return Some(vec![]);
@@ -151,7 +140,10 @@ impl AnthropicEventMapper {
     }
 
     #[allow(dead_code)]
-    fn finalize_usage(&mut self, usage: Option<crate::types::TokenUsage>) -> Option<crate::types::TokenUsage> {
+    fn finalize_usage(
+        &mut self,
+        usage: Option<crate::types::TokenUsage>,
+    ) -> Option<crate::types::TokenUsage> {
         match (usage, self.pending_output_tokens) {
             (Some(mut u), Some(output_tokens)) => {
                 u.output_tokens = output_tokens;
@@ -187,5 +179,3 @@ impl<R: BufRead> Iterator for SseStream<R> {
         self.inner.next()
     }
 }
-
-

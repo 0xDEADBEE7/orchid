@@ -1,4 +1,4 @@
-use orchid::cli::{print_json, print_error};
+use orchid::cli::{print_error, print_json};
 use orchid::JsonError;
 use serde_json::json;
 

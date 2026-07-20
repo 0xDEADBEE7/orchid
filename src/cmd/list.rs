@@ -20,5 +20,3 @@ pub fn list_personas() -> Result<serde_json::Value, String> {
     let personas = config.extra.get("personas").cloned().unwrap_or(json!({}));
     Ok(personas)
 }
-
-

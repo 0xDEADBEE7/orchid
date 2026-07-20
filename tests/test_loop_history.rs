@@ -1,11 +1,11 @@
-use orchid::r#loop::history::build_message_history;
 use orchid::log::{DiagLogger, LogLevel, LogReader, LogWriter};
+use orchid::r#loop::history::build_message_history;
 use orchid::types::{
-    ConvoEvent, MessageEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent, Message,
+    ConvoEvent, Message, MessageEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent,
 };
 mod support;
-use support::TestEnv;
 use std::fs;
+use support::TestEnv;
 use tempfile::TempDir;
 
 fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message>, String> {

@@ -147,5 +147,3 @@ pub fn replace_stale_in_value(content: &Value, stale_paths: &[&String]) -> Value
     }
     Value::Object(map)
 }
-
-

@@ -17,7 +17,14 @@ fn test_set_label() {
     std::fs::create_dir_all(&convos_dir).unwrap();
     let store = Store::with_base(convos_dir);
     let meta = store.create(None, None, None, None, None).unwrap();
-    let result = set(meta.id.clone(), Some("my-label".to_string()), None, None, None).unwrap();
+    let result = set(
+        meta.id.clone(),
+        Some("my-label".to_string()),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     assert_eq!(result["label"], "my-label");
     assert_eq!(result["id"], meta.id);
 }

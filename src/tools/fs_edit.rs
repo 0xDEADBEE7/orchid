@@ -56,7 +56,14 @@ pub fn execute(
     let edit_input: FsEditInput =
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
 
-    if !allow_scope_escape && !is_allowed(&edit_input.path, working_dir, global_scope_set, convo_scope_set) {
+    if !allow_scope_escape
+        && !is_allowed(
+            &edit_input.path,
+            working_dir,
+            global_scope_set,
+            convo_scope_set,
+        )
+    {
         return Err(format!("path out of scope: {}", edit_input.path));
     }
 
@@ -157,5 +164,3 @@ fn write_atomic(path: &str, content: &str) -> Result<(), String> {
 
     Ok(())
 }
-
-

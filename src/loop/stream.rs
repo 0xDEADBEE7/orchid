@@ -1,7 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::io::Write;
 
 /// Manages `stream.state` inside a conversation directory.
 ///
@@ -17,7 +17,10 @@ impl StreamState {
     pub fn create(convo_dir: &Path) -> Self {
         let prior = Self::read_chunk_count(convo_dir);
         let path = convo_dir.join("stream.state");
-        let mut state = StreamState { path, chunk_count: prior };
+        let mut state = StreamState {
+            path,
+            chunk_count: prior,
+        };
         state.tick();
         state
     }

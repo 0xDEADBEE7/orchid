@@ -1,10 +1,10 @@
-use orchid::types::TokenBudget;
-use orchid::r#loop::budget::{check, BudgetStatus};
 use orchid::log::LogWriter;
+use orchid::r#loop::budget::{check, BudgetStatus};
+use orchid::types::TokenBudget;
 use orchid::types::{ConvoEvent, MessageEvent};
 mod support;
-use support::TestEnv;
 use std::fs;
+use support::TestEnv;
 
 fn setup_convo_with_chars(convo_id: &str, char_count: usize, base: &std::path::Path) {
     let convo_dir = base.join("conversations").join(convo_id);

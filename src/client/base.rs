@@ -23,7 +23,10 @@ impl BaseClient {
             .build()
             .map_err(|e| ProviderError::Network(format!("failed to create client: {}", e)))?;
 
-        Ok(BaseClient { client, log_path: None })
+        Ok(BaseClient {
+            client,
+            log_path: None,
+        })
     }
 
     pub fn with_log(mut self, path: std::path::PathBuf) -> Self {
@@ -32,14 +35,20 @@ impl BaseClient {
     }
 
     pub(crate) fn log_debug(&self, event: &str, detail: &str) {
-        let Some(ref path) = self.log_path else { return };
+        let Some(ref path) = self.log_path else {
+            return;
+        };
         let entry = serde_json::json!({
             "ts": chrono::Utc::now(),
             "level": "DEBUG",
             "event": event,
             "detail": detail,
         });
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = std::io::Write::write_fmt(&mut f, format_args!("{}", entry));
             let _ = std::io::Write::write_fmt(&mut f, format_args!("\n"));
         }
@@ -53,8 +62,20 @@ impl BaseClient {
         body: String,
         headers: &[(&str, &str)],
     ) -> Result<Response, ProviderError> {
-        let header_names = headers.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ");
-        self.log_debug("http_request", &format!("POST {} headers=[{}] body_len={}", url, header_names, body.len()));
+        let header_names = headers
+            .iter()
+            .map(|(k, _)| *k)
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.log_debug(
+            "http_request",
+            &format!(
+                "POST {} headers=[{}] body_len={}",
+                url,
+                header_names,
+                body.len()
+            ),
+        );
 
         let mut req = self
             .client
@@ -82,7 +103,10 @@ impl BaseClient {
             }
             let body = response.text().unwrap_or_default();
             self.log_debug("http_error_body", &body);
-            return Err(ProviderError::InvalidResponse(format!("HTTP {}: {}", status, body)));
+            return Err(ProviderError::InvalidResponse(format!(
+                "HTTP {}: {}",
+                status, body
+            )));
         }
 
         Ok(response)
@@ -94,8 +118,20 @@ impl BaseClient {
         body: String,
         headers: &[(&str, &str)],
     ) -> Result<String, ProviderError> {
-        let header_names = headers.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ");
-        self.log_debug("http_request", &format!("POST {} headers=[{}] body_len={}", url, header_names, body.len()));
+        let header_names = headers
+            .iter()
+            .map(|(k, _)| *k)
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.log_debug(
+            "http_request",
+            &format!(
+                "POST {} headers=[{}] body_len={}",
+                url,
+                header_names,
+                body.len()
+            ),
+        );
 
         let mut attempt = 0;
 
@@ -115,7 +151,10 @@ impl BaseClient {
             match response {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
-                    self.log_debug("http_response", &format!("status={} attempt={}", status, attempt));
+                    self.log_debug(
+                        "http_response",
+                        &format!("status={} attempt={}", status, attempt),
+                    );
 
                     if resp.status().is_success() {
                         return resp.text().map_err(|e| {
@@ -137,7 +176,10 @@ impl BaseClient {
                         return Err(ProviderError::AuthError("invalid API key".to_string()));
                     }
 
-                    return Err(ProviderError::InvalidResponse(format!("HTTP {}: {}", status, body)));
+                    return Err(ProviderError::InvalidResponse(format!(
+                        "HTTP {}: {}",
+                        status, body
+                    )));
                 }
                 Err(e) => {
                     self.log_debug("http_send_error", &e.to_string());
@@ -158,5 +200,3 @@ impl BaseClient {
 pub fn is_retryable(status: u16) -> bool {
     matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
 }
-
-

@@ -1,5 +1,7 @@
-use crate::client::anthropic::{AnthropicClient, AnthropicMessage, AnthropicResponse, ContentBlock};
-use crate::client::anthropic::{SseStream, to_wire_message};
+use crate::client::anthropic::{to_wire_message, SseStream};
+use crate::client::anthropic::{
+    AnthropicClient, AnthropicMessage, AnthropicResponse, ContentBlock,
+};
 use crate::provider::{Provider, ProviderError, Response, StreamEvent};
 use crate::types::{TokenUsage, ToolCall};
 
@@ -10,7 +12,11 @@ pub struct AnthropicApiClient<'a> {
 }
 
 impl Provider for AnthropicClient {
-    fn send(&self, system: String, messages: Vec<crate::types::Message>) -> Result<Response, ProviderError> {
+    fn send(
+        &self,
+        system: String,
+        messages: Vec<crate::types::Message>,
+    ) -> Result<Response, ProviderError> {
         let api = self.api_client();
         api.send(system, messages)
     }
@@ -45,10 +51,10 @@ impl<'a> AnthropicApiClient<'a> {
             .collect();
         headers.extend_from_slice(&extra);
 
-        let response_text = self
-            .inner
-            .base_client
-            .post_with_retry(&self.inner.api_url, body, &headers)?;
+        let response_text =
+            self.inner
+                .base_client
+                .post_with_retry(&self.inner.api_url, body, &headers)?;
 
         self.parse_response(&response_text)
     }
@@ -79,12 +85,14 @@ impl<'a> AnthropicApiClient<'a> {
                 format!("{}=...{}", k, tail)
             })
             .collect();
-        self.inner.base_client.log_debug("resolved_headers", &masked.join(", "));
-
-        let response = self
-            .inner
+        self.inner
             .base_client
-            .post_streaming(&self.inner.api_url, body, &headers)?;
+            .log_debug("resolved_headers", &masked.join(", "));
+
+        let response =
+            self.inner
+                .base_client
+                .post_streaming(&self.inner.api_url, body, &headers)?;
 
         Ok(Box::new(SseStream::new(BufReader::new(response))))
     }
@@ -109,8 +117,9 @@ impl<'a> AnthropicApiClient<'a> {
         if stream {
             body["stream"] = serde_json::json!(true);
         }
-        serde_json::to_string(&body)
-            .map_err(|e| ProviderError::InvalidResponse(format!("failed to serialize request: {}", e)))
+        serde_json::to_string(&body).map_err(|e| {
+            ProviderError::InvalidResponse(format!("failed to serialize request: {}", e))
+        })
     }
 
     fn parse_response(&self, response_text: &str) -> Result<Response, ProviderError> {

@@ -35,12 +35,24 @@ pub fn execute(
     }
 
     if paths.len() == 1 {
-        let content = read_one(&paths[0], working_dir, allow_scope_escape, global_scope_set, convo_scope_set)?;
+        let content = read_one(
+            &paths[0],
+            working_dir,
+            allow_scope_escape,
+            global_scope_set,
+            convo_scope_set,
+        )?;
         Ok(serde_json::json!({ &paths[0]: content }))
     } else {
         let mut map = serde_json::Map::new();
         for path in &paths {
-            match read_one(path, working_dir, allow_scope_escape, global_scope_set, convo_scope_set) {
+            match read_one(
+                path,
+                working_dir,
+                allow_scope_escape,
+                global_scope_set,
+                convo_scope_set,
+            ) {
                 Ok(content) => {
                     map.insert(path.clone(), Value::String(content));
                 }
@@ -75,5 +87,3 @@ fn read_one(
         }
     })
 }
-
-

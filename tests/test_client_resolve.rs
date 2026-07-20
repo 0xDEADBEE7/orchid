@@ -11,11 +11,17 @@ fn test_resolve_env_inline_whole_value() {
 #[test]
 fn test_resolve_env_inline_with_prefix() {
     std::env::set_var("TEST_INLINE_VAR", "mytoken");
-    assert_eq!(resolve_env_inline("Bearer env.TEST_INLINE_VAR"), "Bearer mytoken");
+    assert_eq!(
+        resolve_env_inline("Bearer env.TEST_INLINE_VAR"),
+        "Bearer mytoken"
+    );
 }
 
 #[test]
 fn test_resolve_env_inline_unset_var() {
     std::env::remove_var("TEST_INLINE_MISSING");
-    assert_eq!(resolve_env_inline("Bearer env.TEST_INLINE_MISSING"), "Bearer ");
+    assert_eq!(
+        resolve_env_inline("Bearer env.TEST_INLINE_MISSING"),
+        "Bearer "
+    );
 }

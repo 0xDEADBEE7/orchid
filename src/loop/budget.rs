@@ -1,5 +1,5 @@
-pub use crate::types::TokenBudget;
 use crate::get_convo_jsonl_path;
+pub use crate::types::TokenBudget;
 
 pub enum BudgetStatus {
     Ok { total: u32 },
@@ -36,5 +36,3 @@ fn estimate_tokens(convo_id: &str) -> Option<u32> {
     let bytes = std::fs::metadata(&path).ok()?.len();
     Some((bytes / 3) as u32)
 }
-
-

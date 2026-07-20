@@ -41,5 +41,3 @@ impl JsonError {
         JsonError::new("internal_error", reason)
     }
 }
-
-

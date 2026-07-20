@@ -15,8 +15,7 @@ fn test_internal_run_unknown_profile() {
     });
     std::fs::write(orchid_dir.join("config.json"), config.to_string()).unwrap();
 
-    let err = internal_run("nonexistent_id", &Some("missing-profile".to_string()))
-        .unwrap_err();
+    let err = internal_run("nonexistent_id", &Some("missing-profile".to_string())).unwrap_err();
     assert!(
         err.contains("not found") || err.contains("profile"),
         "got: {}",

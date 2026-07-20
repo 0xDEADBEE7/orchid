@@ -30,7 +30,10 @@ pub trait SseEventMapper {
 
     /// Called by the parser during `build_complete_response` to inject
     /// provider-specific usage data (e.g. Anthropic's `message_delta.usage`).
-    fn finalize_usage(&mut self, usage: Option<crate::types::TokenUsage>) -> Option<crate::types::TokenUsage> {
+    fn finalize_usage(
+        &mut self,
+        usage: Option<crate::types::TokenUsage>,
+    ) -> Option<crate::types::TokenUsage> {
         usage
     }
 
@@ -84,20 +87,21 @@ impl<R: BufRead, M: SseEventMapper> SseParser<R, M> {
                 .tool_calls
                 .iter()
                 .map(|tc| {
-                    serde_json::from_str(&tc.input_json).map_err(|e| {
-                        format!(
-                            "tool_call '{}' (index {}) malformed JSON: {} — raw: '{}'",
-                            tc.name,
-                            tc.index,
-                            e,
-                            &tc.input_json[..tc.input_json.len().min(200)]
-                        )
-                    })
-                    .map(|val| crate::types::ToolCall {
-                        id: tc.id.clone(),
-                        name: tc.name.clone(),
-                        input: val,
-                    })
+                    serde_json::from_str(&tc.input_json)
+                        .map_err(|e| {
+                            format!(
+                                "tool_call '{}' (index {}) malformed JSON: {} — raw: '{}'",
+                                tc.name,
+                                tc.index,
+                                e,
+                                &tc.input_json[..tc.input_json.len().min(200)]
+                            )
+                        })
+                        .map(|val| crate::types::ToolCall {
+                            id: tc.id.clone(),
+                            name: tc.name.clone(),
+                            input: val,
+                        })
                 })
                 .collect();
             Some(parsed?)

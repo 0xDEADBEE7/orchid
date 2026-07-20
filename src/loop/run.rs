@@ -1,11 +1,11 @@
 use crate::get_orchid_dir;
 use crate::log::{DiagLogger, LogLevel};
+use crate::provider::{Provider, StreamEvent};
 use crate::r#loop::guard::RunGuard;
 use crate::r#loop::lifecycle;
 use crate::r#loop::resolve::{resolve_persona_budget, resolve_system_prompt};
 use crate::r#loop::stream::StreamState;
 use crate::r#loop::{events, history};
-use crate::provider::{Provider, StreamEvent};
 use crate::tools;
 use crate::types::{TokenBudget, ToolResult};
 use globset::GlobSet;
@@ -82,12 +82,9 @@ pub fn build_context(convo_id: &str) -> Result<LoopContext, String> {
         .saturating_sub(effective_budget.warn_threshold))
         / 10;
 
-    let global_scope_set =
-        crate::tools::scope::compile_exceptions(&config.scope_exceptions);
+    let global_scope_set = crate::tools::scope::compile_exceptions(&config.scope_exceptions);
     let convo_scope_set =
-        crate::tools::scope::compile_exceptions(
-            meta.scope_exceptions.as_deref().unwrap_or(&[]),
-        );
+        crate::tools::scope::compile_exceptions(meta.scope_exceptions.as_deref().unwrap_or(&[]));
 
     Ok(LoopContext {
         store,
@@ -145,7 +142,8 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             ));
         }
 
-        ctx.log.info("provider_send", &format!("messages={}", messages.len()));
+        ctx.log
+            .info("provider_send", &format!("messages={}", messages.len()));
 
         let mut stream_state = StreamState::create(&ctx.convo_dir);
         let response = {
@@ -163,7 +161,9 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                         ctx.log.error("stream_error", &e.to_string());
                         return Err(format!("provider error: {}", e));
                     }
-                    Ok(StreamEvent::TextDelta(_)) | Ok(StreamEvent::ToolCallDelta { .. }) | Ok(StreamEvent::ReasoningDelta(_)) => {
+                    Ok(StreamEvent::TextDelta(_))
+                    | Ok(StreamEvent::ToolCallDelta { .. })
+                    | Ok(StreamEvent::ReasoningDelta(_)) => {
                         stream_state.tick();
                     }
                     Ok(StreamEvent::Complete(resp)) => {
@@ -267,11 +267,13 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     &ctx.convo_scope_set,
                 ) {
                     Ok(raw) => {
-                        ctx.log.info("tool_result", &format!("tool={}", tool_call.name));
+                        ctx.log
+                            .info("tool_result", &format!("tool={}", tool_call.name));
                         raw
                     }
                     Err(e) => {
-                        ctx.log.error("tool_error", &format!("tool={} err={}", tool_call.name, e));
+                        ctx.log
+                            .error("tool_error", &format!("tool={} err={}", tool_call.name, e));
                         serde_json::Value::String(format!("Error: {}", e))
                     }
                 };

@@ -10,5 +10,3 @@ pub fn exists_check(id: &str, base_path: &Path) -> bool {
     let convo_dir = base_path.join(id);
     convo_dir.exists()
 }
-
-

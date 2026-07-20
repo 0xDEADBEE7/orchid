@@ -26,5 +26,3 @@ fn read_metadata(id: &str, base_path: &Path) -> Result<Metadata, String> {
     })?;
     serde_json::from_str(&contents).map_err(|e| format!("invalid metadata JSON: {}", e))
 }
-
-

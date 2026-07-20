@@ -9,7 +9,9 @@ pub struct OpenAiEventMapper {
 
 impl OpenAiEventMapper {
     pub fn new() -> Self {
-        OpenAiEventMapper { finish_reason: None }
+        OpenAiEventMapper {
+            finish_reason: None,
+        }
     }
 }
 
@@ -75,7 +77,8 @@ impl OpenAiEventMapper {
         }
 
         // tool_calls — use .get() to avoid panics on missing keys (LM Studio may omit them)
-        let calls = data.get("choices")
+        let calls = data
+            .get("choices")
             .and_then(|c| c.get(0))
             .and_then(|c| c.get("delta"))
             .and_then(|d| d.get("tool_calls"));
@@ -91,17 +94,19 @@ impl OpenAiEventMapper {
 
                 if let Some(ref id) = call.get("id").and_then(|v| v.as_str()) {
                     if idx >= tool_calls.len() {
-                        let name = call.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()).unwrap_or("").to_string();
+                        let name = call
+                            .get("function")
+                            .and_then(|f| f.get("name"))
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         tool_calls.push(crate::client::sse::ToolCallAccumulator {
                             index: idx,
                             id: id.to_string(),
                             name: name.clone(),
                             input_json: String::new(),
                         });
-                        events.push(StreamEvent::ToolCallDelta {
-                            index: idx,
-                            name,
-                        });
+                        events.push(StreamEvent::ToolCallDelta { index: idx, name });
                     } else if tool_calls[idx].id.is_empty() {
                         tool_calls[idx].id = id.to_string();
                     }
@@ -150,5 +155,3 @@ impl<R: BufRead> Iterator for OpenAiStream<R> {
         self.inner.next()
     }
 }
-
-

@@ -1,4 +1,4 @@
-use orchid::provider::{Response, ProviderError};
+use orchid::provider::{ProviderError, Response};
 
 mod support;
 

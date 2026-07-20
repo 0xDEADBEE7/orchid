@@ -29,5 +29,3 @@ pub fn delete(id: String) -> Result<serde_json::Value, String> {
         "archived_at": chrono::Utc::now().to_rfc3339()
     }))
 }
-
-

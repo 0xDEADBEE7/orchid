@@ -30,5 +30,3 @@ pub fn set(
     let updated = store.update(&resolved_id, updates)?;
     serde_json::to_value(&updated).map_err(|e| e.to_string())
 }
-
-

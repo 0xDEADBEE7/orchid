@@ -57,5 +57,3 @@ pub trait Provider: Send + Sync {
         messages: Vec<Message>,
     ) -> Result<Box<dyn Iterator<Item = Result<StreamEvent, ProviderError>>>, ProviderError>;
 }
-
-
