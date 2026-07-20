@@ -1,22 +1,32 @@
-use crate::load_config;
 use crate::Store;
 use serde_json::json;
 use std::path::Path;
 
-pub fn list(config_dir: &Path) -> Result<serde_json::Value, String> {
-    let store = Store::with_config_dir(config_dir)?;
-    let convos = store.list()?;
-
-    Ok(json!(convos))
+pub fn list(config_dir: &Path, resource: Option<&str>) -> Result<serde_json::Value, String> {
+    match resource.unwrap_or("sessions") {
+        "sessions" => {
+            let store = Store::with_config_dir(config_dir)?;
+            Ok(json!(store.list()?))
+        }
+        kind @ ("connections" | "policies" | "prompts") => list_resources(config_dir, kind),
+        _ => Err("unknown resource".to_string()),
+    }
 }
 
-pub fn list_profiles() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-    Ok(json!(config.profiles))
-}
-
-pub fn list_personas() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-    let personas = config.extra.get("personas").cloned().unwrap_or(json!({}));
-    Ok(personas)
+fn list_resources(config_dir: &Path, kind: &str) -> Result<serde_json::Value, String> {
+    let dir = config_dir.join(kind);
+    let suffix = if kind == "prompts" { ".md" } else { ".json" };
+    let mut names = Vec::new();
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some(&suffix[1..]) {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    names.push(stem.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    Ok(json!(names))
 }

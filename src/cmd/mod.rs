@@ -9,14 +9,12 @@ pub mod server_action;
 pub mod set;
 pub mod stop;
 
-pub use config::{
-    config_current, config_path, config_scope_exceptions, config_use, config_validate,
-};
+pub use config::{config_list, config_show, config_validate};
 pub use create::create;
 pub use delete::delete;
 pub use help::{help, help_command};
 pub use internal_run::internal_run;
-pub use list::{list, list_personas, list_profiles};
+pub use list::list;
 pub use send::send;
 pub use server_action::server_action;
 pub use set::set;

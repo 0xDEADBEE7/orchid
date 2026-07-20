@@ -1,4 +1,4 @@
-use orchid::cli::{output, parse_args, Command, ConfigSubcommand, ListSubcommand};
+use orchid::cli::{output, parse_args, Command, ConfigSubcommand};
 use orchid::cmd;
 use orchid::JsonError;
 use std::env;
@@ -42,14 +42,10 @@ fn main() {
     let result = match cmd {
         Command::Help(None) => cmd::help(),
         Command::Help(Some(ref cmd_name)) => cmd::help_command(cmd_name),
-        Command::List(None) => cmd::list(&config_dir),
-        Command::List(Some(ListSubcommand::Profiles)) => cmd::list_profiles(),
-        Command::List(Some(ListSubcommand::Personas)) => cmd::list_personas(),
-        Command::Config(ConfigSubcommand::Current) => cmd::config_current(),
-        Command::Config(ConfigSubcommand::Path) => cmd::config_path(),
-        Command::Config(ConfigSubcommand::Use(profile)) => cmd::config_use(&profile),
-        Command::Config(ConfigSubcommand::ScopeExceptions) => cmd::config_scope_exceptions(),
+        Command::List(resource) => cmd::list(&config_dir, resource.as_deref()),
         Command::Config(ConfigSubcommand::Validate) => cmd::config_validate(&config_dir),
+        Command::Config(ConfigSubcommand::List) => cmd::config_list(&config_dir),
+        Command::Config(ConfigSubcommand::Show(resource)) => cmd::config_show(&config_dir, &resource),
         Command::Create {
             label,
             working_dir,
@@ -75,13 +71,13 @@ fn main() {
         Command::Set {
             id,
             label,
-            persona,
+            persona: _,
             working_dir,
             scope_exceptions,
         } => cmd::set(
             id,
             label,
-            persona,
+            None,
             working_dir,
             scope_exceptions,
             &config_dir,

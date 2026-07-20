@@ -17,7 +17,7 @@ fn test_list_uses_selected_config_sessions() {
         .create(Some("other".to_string()), None, None, None, None)
         .unwrap();
 
-    let result = list(&selected).unwrap();
+    let result = list(&selected, None).unwrap();
     let items = result.as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], selected_meta.id);

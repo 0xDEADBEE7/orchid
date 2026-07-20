@@ -6,7 +6,7 @@ pub use output::{print_error, print_json};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Help(Option<String>),
-    List(Option<ListSubcommand>),
+    List(Option<String>),
     Config(ConfigSubcommand),
     Create {
         label: Option<String>,
@@ -43,18 +43,10 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ListSubcommand {
-    Profiles,
-    Personas,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum ConfigSubcommand {
-    Use(String),
-    Current,
-    Path,
-    ScopeExceptions,
     Validate,
+    List,
+    Show(String),
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
@@ -89,7 +81,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 "stop",
                 "kill",
                 "__run",
-                "server-action",
                 "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
@@ -184,13 +175,13 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     let cmd = match cmd_name.as_str() {
         "help" => Command::Help(positional.into_iter().next()),
         "list" => {
-            let sub = match positional.first().map(|s| s.as_str()) {
-                Some("profiles") => Some(ListSubcommand::Profiles),
-                Some("personas") => Some(ListSubcommand::Personas),
-                Some(other) => return Err(format!("unknown list subcommand: {}", other)),
-                None => None,
-            };
-            Command::List(sub)
+            let resource = positional.first().cloned();
+            if let Some(name) = &resource {
+                if !matches!(name.as_str(), "sessions" | "connections" | "policies" | "prompts") {
+                    return Err(format!("unknown list resource: {}", name));
+                }
+            }
+            Command::List(resource)
         }
         "create" => {
             let label = flags.remove("label").flatten();
@@ -209,23 +200,16 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         }
         "config" => {
             if positional.is_empty() {
-                return Err(
-                    "config requires subcommand: use, current, path, or validate".to_string(),
-                );
+                return Err("config requires subcommand: validate, list, or show".to_string());
             }
-            let sub = &positional[0];
-            match sub.as_str() {
-                "use" => {
-                    if positional.len() < 2 {
-                        return Err("config use requires <profile> argument".to_string());
-                    }
-                    Command::Config(ConfigSubcommand::Use(positional[1].clone()))
-                }
-                "current" => Command::Config(ConfigSubcommand::Current),
-                "path" => Command::Config(ConfigSubcommand::Path),
-                "scope-exceptions" => Command::Config(ConfigSubcommand::ScopeExceptions),
+            match positional[0].as_str() {
                 "validate" => Command::Config(ConfigSubcommand::Validate),
-                _ => return Err(format!("unknown config subcommand: {}", sub)),
+                "list" => Command::Config(ConfigSubcommand::List),
+                "show" => {
+                    let resource = positional.get(1).cloned().ok_or_else(|| "config show requires <resource>".to_string())?;
+                    Command::Config(ConfigSubcommand::Show(resource))
+                }
+                other => return Err(format!("unknown config subcommand: {}", other)),
             }
         }
         "send" => {
@@ -271,7 +255,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .map(|v| v.map(|s| vec![s]))
                 .unwrap_or_default();
             if flags.remove("profile").is_some() {
-                return Err("--profile is not supported on set; use `orchid config use <name>` to switch the active profile".to_string());
+                return Err("--profile is not supported on set; select a policy with --policy on create/send".to_string());
             }
 
             Command::Set {
@@ -306,28 +290,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .cloned()
                 .ok_or_else(|| "__run requires <id>".to_string())?;
             Command::InternalRun { id }
-        }
-        "server-action" => {
-            let action = positional
-                .first()
-                .cloned()
-                .ok_or_else(|| "server-action requires <action>".to_string())?;
-            let profile = flags.remove("profile").flatten();
-            // Remaining flags in `flags` are body params for the action.
-            let mut body_params = Vec::new();
-            for (k, v) in std::mem::take(&mut flags).into_iter() {
-                if let Some(val) = v {
-                    body_params.push((k, val));
-                }
-            }
-            return Ok((
-                Command::ServerAction {
-                    action,
-                    profile,
-                    body_params,
-                },
-                flags,
-            ));
         }
         "validate" => Command::Config(ConfigSubcommand::Validate),
         _ => return Err(format!("unknown command: {}", cmd_name)),

@@ -1,71 +1,37 @@
-use crate::{get_orchid_dir, load_config, Config, Limits};
 use serde_json::json;
-use std::fs;
+use std::path::Path;
 
-pub fn config_use(profile: &str) -> Result<serde_json::Value, String> {
-    let config_dir = get_orchid_dir()?;
-
-    let config_path = config_dir.join("config.json");
-
-    let mut config: Config = if config_path.exists() {
-        let contents = fs::read_to_string(&config_path)
-            .map_err(|e| format!("failed to read config: {}", e))?;
-        serde_json::from_str(&contents).map_err(|e| format!("invalid config JSON: {}", e))?
-    } else {
-        Config {
-            current_profile: None,
-            profiles: std::collections::HashMap::new(),
-            limits: Limits::default(),
-            log_level: None,
-            env_file: None,
-            extra: std::collections::HashMap::new(),
-            scope_exceptions: Vec::new(),
-        }
-    };
-
-    if !config.profiles.contains_key(profile) {
-        return Err(format!("profile '{}' not found in config", profile));
-    }
-
-    config.current_profile = Some(profile.to_string());
-
-    fs::create_dir_all(&config_dir).map_err(|e| format!("failed to create config dir: {}", e))?;
-
-    let temp_path = config_dir.join(".config.json.tmp");
-    let json_str = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("failed to serialize config: {}", e))?;
-
-    fs::write(&temp_path, &json_str).map_err(|e| format!("failed to write temp config: {}", e))?;
-
-    fs::rename(&temp_path, &config_path).map_err(|e| format!("failed to update config: {}", e))?;
-
-    Ok(json!({"profile": profile}))
-}
-
-pub fn config_current() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-
-    let profile = config
-        .current_profile
-        .ok_or_else(|| "no profile currently set".to_string())?;
-
-    Ok(json!({"current_profile": profile}))
-}
-
-pub fn config_path() -> Result<serde_json::Value, String> {
-    let path = get_orchid_dir()?.join("config.json");
-
-    Ok(json!({"path": path.display().to_string()}))
-}
-
-pub fn config_scope_exceptions() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-    Ok(json!({"scope_exceptions": config.scope_exceptions}))
-}
-
-pub fn config_validate(config_dir: &std::path::Path) -> Result<serde_json::Value, String> {
+pub fn config_validate(config_dir: &Path) -> Result<serde_json::Value, String> {
     crate::ConfigDir::new(config_dir)
         .validate()
         .map_err(|e| e.to_string())?;
     Ok(json!({"status": "ok", "config": config_dir.display().to_string()}))
+}
+
+pub fn config_list(config_dir: &Path) -> Result<serde_json::Value, String> {
+    Ok(json!({
+        "connections": crate::cmd::list::list(config_dir, Some("connections"))?,
+        "policies": crate::cmd::list::list(config_dir, Some("policies"))?,
+        "prompts": crate::cmd::list::list(config_dir, Some("prompts"))?,
+    }))
+}
+
+pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Value, String> {
+    let root = crate::ConfigDir::new(config_dir);
+    match resource {
+        "root" | "config" => serde_json::from_str(&std::fs::read_to_string(root.root_path()).map_err(|e| e.to_string())?).map_err(|e| e.to_string()),
+        name if name.starts_with("connection/") => {
+            let value = root.load_connection(&name[11..]).map_err(|e| e.to_string())?;
+            serde_json::to_value(value).map_err(|e| e.to_string())
+        }
+        name if name.starts_with("policy/") => {
+            let value = root.load_policy(&name[7..]).map_err(|e| e.to_string())?;
+            serde_json::to_value(value).map_err(|e| e.to_string())
+        }
+        name if name.starts_with("prompt/") => {
+            let value = root.load_prompt(&name[7..]).map_err(|e| e.to_string())?;
+            Ok(json!({"name": &name[7..], "content": value}))
+        }
+        _ => Err("resource must be root, connection/<name>, policy/<name>, or prompt/<name>".to_string()),
+    }
 }

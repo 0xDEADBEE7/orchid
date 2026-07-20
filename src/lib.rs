@@ -13,10 +13,10 @@ pub mod loop_module {
     pub use crate::r#loop::run::run;
 }
 
-pub use cli::{parse_args, Command, ConfigSubcommand, ListSubcommand};
+pub use cli::{parse_args, Command, ConfigSubcommand};
 pub use client::base::{is_retryable, BaseClient};
 pub use client::{create_provider_from_connection_with_log, resolve_env_inline};
-pub use cmd::{config_current, config_path, config_use, delete, internal_run, list, send, set};
+pub use cmd::{config_list, config_show, config_validate, delete, internal_run, list, send, set};
 pub use config::resolve::{
     create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,
 };

@@ -39,37 +39,26 @@ fn test_parse_list() {
 }
 
 #[test]
-fn test_parse_config_current() {
-    let args = vec![
-        "send".to_string(),
-        "config".to_string(),
-        "current".to_string(),
-    ];
+fn test_parse_config_validate() {
+    let args = vec!["config".to_string(), "validate".to_string()];
     let (cmd, _) = parse_args(&args).unwrap();
-    assert_eq!(cmd, Command::Config(ConfigSubcommand::Current));
+    assert_eq!(cmd, Command::Config(ConfigSubcommand::Validate));
 }
 
 #[test]
-fn test_parse_config_use() {
-    let args = vec![
-        "send".to_string(),
-        "config".to_string(),
-        "use".to_string(),
-        "myprofile".to_string(),
-    ];
+fn test_parse_config_list() {
+    let args = vec!["config".to_string(), "list".to_string()];
     let (cmd, _) = parse_args(&args).unwrap();
-    assert_eq!(
-        cmd,
-        Command::Config(ConfigSubcommand::Use("myprofile".to_string()))
-    );
+    assert_eq!(cmd, Command::Config(ConfigSubcommand::List));
 }
 
 #[test]
-fn test_parse_config_path() {
-    let args = vec!["send".to_string(), "config".to_string(), "path".to_string()];
+fn test_parse_config_show() {
+    let args = vec!["config".to_string(), "show".to_string(), "policy/default".to_string()];
     let (cmd, _) = parse_args(&args).unwrap();
-    assert_eq!(cmd, Command::Config(ConfigSubcommand::Path));
+    assert_eq!(cmd, Command::Config(ConfigSubcommand::Show("policy/default".to_string())));
 }
+
 
 #[test]
 fn test_parse_flags() {
@@ -111,9 +100,14 @@ fn test_parse_config_no_subcommand() {
 }
 
 #[test]
-fn test_parse_config_use_no_profile() {
-    let args = vec!["send".to_string(), "config".to_string(), "use".to_string()];
-    assert!(parse_args(&args).is_err());
+fn test_parse_config_legacy_commands_rejected() {
+    for args in [
+        vec!["config".to_string(), "current".to_string()],
+        vec!["config".to_string(), "path".to_string()],
+        vec!["config".to_string(), "use".to_string(), "default".to_string()],
+    ] {
+        assert!(parse_args(&args).is_err());
+    }
 }
 
 #[test]
@@ -252,111 +246,7 @@ fn test_unknown_flag_does_not_consume_message() {
 }
 
 #[test]
-fn test_parse_server_action_minimal() {
-    let args = vec![
-        "send".to_string(),
-        "server-action".to_string(),
-        "list_models".to_string(),
-    ];
-    let (cmd, _) = parse_args(&args).unwrap();
-    match cmd {
-        Command::ServerAction {
-            action,
-            profile,
-            body_params,
-        } => {
-            assert_eq!(action, "list_models");
-            assert!(profile.is_none());
-            assert!(body_params.is_empty());
-        }
-        _ => panic!("expected ServerAction"),
-    }
-}
-
-#[test]
-fn test_parse_server_action_with_profile() {
-    let args = vec![
-        "send".to_string(),
-        "server-action".to_string(),
-        "load_model".to_string(),
-        "--profile".to_string(),
-        "local-lmstudio".to_string(),
-    ];
-    let (cmd, _) = parse_args(&args).unwrap();
-    match cmd {
-        Command::ServerAction {
-            action,
-            profile,
-            body_params,
-        } => {
-            assert_eq!(action, "load_model");
-            assert_eq!(profile, Some("local-lmstudio".to_string()));
-            assert!(body_params.is_empty());
-        }
-        _ => panic!("expected ServerAction"),
-    }
-}
-
-#[test]
-fn test_parse_server_action_with_body_params() {
-    let args = vec![
-        "send".to_string(),
-        "server-action".to_string(),
-        "load_model".to_string(),
-        "--profile".to_string(),
-        "local-lmstudio".to_string(),
-        "--model".to_string(),
-        "openai/gpt-oss-20b".to_string(),
-        "--context_length".to_string(),
-        "16384".to_string(),
-    ];
-    let (cmd, _) = parse_args(&args).unwrap();
-    match cmd {
-        Command::ServerAction {
-            action,
-            profile,
-            body_params,
-        } => {
-            assert_eq!(action, "load_model");
-            assert_eq!(profile, Some("local-lmstudio".to_string()));
-            assert_eq!(body_params.len(), 2);
-            assert_eq!(
-                body_params[0],
-                ("context_length".to_string(), "16384".to_string())
-            );
-            assert_eq!(
-                body_params[1],
-                ("model".to_string(), "openai/gpt-oss-20b".to_string())
-            );
-        }
-        _ => panic!("expected ServerAction"),
-    }
-}
-
-#[test]
-fn test_parse_server_action_missing_action() {
-    let args = vec!["send".to_string(), "server-action".to_string()];
-    let err = parse_args(&args).unwrap_err();
-    assert!(err.contains("requires <action>"));
-}
-
-#[test]
-fn test_parse_server_action_with_eq_flag() {
-    let args = vec![
-        "send".to_string(),
-        "server-action".to_string(),
-        "load_model".to_string(),
-        "--model=openai/gpt-oss-20b".to_string(),
-    ];
-    let (cmd, _) = parse_args(&args).unwrap();
-    match cmd {
-        Command::ServerAction { body_params, .. } => {
-            assert_eq!(body_params.len(), 1);
-            assert_eq!(
-                body_params[0],
-                ("model".to_string(), "openai/gpt-oss-20b".to_string())
-            );
-        }
-        _ => panic!("expected ServerAction"),
-    }
+fn test_parse_server_action_is_removed() {
+    let args = vec!["server-action".to_string(), "list_models".to_string()];
+    assert!(parse_args(&args).is_err());
 }
