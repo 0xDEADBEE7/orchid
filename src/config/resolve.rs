@@ -1,13 +1,13 @@
 use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct EffectiveSessionConfig {
     pub policy_name: String,
     pub policy_hash: String,

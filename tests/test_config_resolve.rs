@@ -258,6 +258,71 @@ fn test_resolve_missing_root_config_fails() {
 }
 
 #[test]
+fn test_policy_environment_resolves_without_leaking_missing_values() {
+    let env = TestEnv::new();
+    let dir = env.dir();
+    std::fs::create_dir_all(dir.join("connections")).unwrap();
+    std::fs::create_dir_all(dir.join("policies")).unwrap();
+    std::fs::create_dir_all(dir.join("prompts")).unwrap();
+
+    write_config(&dir, "default");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
+    let missing = "ORCHID_POLICY_MISSING_REDACTION_TEST";
+    std::env::remove_var(missing);
+    let policy = serde_json::json!({
+        "connections": ["local"],
+        "env": {"TOKEN": format!("Bearer env.{}", missing)}
+    });
+    std::fs::write(dir.join("policies/default.json"), policy.to_string()).unwrap();
+
+    let error = resolve_effective_config(&ConfigDir::new(&dir), None, Some("/tmp")).unwrap_err();
+    assert!(error.contains(missing));
+    assert!(!error.contains("Bearer"));
+}
+
+#[test]
+fn test_policy_environment_is_runtime_only() {
+    let env = TestEnv::new();
+    let dir = env.dir();
+    std::fs::create_dir_all(dir.join("connections")).unwrap();
+    std::fs::create_dir_all(dir.join("policies")).unwrap();
+    std::fs::create_dir_all(dir.join("prompts")).unwrap();
+
+    write_config(&dir, "default");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
+    let secret = "policy-runtime-secret";
+    std::env::set_var("ORCHID_POLICY_SECRET_TEST", secret);
+    let policy = serde_json::json!({
+        "connections": ["local"],
+        "env": {"TOKEN": "env.ORCHID_POLICY_SECRET_TEST"}
+    });
+    let policy_path = dir.join("policies/default.json");
+    std::fs::write(&policy_path, policy.to_string()).unwrap();
+
+    let effective = resolve_effective_config(&ConfigDir::new(&dir), None, Some("/tmp")).unwrap();
+    assert_eq!(effective.env_vars.get("TOKEN"), Some(&secret.to_string()));
+    let serialized = format!("policy={} env_vars=<runtime-only>", effective.policy_name);
+    assert!(!serialized.contains(secret));
+    assert_eq!(effective.env_vars.get("TOKEN"), Some(&secret.to_string()));
+    assert_eq!(
+        std::fs::read_to_string(policy_path).unwrap(),
+        policy.to_string()
+    );
+    std::env::remove_var("ORCHID_POLICY_SECRET_TEST");
+}
+#[test]
 fn test_resolve_preserves_permissions() {
     let env = TestEnv::new();
     let dir = env.dir();
