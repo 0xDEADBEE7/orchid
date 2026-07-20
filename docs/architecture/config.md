@@ -1,66 +1,71 @@
 # Config
 
-Configuration is stored at `~/.config/orchid/config.json`. See [storage.md](storage.md) for the full directory layout.
+The new configuration is a self-contained directory selected with
+`--config <directory>`. See [storage.md](storage.md) for the layout.
 
-## Schema
+## Root schema
+
+`config.json` contains the default policy name:
 
 ```json
 {
-  "current_profile": "anthropic-default",
-  "profiles": {
-    "anthropic-default": {
-      "provider": "anthropic",
-      "base_url": "https://api.anthropic.com",
-      "api_key": "env.ANTHROPIC_API_KEY",
-      "model": "claude-sonnet-4-6",
-      "max_steps": 200
-    }
-  },
-  "personas": {
-    "main-dev": {
-      "prompts": ["base", "concise", "developer"],
-      "disabled-tools": []
-    },
-    "no-edit": {
-      "prompts": ["base", "concise", "tool-use"],
-      "disabled-tools": ["fs_edit"]
-    }
+  "policy": "default"
+}
+```
+
+## Connection schema
+
+Each `connections/<name>.json` defines one inference endpoint:
+
+```json
+{
+  "interface": "anthropic",
+  "base_url": "https://api.anthropic.com",
+  "api_key": "env.ANTHROPIC_API_KEY",
+  "model": "claude-sonnet-4-6",
+  "params": {
+    "max_tokens": 8192
   }
 }
 ```
 
-## Profile fields
+Connection fields contain endpoint and provider details only. API keys must use
+`env.<VAR>` references and are resolved at runtime.
 
-| Field | Description |
-|-------|-------------|
-| `provider` | Internal adapter: `anthropic` only |
-| `base_url` | API endpoint — use to point at a custom or proxied endpoint |
-| `api_key` | `env.<VAR>` reference, resolved from environment at runtime |
-| `model` | Default model for this profile |
-| `meta_model` | Model used by the meta tool for delegated inference |
-| `meta_persona` | Persona used as the meta model's system prompt (default: `meta`) |
-| `max_steps` | Maximum tool loop iterations per turn (default: 200) |
-| `max_tokens` | Maximum output tokens per model response (default: 8192). |
+## Policy schema
 
-## `env.` resolution
+Each `policies/<name>.json` defines execution behavior:
 
-Any value prefixed with `env.` is an environment variable reference resolved at runtime:
+```json
+{
+  "connections": ["anthropic"],
+  "prompt": "engineering",
+  "permissions": {
+    "tools": ["bash", "fs_read", "fs_edit"],
+    "paths": ["/tmp/**"]
+  },
+  "limits": {
+    "token_warn_threshold": 80000,
+    "token_hard_limit": 120000
+  }
+}
+```
 
-- `"env.ANTHROPIC_API_KEY"` → reads `$ANTHROPIC_API_KEY` from the process environment
-- If the variable is unset, orchid exits with a JSON error before making any API call
-- Literal key values are not supported — keys must always use `env.` indirection
+The ordered `connections` list controls routing. Policies own prompts,
+permissions, and limits; sessions may only narrow those permissions.
 
-## Active profile
+## Prompts
 
-`current_profile` names the profile used for all runs unless overridden. Changed via `orchid config use <profile>`. See [cli.md](cli.md).
+Prompts are Markdown files under `prompts/`. A policy references a prompt by
+name. Missing resources are validation errors.
 
-## Personas
+## Configuration directory
 
-`personas` is a map of name to persona object. Each persona object has:
+Use a local directory to isolate the new setup from any existing tooling:
 
-| Field | Description |
-|-------|-------------|
-| `prompts` | Ordered list of system prompt fragment names to compose |
-| `disabled-tools` | Tools to remove from the model's tool list for this persona |
+```bash
+orchid --config ./config validate
+orchid --config ./config list policies
+```
 
-Prompt fragments are loaded from `~/.config/orchid/system-prompts/<name>.md`. See [persona.md](persona.md) for the full persona system.
+The selected directory is not merged with or read alongside another directory.
