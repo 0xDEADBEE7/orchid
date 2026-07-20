@@ -16,15 +16,8 @@ pub struct Edit {
 #[derive(Deserialize)]
 pub struct FsEditInput {
     pub path: String,
-    /// Batch edits — applied in sequence, fail fast.
-    /// Accepts either a JSON array or a JSON-encoded string (model compat).
-    #[serde(default, deserialize_with = "deserialize_edits")]
+    #[serde(deserialize_with = "deserialize_edits")]
     pub edits: Vec<Edit>,
-    /// Legacy single-edit fields (still accepted for backward compatibility).
-    pub old_string: Option<String>,
-    pub new_string: Option<String>,
-    #[serde(default)]
-    pub replace_all: bool,
 }
 
 fn deserialize_edits<'de, D>(deserializer: D) -> Result<Vec<Edit>, D::Error>
@@ -74,20 +67,10 @@ pub fn execute(
 
     let resolved_path = crate::tools::scope::expand_path(&edit_input.path, working_dir);
 
-    // Build the edits list: prefer `edits` array, fall back to legacy fields.
-    let edits: Vec<Edit> = if !edit_input.edits.is_empty() {
-        edit_input.edits
-    } else if let (Some(old), Some(new)) = (edit_input.old_string, edit_input.new_string) {
-        vec![Edit {
-            old_string: old,
-            new_string: new,
-            replace_all: edit_input.replace_all,
-        }]
-    } else {
-        return Err(
-            "invalid fs_edit input: provide 'edits' array or 'old_string'/'new_string'".to_string(),
-        );
-    };
+    let edits = edit_input.edits;
+    if edits.is_empty() {
+        return Err("invalid fs_edit input: 'edits' must not be empty".to_string());
+    }
 
     // Create-file shortcut: single edit with empty old_string.
     if edits.len() == 1 && edits[0].old_string.is_empty() {

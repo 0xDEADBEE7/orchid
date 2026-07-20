@@ -1,3 +1,40 @@
+#[test]
+fn test_fs_edit_rejects_legacy_single_edit_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file.txt");
+    std::fs::write(&path, "before").unwrap();
+    let result = orchid::tools::fs_edit::execute(
+        serde_json::json!({
+            "path": path.display().to_string(),
+            "old_string": "before",
+            "new_string": "after"
+        }),
+        dir.path().to_str().unwrap(),
+        true,
+        &globset::GlobSet::empty(),
+        &globset::GlobSet::empty(),
+        &[],
+    );
+    assert!(result.is_err());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "before");
+}
+
+#[test]
+fn test_fs_edit_rejects_empty_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file.txt");
+    std::fs::write(&path, "before").unwrap();
+    let result = orchid::tools::fs_edit::execute(
+        serde_json::json!({"path": path.display().to_string(), "edits": []}),
+        dir.path().to_str().unwrap(),
+        true,
+        &globset::GlobSet::empty(),
+        &globset::GlobSet::empty(),
+        &[],
+    );
+    assert!(result.unwrap_err().contains("must not be empty"));
+}
+
 use orchid::cmd::{config_list, config_show};
 use std::fs;
 
