@@ -93,6 +93,18 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn rejects_singular_path_input() {
+        let paths = fs_read::extract_paths(&serde_json::json!({"path": "file.txt"}));
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn accepts_paths_array_only() {
+        let paths = fs_read::extract_paths(&serde_json::json!({"paths": ["a", "b"]}));
+        assert_eq!(paths, vec!["a", "b"]);
+    }
+
+    #[test]
     fn denies_tools_not_in_policy() {
         let error = execute_tool_with_permissions(
             "bash",

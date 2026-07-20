@@ -4,18 +4,17 @@ use serde_json::Value;
 use std::fs;
 
 /// Extract paths from an fs_read tool call input.
-/// Supports both `{"paths": [...]}` (batch) and legacy `{"path": "..."}`.
 pub fn extract_paths(input: &Value) -> Vec<String> {
-    if let Some(paths) = input.get("paths").and_then(|v| v.as_array()) {
-        paths
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect()
-    } else if let Some(path) = input.get("path").and_then(|v| v.as_str()) {
-        vec![path.to_string()]
-    } else {
-        vec![]
-    }
+    input
+        .get("paths")
+        .and_then(|v| v.as_array())
+        .map(|paths| {
+            paths
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Returns a JSON object: `{"<path>": "<content>", ...}`.
@@ -32,7 +31,7 @@ pub fn execute(
     let paths = extract_paths(&input);
 
     if paths.is_empty() {
-        return Err("invalid fs_read input: expected 'paths' array or 'path' string".to_string());
+        return Err("invalid fs_read input: expected non-empty 'paths' array".to_string());
     }
 
     if paths.len() == 1 {
