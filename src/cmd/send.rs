@@ -1,12 +1,12 @@
-use crate::config::resolve::create_provider_from_connection;
 use crate::cmd::create::resolve_working_dir;
-use crate::config::resolve::{resolve as resolve_effective_config, EffectiveSessionConfig};
+use crate::config::resolve::{
+    create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,
+};
 use crate::config::ConfigDir;
 use crate::convo::{resolve, Store};
 use crate::log::LogWriter;
 use crate::loop_module::run as run_tool_loop;
 use crate::types::{ConvoEvent, MessageEvent};
-use crate::{get_convo_jsonl_path, get_orchid_dir};
 use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -20,10 +20,10 @@ pub fn send(
     label: Option<String>,
     working_dir: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
+    let store = Store::with_config_dir(config_dir)?;
 
     let convo_id = if let Some(id_or_label) = id {
-        let base_path = get_orchid_dir()?.join("conversations");
+        let base_path = config_dir.join("sessions");
         let resolved_id = resolve::resolve(&id_or_label, &base_path)?.id;
 
         if label.is_some() || working_dir.is_some() {
@@ -54,7 +54,10 @@ pub fn send(
         return Err(format!("conversation {} is already running", convo_id));
     }
 
-    let convo_path = get_convo_jsonl_path(&convo_id)?;
+    let convo_path = config_dir
+        .join("sessions")
+        .join(&convo_id)
+        .join("conversation.jsonl");
     let event = ConvoEvent::Message(MessageEvent::new("user", &message));
     LogWriter::append(&convo_path, &event)?;
 
@@ -68,9 +71,12 @@ pub fn send(
             .first()
             .ok_or_else(|| "policy has no connections configured".to_string())?;
 
-        let log_path = get_orchid_dir()
-            .ok()
-            .map(|d| d.join("conversations").join(&convo_id).join("orchid.log"));
+        let log_path = Some(
+            config_dir
+                .join("sessions")
+                .join(&convo_id)
+                .join("orchid.log"),
+        );
 
         let provider =
             create_provider_from_connection(connection, log_path).map_err(|e| e.to_string())?;
