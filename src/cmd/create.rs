@@ -4,8 +4,9 @@ pub fn create(
     label: Option<String>,
     working_dir: Option<String>,
     scope_exceptions: Option<Vec<String>>,
+    config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
+    let store = Store::with_config_dir(config_dir)?;
     let wd = resolve_working_dir(working_dir)?;
     let meta = store.create(label, Some(wd), None, None, scope_exceptions)?;
     serde_json::to_value(&meta).map_err(|e| e.to_string())

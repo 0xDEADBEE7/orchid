@@ -54,7 +54,7 @@ fn main() {
             label,
             working_dir,
             scope_exceptions,
-        } => cmd::create(label, working_dir, scope_exceptions),
+        } => cmd::create(label, working_dir, scope_exceptions, &config_dir),
         Command::Send {
             id,
             message,
