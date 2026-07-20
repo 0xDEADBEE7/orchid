@@ -117,19 +117,5 @@ pub fn create_provider_from_connection(
     conn: &Connection,
     log_path: Option<PathBuf>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
-    // Build a minimal Profile from the Connection to reuse existing provider
-    // constructors. The Connection is the new resource; Profile is legacy.
-    let profile = crate::config::Profile {
-        name: String::new(),
-        provider: conn.interface.clone(),
-        api_key: conn.api_key.clone().unwrap_or_default(),
-        base_url: conn.base_url.clone(),
-        model: conn.model.clone(),
-        params: conn.params.clone(),
-        headers: conn.headers.clone(),
-        server_actions: HashMap::new(),
-        extra: HashMap::new(),
-        env: HashMap::new(),
-    };
-    crate::create_provider_with_log(&profile, log_path)
+    crate::client::create_provider_from_connection_with_log(conn, log_path)
 }
