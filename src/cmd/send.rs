@@ -138,7 +138,7 @@ fn fork_tool_loop(
         ..Default::default()
     };
 
-    Store::with_config_dir(config_dir)?.update(convo_id, updates)?;;
+    Store::with_config_dir(config_dir)?.update(convo_id, updates)?;
 
     Ok(json!({
         "id": convo_id,
