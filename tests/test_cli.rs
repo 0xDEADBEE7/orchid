@@ -3,6 +3,34 @@ use orchid::cli::{parse_args, Command, ConfigSubcommand};
 mod support;
 
 #[test]
+fn test_parse_create_policy() {
+    let args = vec![
+        "create".to_string(),
+        "--policy".to_string(),
+        "advanced".to_string(),
+    ];
+    let (cmd, _) = parse_args(&args).unwrap();
+    match cmd {
+        Command::Create { policy, .. } => assert_eq!(policy.as_deref(), Some("advanced")),
+        _ => panic!("expected Create command"),
+    }
+}
+
+#[test]
+fn test_parse_send_policy() {
+    let args = vec![
+        "send".to_string(),
+        "hello".to_string(),
+        "--policy".to_string(),
+        "advanced".to_string(),
+    ];
+    let (cmd, _) = parse_args(&args).unwrap();
+    match cmd {
+        Command::Send { policy, .. } => assert_eq!(policy.as_deref(), Some("advanced")),
+        _ => panic!("expected Send command"),
+    }
+}
+#[test]
 fn test_parse_list() {
     let args = vec!["send".to_string(), "list".to_string()];
     let (cmd, flags) = parse_args(&args).unwrap();

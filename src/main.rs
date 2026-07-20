@@ -53,14 +53,16 @@ fn main() {
         Command::Create {
             label,
             working_dir,
+            policy,
             scope_exceptions,
-        } => cmd::create(label, working_dir, scope_exceptions, &config_dir),
+        } => cmd::create(label, working_dir, scope_exceptions, policy, &config_dir),
         Command::Send {
             id,
             message,
             await_completion,
             label,
             working_dir,
+            policy,
         } => cmd::send(
             id,
             message,
@@ -68,6 +70,7 @@ fn main() {
             &config_dir,
             label,
             working_dir,
+            policy,
         ),
         Command::Set {
             id,

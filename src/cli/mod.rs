@@ -11,6 +11,7 @@ pub enum Command {
     Create {
         label: Option<String>,
         working_dir: Option<String>,
+        policy: Option<String>,
         scope_exceptions: Option<Vec<String>>,
     },
     Send {
@@ -19,6 +20,7 @@ pub enum Command {
         await_completion: bool,
         label: Option<String>,
         working_dir: Option<String>,
+        policy: Option<String>,
     },
     Set {
         id: String,
@@ -114,7 +116,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "id",
         "label",
         "persona",
-        "profile",
+        "policy",
         "working-dir",
         "max-steps",
         "timeout",
@@ -192,6 +194,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         }
         "create" => {
             let label = flags.remove("label").flatten();
+            let policy = flags.remove("policy").flatten();
             let working_dir = flags.remove("working-dir").flatten();
             let scope_exceptions = flags
                 .remove("scope-exception")
@@ -200,6 +203,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             Command::Create {
                 label,
                 working_dir,
+                policy,
                 scope_exceptions,
             }
         }
@@ -233,12 +237,13 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let await_completion = flags.contains_key("await");
             flags.remove("await");
             let label = flags.remove("label").flatten();
+            let policy = flags.remove("policy").flatten();
             let working_dir = flags.remove("working-dir").flatten();
 
             // Check for unknown flags.
             if let Some(unknown) = flags
                 .iter()
-                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()))
+                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()) && k.as_str() != "profile")
                 .map(|(k, _)| k.as_str())
             {
                 return Err(format!("unknown flag: --{}", unknown));
@@ -250,6 +255,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 await_completion,
                 label,
                 working_dir,
+                policy,
             }
         }
         "set" => {

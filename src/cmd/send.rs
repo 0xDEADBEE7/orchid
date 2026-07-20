@@ -19,6 +19,7 @@ pub fn send(
     config_dir: &std::path::Path,
     label: Option<String>,
     working_dir: Option<String>,
+    policy: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let store = Store::with_config_dir(config_dir)?;
 
@@ -40,7 +41,18 @@ pub fn send(
         resolved_id
     } else {
         let wd = resolve_working_dir(working_dir)?;
-        let meta = store.create(label, Some(wd), None, None, None)?;
+        let meta = store.create(label, Some(wd.clone()), None, None, None)?;
+        let effective =
+            resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
+                .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+        let meta = store.update(
+            &meta.id,
+            crate::MetadataUpdate {
+                policy: Some(Some(effective.policy_name)),
+                policy_hash: Some(Some(effective.policy_hash)),
+                ..Default::default()
+            },
+        )?;
         meta.id
     };
 
@@ -62,8 +74,12 @@ pub fn send(
     LogWriter::append(&convo_path, &event)?;
 
     let config_dir_ref = ConfigDir::new(config_dir);
-    let effective = resolve_effective_config(&config_dir_ref, None, Some(&_working_dir))
-        .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+    let effective = resolve_effective_config(
+        &config_dir_ref,
+        meta.policy.as_deref().or(policy.as_deref()),
+        Some(&_working_dir),
+    )
+    .map_err(|e| format!("failed to resolve effective config: {}", e))?;
 
     if await_completion {
         let connection = effective
