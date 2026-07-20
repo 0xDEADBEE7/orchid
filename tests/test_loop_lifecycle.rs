@@ -3,6 +3,59 @@ use orchid::SessionStore as Store;
 use orchid::Status;
 mod support;
 use support::TestEnv;
+#[test]
+#[serial_test::serial]
+fn failed_metadata_write_does_not_change_existing_metadata() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(Some("original".into()), None, None).unwrap();
+    let original = std::fs::read_to_string(store.metadata_path(&meta.id)).unwrap();
+
+    let temp = store.session_path(&meta.id).join(".metadata.json.tmp");
+    std::fs::create_dir(&temp).unwrap();
+    let result = store.update(
+        &meta.id,
+        orchid::SessionUpdate {
+            label: Some(Some("changed".into())),
+            ..Default::default()
+        },
+    );
+
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read_to_string(store.metadata_path(&meta.id)).unwrap(),
+        original
+    );
+    std::fs::remove_dir(temp).unwrap();
+}
+
+#[test]
+#[serial_test::serial]
+fn failed_state_write_does_not_change_existing_state() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    let original = std::fs::read_to_string(store.state_path(&meta.id)).unwrap();
+
+    let temp = store.session_path(&meta.id).join(".state.json.tmp");
+    std::fs::create_dir(&temp).unwrap();
+    let result = store.update(
+        &meta.id,
+        orchid::SessionUpdate {
+            status: Some(Status::Running),
+            ..Default::default()
+        },
+    );
+
+    assert!(result.is_err());
+    assert_eq!(
+        std::fs::read_to_string(store.state_path(&meta.id)).unwrap(),
+        original
+    );
+    std::fs::remove_dir(temp).unwrap();
+}
 
 #[test]
 #[serial_test::serial]

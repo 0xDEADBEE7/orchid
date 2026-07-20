@@ -127,12 +127,12 @@ impl SessionStore {
     }
 
     fn write_state(&self, id: &str, state: &SessionState) -> Result<(), String> {
-        let path = self.state_path(id);
-        let temp = self.session_path(id).join(".state.json.tmp");
-        let json = serde_json::to_string_pretty(state)
-            .map_err(|e| format!("failed to serialize state: {}", e))?;
-        fs::write(&temp, json).map_err(|e| format!("failed to write temp state: {}", e))?;
-        fs::rename(&temp, &path).map_err(|e| format!("failed to rename state file: {}", e))
+        self.write_json_atomically(
+            &self.state_path(id),
+            &self.session_path(id).join(".state.json.tmp"),
+            state,
+            "state",
+        )
     }
     pub fn get(&self, id: &str) -> Result<Metadata, String> {
         let metadata_path = self.metadata_path(id);
@@ -217,19 +217,25 @@ impl SessionStore {
     }
 
     fn write_metadata(&self, id: &str, meta: &Metadata) -> Result<(), String> {
-        let metadata_path = self.metadata_path(id);
-        let temp_path = self.session_path(id).join(".metadata.json.tmp");
+        self.write_json_atomically(
+            &self.metadata_path(id),
+            &self.session_path(id).join(".metadata.json.tmp"),
+            meta,
+            "metadata",
+        )
+    }
 
-        let json = serde_json::to_string_pretty(meta)
-            .map_err(|e| format!("failed to serialize metadata: {}", e))?;
-
-        fs::write(&temp_path, &json)
-            .map_err(|e| format!("failed to write temp metadata: {}", e))?;
-
-        fs::rename(&temp_path, &metadata_path)
-            .map_err(|e| format!("failed to rename metadata file: {}", e))?;
-
-        Ok(())
+    fn write_json_atomically<T: serde::Serialize>(
+        &self,
+        path: &Path,
+        temp: &Path,
+        value: &T,
+        name: &str,
+    ) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(value)
+            .map_err(|e| format!("failed to serialize {}: {}", name, e))?;
+        fs::write(temp, json).map_err(|e| format!("failed to write temp {}: {}", name, e))?;
+        fs::rename(temp, path).map_err(|e| format!("failed to rename {} file: {}", name, e))
     }
 }
 
