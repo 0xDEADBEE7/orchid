@@ -85,7 +85,20 @@ fn resource_name(name: &str) -> Result<(), String> {
 }
 
 impl ConfigDir {
-    pub fn load_root(&self) -> Result<RootConfig, ResourceLoadError> { read_json(self.root_path(), "root config") }
+    pub fn load_root(&self) -> Result<RootConfig, ResourceLoadError> {
+        let root: RootConfig = read_json(self.root_path(), "root config")?;
+        if root.policy.trim().is_empty() {
+            return Err(ResourceLoadError::Invalid {
+                path: self.root_path(),
+                message: "policy must be a non-empty resource name".into(),
+            });
+        }
+        resource_name(&root.policy).map_err(|message| ResourceLoadError::Invalid {
+            path: self.root_path(),
+            message,
+        })?;
+        Ok(root)
+    }
     pub fn load_connection(&self, name: &str) -> Result<Connection, ResourceLoadError> {
         let path = self.connections_path().join(format!("{}.json", name));
         resource_name(name).map_err(|message| ResourceLoadError::Invalid { path: path.clone(), message })?;
@@ -110,7 +123,10 @@ impl ConfigDir {
         if !path.is_file() { return Err(ResourceLoadError::Missing { kind: "prompt", path }); }
         fs::read_to_string(&path).map_err(|source| ResourceLoadError::Read { path, source })
     }
-    pub fn validate(&self) -> Result<(), ResourceLoadError> { let root = self.load_root()?; self.load_policy(&root.policy).map(|_| ()) }
+    pub fn validate(&self) -> Result<(), ResourceLoadError> {
+        let root = self.load_root()?;
+        self.load_policy(&root.policy).map(|_| ())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
