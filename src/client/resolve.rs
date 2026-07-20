@@ -1,19 +1,36 @@
+use std::collections::HashMap;
 use std::env;
 
-/// Replace all `env.<VAR>` tokens in a string with the corresponding env var value.
-/// Handles both whole-value (`env.FOO`) and inline (`Bearer env.FOO`) forms.
-pub fn resolve_env_inline(s: &str) -> String {
-    resolve_env_inline_strict(s).unwrap_or_else(|_| {
-        let mut result = s.to_string();
-        while let Some(start) = result.find("env.") {
-            let after = &result[start + 4..];
-            let end = after
-                .find(|c: char| !c.is_alphanumeric() && c != '_')
-                .unwrap_or(after.len());
-            let value = env::var(&after[..end]).unwrap_or_default();
-            result = format!("{}{}{}", &result[..start], value, &after[end..]);
-        }
-        result
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedConnection {
+    pub interface: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub params: HashMap<String, serde_json::Value>,
+    pub headers: HashMap<String, String>,
+}
+
+pub fn resolve_connection(
+    connection: &crate::config::Connection,
+) -> Result<ResolvedConnection, EnvResolutionError> {
+    let api_key = connection
+        .api_key
+        .as_deref()
+        .map(resolve_env_inline_strict)
+        .transpose()?;
+    let headers = connection
+        .headers
+        .iter()
+        .map(|(name, value)| resolve_env_inline_strict(value).map(|value| (name.clone(), value)))
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    Ok(ResolvedConnection {
+        interface: connection.interface.clone(),
+        base_url: connection.base_url.clone(),
+        api_key,
+        model: connection.model.clone(),
+        params: connection.params.clone(),
+        headers,
     })
 }
 

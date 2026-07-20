@@ -9,7 +9,9 @@ use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
 use std::sync::Arc;
 
-pub use resolve::{resolve_env_inline, resolve_env_inline_strict, EnvResolutionError};
+pub use resolve::{
+    resolve_connection, resolve_env_inline_strict, EnvResolutionError, ResolvedConnection,
+};
 
 pub fn create_provider_from_connections_with_log(
     connections: &[Connection],

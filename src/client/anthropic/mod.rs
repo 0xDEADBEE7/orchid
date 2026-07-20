@@ -46,9 +46,10 @@ impl AnthropicClient {
     }
 
     pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
-        let raw_key = match &connection.api_key {
-            Some(key) => crate::client::resolve::resolve_env_inline_strict(key)
-                .map_err(|e| ProviderError::AuthError(e.to_string()))?,
+        let resolved = crate::client::resolve::resolve_connection(connection)
+            .map_err(|e| ProviderError::AuthError(e.to_string()))?;
+        let raw_key = match resolved.api_key {
+            Some(key) => key,
             None => env::var("ANTHROPIC_API_KEY").map_err(|_| {
                 ProviderError::AuthError(
                     "ANTHROPIC_API_KEY environment variable not set".to_string(),
@@ -56,15 +57,7 @@ impl AnthropicClient {
             })?,
         };
 
-        let extra_headers: Vec<(String, String)> = connection
-            .headers
-            .iter()
-            .map(|(k, v)| {
-                crate::client::resolve::resolve_env_inline_strict(v)
-                    .map(|resolved| (k.clone(), resolved))
-                    .map_err(|e| ProviderError::AuthError(e.to_string()))
-            })
-            .collect::<Result<_, _>>()?;
+        let extra_headers: Vec<(String, String)> = resolved.headers.into_iter().collect();
 
         let has_auth_header = extra_headers.iter().any(|(k, _)| {
             k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("x-api-key")
@@ -93,11 +86,7 @@ impl AnthropicClient {
             api_key: raw_key,
             model,
             extra_headers,
-            params: connection
-                .params
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
+            params: resolved.params.into_iter().collect(),
         })
     }
 
