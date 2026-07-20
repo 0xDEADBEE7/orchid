@@ -1,11 +1,10 @@
 use crate::convo::resolve;
-use crate::get_orchid_dir;
 use serde_json::json;
 use std::fs;
+use std::path::Path;
 
-pub fn delete(id: String) -> Result<serde_json::Value, String> {
-    let orchid_dir = get_orchid_dir()?;
-    let base_path = orchid_dir.join("conversations");
+pub fn delete(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
+    let base_path = config_dir.join("sessions");
     let resolved_id = resolve::resolve(&id, &base_path)?.id;
     let convo_path = base_path.join(&resolved_id);
 

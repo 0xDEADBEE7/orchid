@@ -1,13 +1,13 @@
 use crate::load_config;
 use crate::Store;
 use serde_json::json;
+use std::path::Path;
 
-pub fn list() -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
+pub fn list(config_dir: &Path) -> Result<serde_json::Value, String> {
+    let store = Store::with_config_dir(config_dir)?;
     let convos = store.list()?;
 
-    let json_array = json!(convos);
-    Ok(json_array)
+    Ok(json!(convos))
 }
 
 pub fn list_profiles() -> Result<serde_json::Value, String> {

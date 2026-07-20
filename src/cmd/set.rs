@@ -1,5 +1,5 @@
 use crate::convo::{resolve, MetadataUpdate, Store};
-use crate::get_orchid_dir;
+use std::path::Path;
 
 pub fn set(
     id: String,
@@ -7,9 +7,10 @@ pub fn set(
     persona: Option<String>,
     working_dir: Option<String>,
     scope_exceptions: Option<Vec<String>>,
+    config_dir: &Path,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
-    let base_path = get_orchid_dir()?.join("conversations");
+    let store = Store::with_config_dir(config_dir)?;
+    let base_path = config_dir.join("sessions");
     let resolved_id = resolve::resolve(&id, &base_path)?.id;
 
     let mut updates = MetadataUpdate::default();

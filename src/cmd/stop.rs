@@ -1,14 +1,15 @@
 use crate::convo::{resolve, Store};
 use crate::types::Status;
 use serde_json::json;
+use std::path::Path;
 
-pub fn stop(id: String) -> Result<serde_json::Value, String> {
-    stop_impl(&id, false)
+pub fn stop(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
+    stop_impl(&id, false, config_dir)
 }
 
-fn stop_impl(id: &str, force: bool) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
-    let base_path = crate::get_orchid_dir()?.join("conversations");
+fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Value, String> {
+    let store = Store::with_config_dir(config_dir)?;
+    let base_path = config_dir.join("sessions");
     let meta = resolve::resolve(id, &base_path)?;
     let convo_id = meta.id;
 
