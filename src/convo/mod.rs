@@ -72,6 +72,8 @@ impl Store {
                 let now = Utc::now();
                 let meta = Metadata {
                     id: id.clone(),
+                    policy: None,
+                    policy_hash: None,
                     label,
                     persona,
                     working_dir,
@@ -136,6 +138,12 @@ impl Store {
     pub fn update(&self, id: &str, updates: MetadataUpdate) -> Result<Metadata, String> {
         let mut meta = self.get(id)?;
 
+        if let Some(policy) = updates.policy {
+            meta.policy = policy;
+        }
+        if let Some(policy_hash) = updates.policy_hash {
+            meta.policy_hash = policy_hash;
+        }
         if let Some(label) = updates.label {
             meta.label = label;
         }
@@ -192,6 +200,8 @@ impl Store {
 
 #[derive(Default)]
 pub struct MetadataUpdate {
+    pub policy: Option<Option<String>>,
+    pub policy_hash: Option<Option<String>>,
     pub label: Option<Option<String>>,
     pub persona: Option<Option<String>>,
     pub working_dir: Option<Option<String>>,

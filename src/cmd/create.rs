@@ -1,3 +1,5 @@
+use crate::config::resolve::resolve as resolve_effective_config;
+use crate::config::ConfigDir;
 use crate::convo::Store;
 
 pub fn create(
@@ -8,7 +10,17 @@ pub fn create(
 ) -> Result<serde_json::Value, String> {
     let store = Store::with_config_dir(config_dir)?;
     let wd = resolve_working_dir(working_dir)?;
-    let meta = store.create(label, Some(wd), None, None, scope_exceptions)?;
+    let meta = store.create(label, Some(wd.clone()), None, None, scope_exceptions)?;
+    let effective = resolve_effective_config(&ConfigDir::new(config_dir), None, Some(&wd))
+        .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+    let meta = store.update(
+        &meta.id,
+        crate::MetadataUpdate {
+            policy: Some(Some(effective.policy_name)),
+            policy_hash: Some(Some(effective.policy_hash)),
+            ..Default::default()
+        },
+    )?;
     serde_json::to_value(&meta).map_err(|e| e.to_string())
 }
 

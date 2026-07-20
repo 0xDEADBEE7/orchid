@@ -173,6 +173,10 @@ impl Default for TokenBudget {
 pub struct Metadata {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persona: Option<String>,
