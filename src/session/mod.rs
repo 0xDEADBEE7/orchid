@@ -108,8 +108,13 @@ impl SessionStore {
     }
     pub fn state(&self, id: &str) -> Result<SessionState, String> {
         let path = self.state_path(id);
-        let contents =
-            fs::read_to_string(&path).map_err(|e| format!("failed to read state: {}", e))?;
+        let contents = match fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(format!("session state is missing: {}", id));
+            }
+            Err(error) => return Err(format!("failed to read state: {}", error)),
+        };
         serde_json::from_str(&contents).map_err(|e| format!("invalid state JSON: {}", e))
     }
 

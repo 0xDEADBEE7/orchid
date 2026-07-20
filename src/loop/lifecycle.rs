@@ -35,19 +35,58 @@ pub fn on_run_end(session_id: &str, config_dir: &Path) -> Result<(), String> {
 
 pub fn reconcile_crashed(session_id: &str, config_dir: &Path) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
+    let state = match store.state(session_id) {
+        Ok(state) => state,
+        Err(error)
+            if error.contains("session state is missing")
+                || error.contains("invalid state JSON") =>
+        {
+            crate::types::SessionState {
+                status: Status::Idle,
+                pid: None,
+                run_started_at: None,
+                last_run_at: None,
+                last_message: None,
+                hooks: None,
+                token_estimate: None,
+                allow_scope_escape: None,
+                scope_exceptions: None,
+            }
+        }
+        Err(error) => return Err(error),
+    };
     let updates = SessionUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
         run_started_at: Some(None),
         ..Default::default()
     };
+    if store.state(session_id).is_err() {
+        let path = store.state_path(session_id);
+        let json = serde_json::to_string_pretty(&state)
+            .map_err(|e| format!("failed to serialize recovered state: {}", e))?;
+        let temp = path.with_extension("json.recovery.tmp");
+        std::fs::write(&temp, json)
+            .map_err(|e| format!("failed to write recovered state: {}", e))?;
+        std::fs::rename(&temp, &path)
+            .map_err(|e| format!("failed to install recovered state: {}", e))?;
+    }
     store.update(session_id, updates)?;
     Ok(())
 }
 
 pub fn detect_crashed(session_id: &str, config_dir: &Path) -> Result<bool, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
-    let state = store.state(session_id)?;
+    let state = match store.state(session_id) {
+        Ok(state) => state,
+        Err(error)
+            if error.contains("session state is missing")
+                || error.contains("invalid state JSON") =>
+        {
+            return Ok(true);
+        }
+        Err(error) => return Err(error),
+    };
 
     match (state.status, state.pid) {
         (Status::Running, Some(stored_pid)) => {

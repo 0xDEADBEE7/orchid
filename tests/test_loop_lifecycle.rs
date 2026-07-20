@@ -41,3 +41,52 @@ fn test_on_run_end() {
         "run_started_at must be cleared on run end"
     );
 }
+
+#[test]
+#[serial_test::serial]
+fn test_missing_state_is_reconciled() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    std::fs::remove_file(store.state_path(&meta.id)).unwrap();
+
+    assert!(orchid::r#loop::lifecycle::detect_crashed(&meta.id, &config_dir).unwrap());
+    orchid::r#loop::lifecycle::reconcile_crashed(&meta.id, &config_dir).unwrap();
+    assert_eq!(store.state(&meta.id).unwrap().status, Status::Idle);
+}
+
+#[test]
+#[serial_test::serial]
+fn test_malformed_state_is_reconciled() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    std::fs::write(store.state_path(&meta.id), "not-json").unwrap();
+
+    assert!(orchid::r#loop::lifecycle::detect_crashed(&meta.id, &config_dir).unwrap());
+    orchid::r#loop::lifecycle::reconcile_crashed(&meta.id, &config_dir).unwrap();
+    assert_eq!(store.state(&meta.id).unwrap().status, Status::Idle);
+}
+
+#[test]
+#[serial_test::serial]
+fn test_invalid_pid_is_crashed() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    store
+        .update(
+            &meta.id,
+            orchid::SessionUpdate {
+                status: Some(Status::Running),
+                pid: Some(Some(0)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert!(orchid::r#loop::lifecycle::detect_crashed(&meta.id, &config_dir).unwrap());
+}
