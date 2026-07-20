@@ -63,4 +63,9 @@ pub fn config_scope_exceptions() -> Result<serde_json::Value, String> {
     Ok(json!({"scope_exceptions": config.scope_exceptions}))
 }
 
-
+pub fn config_validate(config_dir: &std::path::Path) -> Result<serde_json::Value, String> {
+    crate::ConfigDir::new(config_dir)
+        .validate()
+        .map_err(|e| e.to_string())?;
+    Ok(json!({"status": "ok", "config": config_dir.display().to_string()}))
+}

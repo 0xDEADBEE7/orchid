@@ -56,6 +56,7 @@ pub enum ConfigSubcommand {
     Current,
     Path,
     ScopeExceptions,
+    Validate,
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
@@ -70,15 +71,28 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     let (cmd_name, rest) = if args.first().map(|s| s.as_str()) == Some("send") {
         let rest = &args[1..];
         if rest.is_empty()
-            || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--"))
+            || rest
+                .first()
+                .map(|s| s.as_str())
+                .is_some_and(|s| s.starts_with("--"))
         {
             // No args or flags only: default to "send" command.
             ("send", rest)
         } else {
             // Check if the first positional is a known command.
             let known_commands = [
-                "help", "list", "create", "config", "send",
-                "set", "delete", "stop", "kill", "__run", "server-action",
+                "help",
+                "list",
+                "create",
+                "config",
+                "send",
+                "set",
+                "delete",
+                "stop",
+                "kill",
+                "__run",
+                "server-action",
+                "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
                 // Known command: treat it as such.
@@ -110,6 +124,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "timeout",
         "await",
         "scope-exception",
+        "config",
     ];
 
     // `flags` collects all flags; for server-action, remaining flags become body params.
@@ -156,7 +171,12 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         // this is a top-level --help, not a subcommand --help.
         if args.first().map(|s| s.as_str()) == Some("send") {
             let rest = &args[1..];
-            if rest.is_empty() || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--")) {
+            if rest.is_empty()
+                || rest
+                    .first()
+                    .map(|s| s.as_str())
+                    .is_some_and(|s| s.starts_with("--"))
+            {
                 return Ok((Command::Help(None), flags));
             }
         }
@@ -193,7 +213,9 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         }
         "config" => {
             if positional.is_empty() {
-                return Err("config requires subcommand: use, current, or path".to_string());
+                return Err(
+                    "config requires subcommand: use, current, path, or validate".to_string(),
+                );
             }
             let sub = &positional[0];
             match sub.as_str() {
@@ -206,6 +228,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 "current" => Command::Config(ConfigSubcommand::Current),
                 "path" => Command::Config(ConfigSubcommand::Path),
                 "scope-exceptions" => Command::Config(ConfigSubcommand::ScopeExceptions),
+                "validate" => Command::Config(ConfigSubcommand::Validate),
                 _ => return Err(format!("unknown config subcommand: {}", sub)),
             }
         }
@@ -222,9 +245,11 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let working_dir = flags.remove("working-dir").flatten();
 
             // Check for unknown flags.
-            if let Some(unknown) = flags.iter().find(|(k, _v)| {
-                !VALUE_FLAGS.contains(&k.as_str())
-            }).map(|(k, _)| k.as_str()) {
+            if let Some(unknown) = flags
+                .iter()
+                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()))
+                .map(|(k, _)| k.as_str())
+            {
                 return Err(format!("unknown flag: --{}", unknown));
             }
 
@@ -300,12 +325,16 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                     body_params.push((k, val));
                 }
             }
-            return Ok((Command::ServerAction {
-                action,
-                profile,
-                body_params,
-            }, flags));
+            return Ok((
+                Command::ServerAction {
+                    action,
+                    profile,
+                    body_params,
+                },
+                flags,
+            ));
         }
+        "validate" => Command::Config(ConfigSubcommand::Validate),
         _ => return Err(format!("unknown command: {}", cmd_name)),
     };
 

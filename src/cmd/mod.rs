@@ -9,7 +9,7 @@ pub mod server_action;
 pub mod set;
 pub mod stop;
 
-pub use config::{config_current, config_path, config_scope_exceptions, config_use};
+pub use config::{config_current, config_path, config_scope_exceptions, config_use, config_validate};
 pub use create::create;
 pub use delete::delete;
 pub use help::{help, help_command};
