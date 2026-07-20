@@ -11,7 +11,7 @@ pub fn create(
 ) -> Result<serde_json::Value, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
     let wd = resolve_working_dir(working_dir)?;
-    let meta = store.create(label, Some(wd.clone()), None, None, scope_exceptions)?;
+    let meta = store.create(label, Some(wd.clone()), scope_exceptions)?;
     let effective =
         resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
             .map_err(|e| format!("failed to resolve effective config: {}", e))?;

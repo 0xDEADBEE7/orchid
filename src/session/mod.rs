@@ -67,8 +67,6 @@ impl SessionStore {
         &self,
         label: Option<String>,
         working_dir: Option<String>,
-        persona: Option<String>,
-        _profile: Option<String>,
         scope_exceptions: Option<Vec<String>>,
     ) -> Result<Metadata, String> {
         loop {
@@ -85,7 +83,6 @@ impl SessionStore {
                     policy: None,
                     policy_hash: None,
                     label,
-                    persona,
                     working_dir,
                     env: None,
                     created_at: now,
@@ -232,7 +229,6 @@ pub struct SessionUpdate {
     pub policy: Option<Option<String>>,
     pub policy_hash: Option<Option<String>>,
     pub label: Option<Option<String>>,
-    pub persona: Option<Option<String>>,
     pub working_dir: Option<Option<String>>,
     pub status: Option<Status>,
     pub pid: Option<Option<u32>>,

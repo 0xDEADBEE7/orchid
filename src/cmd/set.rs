@@ -4,7 +4,6 @@ use std::path::Path;
 pub fn set(
     id: String,
     label: Option<String>,
-    persona: Option<String>,
     working_dir: Option<String>,
     scope_exceptions: Option<Vec<String>>,
     config_dir: &Path,
@@ -17,9 +16,6 @@ pub fn set(
 
     if let Some(l) = label {
         updates.label = Some(Some(l));
-    }
-    if let Some(p) = persona {
-        updates.persona = Some(Some(p));
     }
     if let Some(wd) = working_dir {
         updates.working_dir = Some(Some(wd));

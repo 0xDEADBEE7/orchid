@@ -42,7 +42,7 @@ pub fn send(
         resolved_id
     } else {
         let wd = resolve_working_dir(working_dir)?;
-        let meta = store.create(label, Some(wd.clone()), None, None, None)?;
+        let meta = store.create(label, Some(wd.clone()), None)?;
         let effective =
             resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
                 .map_err(|e| format!("failed to resolve effective config: {}", e))?;

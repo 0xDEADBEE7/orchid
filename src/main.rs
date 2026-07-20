@@ -72,10 +72,9 @@ fn main() {
         Command::Set {
             id,
             label,
-            persona: _,
             working_dir,
             scope_exceptions,
-        } => cmd::set(id, label, None, working_dir, scope_exceptions, &config_dir),
+        } => cmd::set(id, label, working_dir, scope_exceptions, &config_dir),
         Command::Delete(id) => cmd::delete(id, &config_dir),
         Command::Stop(id) => cmd::stop(id, &config_dir),
         Command::Kill(id) => cmd::stop(id, &config_dir),

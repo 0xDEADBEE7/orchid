@@ -25,7 +25,6 @@ pub enum Command {
     Set {
         id: String,
         label: Option<String>,
-        persona: Option<String>,
         working_dir: Option<String>,
         scope_exceptions: Option<Vec<String>>,
     },
@@ -92,7 +91,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     const VALUE_FLAGS: &[&str] = &[
         "id",
         "label",
-        "persona",
         "policy",
         "working-dir",
         "max-steps",
@@ -240,7 +238,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .flatten()
                 .ok_or_else(|| "set requires --id".to_string())?;
             let label = flags.remove("label").flatten();
-            let persona = flags.remove("persona").flatten();
             let working_dir = flags.remove("working-dir").flatten();
             let scope_exceptions = flags
                 .remove("scope-exception")
@@ -253,7 +250,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             Command::Set {
                 id,
                 label,
-                persona,
                 working_dir,
                 scope_exceptions,
             }
