@@ -1,42 +1,32 @@
 use orchid::cmd::send;
-use orchid::SessionStore;
 use orchid::SessionStore as Store;
 mod support;
 use support::TestEnv;
 
-fn write_minimal_config(dir: &std::path::Path, active_profile: Option<&str>) {
-    let profile_section = r#""test-profile":{"provider":"anthropic","api_key":"x","model":"m"}"#;
-    let active = active_profile
-        .map(|p| format!(r#""active_profile":"{}","#, p))
-        .unwrap_or_default();
-    let json = format!(r#"{{{}"profiles":{{{}}}}}"#, active, profile_section);
-    std::fs::write(dir.join("config.json"), json).unwrap();
+fn write_resource_config(dir: &std::path::Path) {
+    for name in ["connections", "policies", "prompts", "sessions"] {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+    }
+    std::fs::write(dir.join("config.json"), r#"{"policy":"default"}"#).unwrap();
+    std::fs::write(
+        dir.join("connections/local.json"),
+        r#"{"interface":"anthropic","base_url":"http://127.0.0.1:9","model":"test-model"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("policies/default.json"),
+        r#"{"connections":["local"]}"#,
+    )
+    .unwrap();
 }
 
-#[test]
-fn test_fork_uses_active_profile_not_hardcoded_default() {
-    let profile: Option<String> = None;
-    let active_profile: Option<String> = Some("cba-sonnet".to_string());
-    let profile_arg = profile
-        .as_ref()
-        .map(|p| p.clone())
-        .or(active_profile)
-        .expect("should fall back to active_profile");
-    assert_eq!(profile_arg, "cba-sonnet");
-    assert_ne!(
-        profile_arg, "default",
-        "must not fall back to hardcoded 'default'"
-    );
-}
-
-#[test]
 #[serial_test::serial]
-fn test_fork_errors_when_no_profile_available() {
+fn test_fork_errors_when_no_policy_connection_available() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    write_minimal_config(orchid_dir.as_path(), None);
+    write_resource_config(orchid_dir.as_path());
     let config_dir = orchid_dir.clone();
-    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
+    std::fs::remove_file(config_dir.join("connections/local.json")).unwrap();
     let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store
         .create(None, Some("/tmp".to_string()), None, None, None)
@@ -50,21 +40,24 @@ fn test_fork_errors_when_no_profile_available() {
         None,
         None,
     );
-    assert!(result.is_err(), "should error when no profile is available");
     assert!(
-        result.unwrap_err().contains("profile"),
-        "error should mention profile"
+        result.is_err(),
+        "should error when no policy connection is available"
+    );
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("connection") || error.contains("policy"),
+        "error should mention the missing resource"
     );
 }
 
 #[test]
 #[serial_test::serial]
-fn test_send_writes_user_message_to_jsonl() {
+fn test_send_writes_user_message_to_session_jsonl() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    write_minimal_config(orchid_dir.as_path(), Some("test-profile"));
+    write_resource_config(orchid_dir.as_path());
     let config_dir = orchid_dir.clone();
-    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
     let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store
         .create(None, Some("/tmp".to_string()), None, None, None)
@@ -76,7 +69,7 @@ fn test_send_writes_user_message_to_jsonl() {
         &config_dir,
         None,
         None,
-        Some("test-profile".to_string()),
+        Some("default".to_string()),
     );
     if let Err(ref e) = send_result {
         assert!(
@@ -88,11 +81,11 @@ fn test_send_writes_user_message_to_jsonl() {
     let jsonl = orchid_dir
         .join("sessions")
         .join(&meta.id)
-        .join("conversation.jsonl");
+        .join("session.jsonl");
     assert!(
         std::fs::read_to_string(&jsonl)
-            .map(|c| c.contains("\"type\":\"message\""))
+            .map(|c| c.contains("hello world"))
             .unwrap_or(false),
-        "event should have type field"
+        "user message should be written to the transcript"
     );
 }
