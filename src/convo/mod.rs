@@ -8,7 +8,7 @@ pub mod id;
 pub mod resolve;
 
 pub use id::generate_id;
-pub use resolve::{is_id_format, resolve};
+pub use resolve::{is_id_format, resolve, SessionStore};
 
 pub struct Store {
     base_path: PathBuf,
