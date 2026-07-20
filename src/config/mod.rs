@@ -77,6 +77,8 @@ pub struct Policy {
     pub permissions: Permissions,
     #[serde(default)]
     pub limits: PolicyLimits,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug)]

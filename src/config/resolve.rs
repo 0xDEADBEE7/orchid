@@ -1,7 +1,7 @@
 use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ pub struct EffectiveSessionConfig {
     pub working_dir: PathBuf,
     pub permissions: super::Permissions,
     pub limits: super::PolicyLimits,
+    pub env_vars: HashMap<String, String>,
 }
 
 pub fn resolve(
@@ -56,6 +57,16 @@ pub fn resolve(
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| "no working directory configured".to_string())?;
 
+    let env_vars = policy
+        .env
+        .iter()
+        .map(|(name, value)| {
+            crate::client::resolve::resolve_env_inline_strict(value)
+                .map(|value| (name.clone(), value))
+                .map_err(|error| format!("policy environment {}: {}", name, error))
+        })
+        .collect::<Result<HashMap<_, _>, _>>()?;
+
     Ok(EffectiveSessionConfig {
         policy_name,
         policy_hash,
@@ -64,6 +75,7 @@ pub fn resolve(
         working_dir,
         permissions: policy.permissions,
         limits: policy.limits,
+        env_vars,
     })
 }
 
