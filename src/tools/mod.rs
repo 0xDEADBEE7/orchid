@@ -76,6 +76,34 @@ pub fn execute_tool(
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
 ) -> Result<Value, String> {
+    execute_tool_with_permissions(
+        name,
+        input,
+        working_dir,
+        allow_scope_escape,
+        env_vars,
+        global_scope_set,
+        session_scope_set,
+        &[],
+        &[],
+    )
+}
+
+pub fn execute_tool_with_permissions(
+    name: &str,
+    input: Value,
+    working_dir: &str,
+    allow_scope_escape: bool,
+    env_vars: &HashMap<String, String>,
+    global_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
+    allowed_tools: &[String],
+    allowed_paths: &[String],
+) -> Result<Value, String> {
+    if !allowed_tools.is_empty() && !allowed_tools.iter().any(|tool| tool == name || tool == "*") {
+        return Err(format!("tool denied by policy: {}", name));
+    }
+
     match name {
         "bash" => bash::execute(
             input,
@@ -84,6 +112,7 @@ pub fn execute_tool(
             env_vars,
             global_scope_set,
             session_scope_set,
+            allowed_paths,
         )
         .map(Value::String),
         "fs_read" => fs_read::execute(
@@ -92,6 +121,7 @@ pub fn execute_tool(
             allow_scope_escape,
             global_scope_set,
             session_scope_set,
+            allowed_paths,
         ),
         "fs_edit" => fs_edit::execute(
             input,
@@ -99,6 +129,7 @@ pub fn execute_tool(
             allow_scope_escape,
             global_scope_set,
             session_scope_set,
+            allowed_paths,
         )
         .map(Value::String),
         _ => Err(format!("unknown tool: {}", name)),

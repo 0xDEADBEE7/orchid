@@ -52,17 +52,22 @@ pub fn execute(
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<String, String> {
     let edit_input: FsEditInput =
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
 
     if !allow_scope_escape
-        && !is_allowed(
+        && (!is_allowed(
             &edit_input.path,
             working_dir,
             global_scope_set,
             session_scope_set,
-        )
+        ) || !crate::tools::scope::is_allowed_by_policy(
+            &edit_input.path,
+            working_dir,
+            allowed_paths,
+        ))
     {
         return Err(format!("path out of scope: {}", edit_input.path));
     }

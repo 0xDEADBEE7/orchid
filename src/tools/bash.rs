@@ -1,4 +1,4 @@
-use crate::tools::scope::{is_allowed, is_in_scope};
+use crate::tools::scope::{is_allowed, is_allowed_by_policy, is_in_scope};
 use globset::GlobSet;
 use serde::Deserialize;
 use serde_json::Value;
@@ -17,6 +17,7 @@ pub fn execute(
     env_vars: &HashMap<String, String>,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<String, String> {
     let bash_input: BashInput =
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
@@ -27,6 +28,7 @@ pub fn execute(
             working_dir,
             global_scope_set,
             session_scope_set,
+            allowed_paths,
         )?;
     }
 
@@ -59,6 +61,7 @@ fn validate_cmd_scope(
     working_dir: &str,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<(), String> {
     let tokens = tokenize_cmd(cmd);
     for token in tokens {
@@ -77,8 +80,9 @@ fn validate_cmd_scope(
         if !is_in_scope(&token, working_dir) && !token.contains("/") && !is_builtin(&token) {
             continue;
         }
-        if token.contains("/")
-            && !is_allowed(&token, working_dir, global_scope_set, session_scope_set)
+        if !is_allowed_by_policy(&token, working_dir, allowed_paths)
+            || (!is_allowed(&token, working_dir, global_scope_set, session_scope_set)
+                && !is_in_scope(&token, working_dir))
         {
             return Err(format!("path out of scope: {}", token));
         }

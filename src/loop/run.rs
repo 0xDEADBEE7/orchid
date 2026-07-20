@@ -7,6 +7,7 @@ use crate::r#loop::stream::StreamState;
 use crate::r#loop::{events, history};
 use crate::session::get_session_dir_from_config;
 use crate::tools;
+use crate::tools::scope::compile_exceptions;
 use crate::types::{TokenBudget, ToolResult};
 use globset::GlobSet;
 use std::collections::HashMap;
@@ -80,7 +81,7 @@ pub fn build_context(
         .unwrap_or(4_000); // default: 4000 (from 40k warn / 80k hard)
 
     let global_scope_set = GlobSet::empty();
-    let session_scope_set = GlobSet::empty();
+    let session_scope_set = compile_exceptions(&[]);
 
     Ok(LoopContext {
         store,
@@ -246,14 +247,16 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 );
                 events::append_tool_call(&ctx.meta.id, std::slice::from_ref(&tool_call))?;
 
-                let content = match tools::execute_tool(
+                let content = match tools::execute_tool_with_permissions(
                     &tool_call.name,
                     tool_call.input.clone(),
                     &ctx.working_dir,
-                    false, // scope enforcement is now governed by policy permissions, not per-session
+                    false, // scope enforcement is governed by policy permissions
                     &HashMap::new(),
                     &ctx.global_scope_set,
                     &ctx.session_scope_set,
+                    &ctx.permissions.tools,
+                    &ctx.permissions.paths,
                 ) {
                     Ok(raw) => {
                         ctx.log

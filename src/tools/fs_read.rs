@@ -27,6 +27,7 @@ pub fn execute(
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<Value, String> {
     let paths = extract_paths(&input);
 
@@ -41,6 +42,7 @@ pub fn execute(
             allow_scope_escape,
             global_scope_set,
             session_scope_set,
+            allowed_paths,
         )?;
         Ok(serde_json::json!({ &paths[0]: content }))
     } else {
@@ -52,6 +54,7 @@ pub fn execute(
                 allow_scope_escape,
                 global_scope_set,
                 session_scope_set,
+                allowed_paths,
             ) {
                 Ok(content) => {
                     map.insert(path.clone(), Value::String(content));
@@ -71,8 +74,12 @@ fn read_one(
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<String, String> {
-    if !allow_scope_escape && !is_allowed(path, working_dir, global_scope_set, session_scope_set) {
+    if !allow_scope_escape
+        && (!is_allowed(path, working_dir, global_scope_set, session_scope_set)
+            || !crate::tools::scope::is_allowed_by_policy(path, working_dir, allowed_paths))
+    {
         return Err(format!("path out of scope: {}", path));
     }
 

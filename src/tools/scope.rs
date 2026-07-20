@@ -100,8 +100,21 @@ fn expand_pattern_tilde(pattern: &str) -> String {
     pattern.to_string()
 }
 
-/// Check if a path is allowed through scope enforcement.
-///
+pub fn is_allowed_by_policy(path: &str, working_dir: &str, allowed_paths: &[String]) -> bool {
+    if allowed_paths.is_empty() {
+        return true;
+    }
+    let expanded = expand_path(path, working_dir);
+    allowed_paths.iter().any(|pattern| {
+        let pattern = expand_path(pattern, working_dir);
+        expanded == pattern
+            || expanded.starts_with(&format!("{}/", pattern.trim_end_matches('/')))
+            || globset::Glob::new(&pattern)
+                .map(|glob| glob.compile_matcher().is_match(&expanded))
+                .unwrap_or(false)
+    })
+}
+
 /// Resolution order:
 /// 1. In-scope (path starts with working_dir) → allowed
 /// 2. Global exceptions match → allowed

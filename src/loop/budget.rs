@@ -1,5 +1,5 @@
-use crate::session::get_session_jsonl_path;
 pub use crate::types::TokenBudget;
+use std::path::Path;
 
 pub enum BudgetStatus {
     Ok { total: u32 },
@@ -32,7 +32,12 @@ pub fn check(session_id: &str, budget: &TokenBudget) -> BudgetStatus {
 }
 
 fn estimate_tokens(session_id: &str) -> Option<u32> {
-    let path = get_session_jsonl_path(session_id).ok()?;
-    let bytes = std::fs::metadata(&path).ok()?.len();
+    let base_path = Path::new("config").join("sessions").join(session_id);
+    let path = if base_path.join("conversation.jsonl").exists() {
+        base_path.join("conversation.jsonl")
+    } else {
+        base_path.join("session.jsonl")
+    };
+    let bytes = std::fs::metadata(path).ok()?.len();
     Some((bytes / 3) as u32)
 }
