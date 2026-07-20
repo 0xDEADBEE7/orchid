@@ -89,7 +89,10 @@ fn main() {
         Command::Delete(id) => cmd::delete(id, &config_dir),
         Command::Stop(id) => cmd::stop(id, &config_dir),
         Command::Kill(id) => cmd::stop(id, &config_dir),
-        Command::InternalRun { id } => match cmd::internal_run(&id, &config_dir) {
+        Command::InternalRun {
+            id,
+            effective_config,
+        } => match cmd::internal_run_with_snapshot(&id, &config_dir, effective_config.as_deref()) {
             Ok(()) => Ok(serde_json::json!({"status": "ok"})),
             Err(e) => Err(e),
         },
