@@ -63,7 +63,8 @@ pub fn send(
         .clone()
         .ok_or_else(|| "conversation has no working directory configured".to_string())?;
 
-    if meta.status == crate::types::Status::Running {
+    let state = store.state(&convo_id)?;
+    if state.status == crate::types::Status::Running {
         return Err(format!("conversation {} is already running", convo_id));
     }
 
@@ -96,10 +97,10 @@ pub fn send(
 
         run_tool_loop(&convo_id, &effective, config_dir, provider.as_ref())?;
 
-        let final_meta = store.get(&convo_id)?;
+        let _final_meta = store.get(&convo_id)?;
         Ok(json!({
             "id": convo_id,
-            "status": final_meta.status,
+            "status": store.state(&convo_id)?.status,
             "completed": true,
             "policy": effective.policy_name,
         }))

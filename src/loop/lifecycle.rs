@@ -47,9 +47,9 @@ pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String
 
 pub fn detect_crashed(convo_id: &str, config_dir: &Path) -> Result<bool, String> {
     let store = Store::with_config_dir(config_dir)?;
-    let meta = store.get(convo_id)?;
+    let state = store.state(convo_id)?;
 
-    match (meta.status, meta.pid) {
+    match (state.status, state.pid) {
         (Status::Running, Some(stored_pid)) => {
             #[cfg(unix)]
             {

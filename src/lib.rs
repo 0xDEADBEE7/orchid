@@ -32,7 +32,7 @@ pub use log::{DiagLogger, LogReader, LogWriter};
 pub use provider::{Provider, ProviderError, Response, StreamEvent};
 pub use r#loop::history::{build_message_history, replace_stale_in_value};
 pub use tools::{execute_tool, tool_definitions, Tool};
-pub use types::{Message, Metadata, Status, TokenBudget, ToolCall, ToolResult};
+pub use types::{Message, Metadata, SessionState, Status, TokenBudget, ToolCall, ToolResult};
 
 #[cfg(test)]
 use std::env;

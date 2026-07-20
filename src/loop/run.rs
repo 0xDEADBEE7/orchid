@@ -44,7 +44,8 @@ pub fn build_context(
     let log = DiagLogger::for_convo(convo_dir.clone(), log_level);
 
     if lifecycle::detect_crashed(convo_id, config_dir)? {
-        let stale_pid = meta
+        let state = store.state(convo_id)?;
+        let stale_pid = state
             .pid
             .map(|p| p.to_string())
             .unwrap_or_else(|| "unknown".to_string());

@@ -1,5 +1,5 @@
 use crate::get_orchid_dir;
-use crate::types::{Metadata, Status};
+use crate::types::{Metadata, SessionState, Status};
 use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,6 +80,8 @@ impl Store {
                     env: None,
                     created_at: now,
                     updated_at: now,
+                };
+                let state = SessionState {
                     status: Status::Idle,
                     pid: None,
                     run_started_at: None,
@@ -92,11 +94,34 @@ impl Store {
                 };
 
                 self.write_metadata(&id, &meta)?;
+                self.write_state(&id, &state)?;
                 return Ok(meta);
             }
         }
     }
+    pub fn state(&self, id: &str) -> Result<SessionState, String> {
+        let path = self.base_path.join(id).join("state.json");
+        let contents =
+            fs::read_to_string(&path).map_err(|e| format!("failed to read state: {}", e))?;
+        serde_json::from_str(&contents).map_err(|e| format!("invalid state JSON: {}", e))
+    }
 
+    pub fn status(&self, id: &str) -> Result<Status, String> {
+        Ok(self.state(id)?.status)
+    }
+
+    pub fn pid(&self, id: &str) -> Result<Option<u32>, String> {
+        Ok(self.state(id)?.pid)
+    }
+
+    fn write_state(&self, id: &str, state: &SessionState) -> Result<(), String> {
+        let path = self.base_path.join(id).join("state.json");
+        let temp = self.base_path.join(id).join(".state.json.tmp");
+        let json = serde_json::to_string_pretty(state)
+            .map_err(|e| format!("failed to serialize state: {}", e))?;
+        fs::write(&temp, json).map_err(|e| format!("failed to write temp state: {}", e))?;
+        fs::rename(&temp, &path).map_err(|e| format!("failed to rename state file: {}", e))
+    }
     pub fn get(&self, id: &str) -> Result<Metadata, String> {
         let metadata_path = self.base_path.join(id).join("metadata.json");
         let contents = fs::read_to_string(&metadata_path)
@@ -125,17 +150,35 @@ impl Store {
                 convos.push(meta);
             }
         }
-
-        convos.sort_by(|a, b| {
-            let a_time = a.run_started_at.unwrap_or(a.created_at);
-            let b_time = b.run_started_at.unwrap_or(b.created_at);
-            b_time.cmp(&a_time)
-        });
-
+        convos.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(convos)
     }
 
     pub fn update(&self, id: &str, updates: MetadataUpdate) -> Result<Metadata, String> {
+        let mut state = self.state(id)?;
+        if let Some(status) = updates.status {
+            state.status = status;
+        }
+        if let Some(pid) = updates.pid {
+            state.pid = pid;
+        }
+        if let Some(value) = updates.run_started_at {
+            state.run_started_at = value;
+        }
+        if let Some(value) = updates.last_run_at {
+            state.last_run_at = value;
+        }
+        if let Some(value) = updates.last_message {
+            state.last_message = Some(value);
+        }
+        if let Some(value) = updates.token_estimate {
+            state.token_estimate = Some(value);
+        }
+        if let Some(value) = updates.scope_exceptions {
+            state.scope_exceptions = value;
+        }
+        self.write_state(id, &state)?;
+
         let mut meta = self.get(id)?;
 
         if let Some(policy) = updates.policy {
@@ -147,32 +190,8 @@ impl Store {
         if let Some(label) = updates.label {
             meta.label = label;
         }
-        if let Some(persona) = updates.persona {
-            meta.persona = persona;
-        }
         if let Some(working_dir) = updates.working_dir {
             meta.working_dir = working_dir;
-        }
-        if let Some(status) = updates.status {
-            meta.status = status;
-        }
-        if let Some(pid) = updates.pid {
-            meta.pid = pid;
-        }
-        if let Some(run_started_at) = updates.run_started_at {
-            meta.run_started_at = run_started_at;
-        }
-        if let Some(last_run_at) = updates.last_run_at {
-            meta.last_run_at = last_run_at;
-        }
-        if let Some(last_message) = updates.last_message {
-            meta.last_message = Some(last_message);
-        }
-        if let Some(token_estimate) = updates.token_estimate {
-            meta.token_estimate = Some(token_estimate);
-        }
-        if let Some(scope_exceptions) = updates.scope_exceptions {
-            meta.scope_exceptions = scope_exceptions;
         }
 
         meta.updated_at = Utc::now();

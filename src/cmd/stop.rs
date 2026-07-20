@@ -13,7 +13,8 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
     let meta = resolve::resolve(id, &base_path)?;
     let convo_id = meta.id;
 
-    if meta.status == Status::Idle {
+    let state = store.state(&convo_id)?;
+    if state.status == Status::Idle {
         return Ok(json!({
             "id": convo_id,
             "status": "idle",
@@ -21,7 +22,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
         }));
     }
 
-    if let Some(pid) = meta.pid {
+    if let Some(pid) = store.state(&convo_id)?.pid {
         #[cfg(unix)]
         {
             use nix::sys::signal::{self, Signal};

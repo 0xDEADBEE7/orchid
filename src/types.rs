@@ -186,6 +186,10 @@ pub struct Metadata {
     pub env: Option<HashMap<String, String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionState {
     pub status: Status,
     pub pid: Option<u32>,
     pub run_started_at: Option<DateTime<Utc>>,

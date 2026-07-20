@@ -14,9 +14,10 @@ fn test_on_run_start() {
     let store = Store::with_base(convos_dir);
     let meta = store.create(None, None, None, None, None).unwrap();
     on_run_start(&meta.id, &orchid_dir).ok();
-    let updated = store.get(&meta.id).unwrap();
-    assert_eq!(updated.status, Status::Running);
-    assert!(updated.pid.is_some());
+    let _updated = store.get(&meta.id).unwrap();
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Running);
+    assert!(state.pid.is_some());
 }
 
 #[test]
@@ -30,12 +31,13 @@ fn test_on_run_end() {
     let meta = store.create(None, None, None, None, None).unwrap();
     on_run_start(&meta.id, &orchid_dir).ok();
     on_run_end(&meta.id, &orchid_dir).ok();
-    let updated = store.get(&meta.id).unwrap();
-    assert_eq!(updated.status, Status::Idle);
-    assert!(updated.pid.is_none());
-    assert!(updated.last_run_at.is_some());
+    let _updated = store.get(&meta.id).unwrap();
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Idle);
+    assert!(state.pid.is_none());
+    assert!(state.last_run_at.is_some());
     assert!(
-        updated.run_started_at.is_none(),
+        state.run_started_at.is_none(),
         "run_started_at must be cleared on run end"
     );
 }
