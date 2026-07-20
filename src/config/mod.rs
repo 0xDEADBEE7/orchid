@@ -133,16 +133,17 @@ fn read_json<T: serde::de::DeserializeOwned>(
 }
 
 fn resource_name(name: &str) -> Result<(), String> {
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
-    {
-        return Err("resource name must be a non-empty path component".to_string());
+    let valid = !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains("..");
+    if valid {
+        Ok(())
+    } else {
+        Err("resource name must be a non-empty path component without '..'".to_string())
     }
-    Ok(())
 }
 
 impl ConfigDir {
@@ -161,11 +162,11 @@ impl ConfigDir {
         Ok(root)
     }
     pub fn load_connection(&self, name: &str) -> Result<Connection, ResourceLoadError> {
-        let path = self.connections_path().join(format!("{}.json", name));
         resource_name(name).map_err(|message| ResourceLoadError::Invalid {
-            path: path.clone(),
+            path: self.connections_path().join(format!("{}.json", name)),
             message,
         })?;
+        let path = self.connections_path().join(format!("{}.json", name));
         let value: Connection = read_json(path.clone(), "connection")?;
         if value.interface.trim().is_empty()
             || value.base_url.trim().is_empty()
@@ -179,11 +180,11 @@ impl ConfigDir {
         Ok(value)
     }
     pub fn load_policy(&self, name: &str) -> Result<Policy, ResourceLoadError> {
-        let path = self.policies_path().join(format!("{}.json", name));
         resource_name(name).map_err(|message| ResourceLoadError::Invalid {
-            path: path.clone(),
+            path: self.policies_path().join(format!("{}.json", name)),
             message,
         })?;
+        let path = self.policies_path().join(format!("{}.json", name));
         let value: Policy = read_json(path.clone(), "policy")?;
         if value.connections.is_empty() {
             return Err(ResourceLoadError::Invalid {
