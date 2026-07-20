@@ -18,11 +18,10 @@ pub struct Profile {
     pub base_url: String,
     #[serde(default)]
     pub model: String,
+    /// Arbitrary request body parameters (e.g. `max_completion_tokens`, `temperature`,
+    /// `max_tokens`).
     #[serde(default)]
-    pub max_tokens: Option<u32>,
-    /// Reasoning effort level (e.g., "none", "low", "high").
-    #[serde(default)]
-    pub reasoning_effort: Option<String>,
+    pub params: HashMap<String, serde_json::Value>,
     /// Arbitrary headers injected into every request. Values support `env.<VAR>` indirection.
     #[serde(default)]
     pub headers: HashMap<String, String>,

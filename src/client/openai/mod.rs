@@ -21,10 +21,9 @@ pub struct OpenAiClient {
     base_client: BaseClient,
     api_url: String,
     model: String,
-    max_tokens: u32,
-    reasoning_effort: Option<String>,
     extra_headers: Vec<(String, String)>,
     auth_header: String,
+    params: Vec<(String, serde_json::Value)>,
 }
 
 impl OpenAiClient {
@@ -41,10 +40,9 @@ impl OpenAiClient {
             base_client: BaseClient::new()?,
             api_url: DEFAULT_API_URL.to_string(),
             model: DEFAULT_MODEL.to_string(),
-            max_tokens: 8192,
-            reasoning_effort: None,
             extra_headers: vec![],
             auth_header: String::new(),
+            params: vec![],
         })
     }
 
@@ -103,10 +101,9 @@ impl OpenAiClient {
             base_client: BaseClient::new()?,
             api_url: base_url,
             model,
-            max_tokens: profile.max_tokens.unwrap_or(8192),
-            reasoning_effort: profile.reasoning_effort.clone(),
             extra_headers,
             auth_header,
+            params: profile.params.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         })
     }
 

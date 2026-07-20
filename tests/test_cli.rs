@@ -90,10 +90,17 @@ fn test_parse_config_use_no_profile() {
 }
 
 #[test]
-fn test_parse_unknown_command() {
+fn test_parse_send_unknown_as_message() {
+    // Unknown words after "send" are treated as messages, not commands.
     let args = vec![
         "send".to_string(),"unknown".to_string()];
-    assert!(parse_args(&args).is_err());
+    let (cmd, _) = parse_args(&args).unwrap();
+    match cmd {
+        Command::Send { message, .. } => {
+            assert_eq!(message, "unknown");
+        }
+        _ => panic!("expected Send"),
+    }
 }
 
 #[test]

@@ -64,26 +64,30 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         return Ok((Command::Help(None), BTreeMap::new()));
     }
 
-    // Strip "send" prefix (for CLI usage like `orchid send list`)
+    // Strip "send" prefix (for CLI usage like `orchid send list`).
+    // If the first positional after "send" is not a known command,
+    // default to the "send" command (so `orchid send "hi"` sends "hi").
     let (cmd_name, rest) = if args.first().map(|s| s.as_str()) == Some("send") {
         let rest = &args[1..];
-        // If no args remain or first remaining arg is a flag (starts with --),
-        // default to "send" command so unknown flag errors work properly.
-        let cmd_name = if rest.is_empty()
+        if rest.is_empty()
             || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--"))
         {
-            "send"
+            // No args or flags only: default to "send" command.
+            ("send", rest)
         } else {
-            rest[0].as_str()
-        };
-        let rest = if rest.is_empty()
-            || rest.first().map(|s| s.as_str()).is_some_and(|s| s.starts_with("--"))
-        {
-            rest
-        } else {
-            &rest[1..]
-        };
-        (cmd_name, rest)
+            // Check if the first positional is a known command.
+            let known_commands = [
+                "help", "list", "create", "config", "send",
+                "set", "delete", "stop", "kill", "__run", "server-action",
+            ];
+            if known_commands.contains(&rest[0].as_str()) {
+                // Known command: treat it as such.
+                (rest[0].as_str(), &rest[1..])
+            } else {
+                // Unknown: default to "send" with this as the message.
+                ("send", rest)
+            }
+        }
     } else {
         (args[0].as_str(), &args[1..])
     };

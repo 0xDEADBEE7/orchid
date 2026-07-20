@@ -17,11 +17,10 @@ fn test_create_provider_defaults_to_anthropic() {
         api_key: String::new(),
         base_url: String::new(),
         model: String::new(),
-        max_tokens: None,
-        reasoning_effort: None,
-        extra: HashMap::new(),
         headers: HashMap::new(),
+        params: HashMap::new(),
         server_actions: HashMap::new(),
+        extra: HashMap::new(),
         env: HashMap::new(),
     };
 

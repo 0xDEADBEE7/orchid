@@ -98,26 +98,13 @@ impl<'a> AnthropicApiClient<'a> {
         let wire_messages: Vec<AnthropicMessage> = messages.iter().map(to_wire_message).collect();
         let mut body = serde_json::json!({
             "model": self.inner.model,
-            "max_tokens": self.inner.max_tokens,
             "system": system,
             "messages": wire_messages,
             "tools": crate::tools::tool_definitions(),
         });
-        if let Some(ref effort) = self.inner.reasoning_effort {
-            if effort != "none" {
-                // Map reasoning_effort to Anthropic's thinking budget.
-                // The higher the effort, the more budget tokens we allocate.
-                let budget: u32 = match effort.as_str() {
-                    "minimal" | "low" => 1024,
-                    "medium" => 2048,
-                    "high" | "xhigh" => 4096,
-                    _ => 1024,
-                };
-                body["thinking"] = serde_json::json!({
-                    "type": "enabled",
-                    "budget_tokens": budget,
-                });
-            }
+        // Merge user-provided params (max_tokens, max_completion_tokens, etc.).
+        for (k, v) in &self.inner.params {
+            body[k.as_str()] = v.clone();
         }
         if stream {
             body["stream"] = serde_json::json!(true);

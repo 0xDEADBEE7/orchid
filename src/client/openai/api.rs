@@ -112,12 +112,12 @@ impl<'a> OpenAiApiClient<'a> {
 
         let mut body = serde_json::json!({
             "model": self.inner.model,
-            "max_tokens": self.inner.max_tokens,
             "messages": openai_messages,
             "tools": openai_tool_definitions(),
         });
-        if let Some(ref effort) = self.inner.reasoning_effort {
-            body["reasoning_effort"] = serde_json::json!(effort);
+        // Merge user-provided params (max_tokens, max_completion_tokens, etc.).
+        for (k, v) in &self.inner.params {
+            body[k.as_str()] = v.clone();
         }
         if stream {
             body["stream"] = serde_json::json!(true);

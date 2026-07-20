@@ -22,9 +22,8 @@ pub struct AnthropicClient {
     api_url: String,
     api_key: String,
     model: String,
-    max_tokens: u32,
-    reasoning_effort: Option<String>,
     extra_headers: Vec<(String, String)>,
+    params: Vec<(String, serde_json::Value)>,
 }
 
 impl AnthropicClient {
@@ -40,9 +39,8 @@ impl AnthropicClient {
             api_url: API_URL.to_string(),
             api_key,
             model: DEFAULT_MODEL.to_string(),
-            max_tokens: 8192,
-            reasoning_effort: None,
             extra_headers: vec![],
+            params: vec![],
         })
     }
 
@@ -90,9 +88,8 @@ impl AnthropicClient {
             api_url: base_url,
             api_key: raw_key,
             model,
-            max_tokens: profile.max_tokens.unwrap_or(8192),
-            reasoning_effort: profile.reasoning_effort.clone(),
             extra_headers,
+            params: profile.params.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         })
     }
 
