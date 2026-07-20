@@ -1,20 +1,23 @@
+use serde::{Deserialize, Serialize};
 use crate::config::Connection;
+use crate::provider::{Provider, ProviderError};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffectiveSessionConfig {
     pub policy_name: String,
     pub policy_hash: String,
-    pub connection_candidates: Vec<Connection>,
+    pub connection_candidates: Vec<super::Connection>,
     pub prompt: String,
     pub working_dir: PathBuf,
-    pub permissions: crate::config::Permissions,
-    pub limits: crate::config::PolicyLimits,
+    pub permissions: super::Permissions,
+    pub limits: super::PolicyLimits,
     pub env_vars: HashMap<String, String>,
 }
 
@@ -100,4 +103,27 @@ pub fn resolve_env_inline(s: &str) -> String {
         result = format!("{}{}{}", &result[..start], value, &after[end..]);
     }
     result
+}
+
+/// Build a provider from a resolved Connection.
+/// This is the new-path equivalent of `create_provider(profile)`.
+pub fn create_provider_from_connection(
+    conn: &Connection,
+    log_path: Option<PathBuf>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    // Build a minimal Profile from the Connection to reuse existing provider
+    // constructors. The Connection is the new resource; Profile is legacy.
+    let profile = crate::config::Profile {
+        name: String::new(),
+        provider: conn.interface.clone(),
+        api_key: conn.api_key.clone().unwrap_or_default(),
+        base_url: conn.base_url.clone(),
+        model: conn.model.clone(),
+        params: conn.params.clone(),
+        headers: conn.headers.clone(),
+        server_actions: HashMap::new(),
+        extra: HashMap::new(),
+        env: HashMap::new(),
+    };
+    crate::create_provider_with_log(&profile, log_path)
 }

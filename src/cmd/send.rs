@@ -1,10 +1,12 @@
-use crate::client::create_provider_with_log;
+use crate::config::resolve::create_provider_from_connection;
 use crate::cmd::create::resolve_working_dir;
+use crate::config::resolve::{resolve as resolve_effective_config, EffectiveSessionConfig};
+use crate::config::ConfigDir;
 use crate::convo::{resolve, Store};
 use crate::log::LogWriter;
 use crate::loop_module::run as run_tool_loop;
 use crate::types::{ConvoEvent, MessageEvent};
-use crate::{get_convo_jsonl_path, get_orchid_dir, load_config};
+use crate::{get_convo_jsonl_path, get_orchid_dir};
 use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -14,13 +16,11 @@ pub fn send(
     id: Option<String>,
     message: String,
     await_completion: bool,
-    profile: Option<String>,
+    config_dir: &std::path::Path,
     label: Option<String>,
     working_dir: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let store = Store::new()?;
-    let config = load_config()?;
-    let active_profile = config.current_profile.clone();
 
     let convo_id = if let Some(id_or_label) = id {
         let base_path = get_orchid_dir()?.join("conversations");
@@ -58,89 +58,59 @@ pub fn send(
     let event = ConvoEvent::Message(MessageEvent::new("user", &message));
     LogWriter::append(&convo_path, &event)?;
 
+    let config_dir_ref = ConfigDir::new(config_dir);
+    let effective = resolve_effective_config(&config_dir_ref, None, Some(&_working_dir))
+        .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+
     if await_completion {
-        let profile_name =
-            profile.unwrap_or(active_profile.ok_or_else(|| "no profile configured".to_string())?);
+        let connection = effective
+            .connection_candidates
+            .first()
+            .ok_or_else(|| "policy has no connections configured".to_string())?;
 
-        let profiles = config.profiles;
-        let prof = profiles
-            .get(&profile_name)
-            .ok_or_else(|| format!("profile '{}' not found", profile_name))?;
-
-        let log_level = crate::log::LogLevel::from_config_str(config.log_level.as_deref());
-        let convo_dir = get_orchid_dir()?.join("conversations").join(&convo_id);
-        let log = crate::log::DiagLogger::for_convo(convo_dir.clone(), log_level);
-
-        log.debug("profile_selected", &profile_name);
-        log.debug("profile_base_url", &prof.base_url);
-        log.debug("profile_model", &prof.model);
-        log.debug(
-            "profile_api_key",
-            if prof.api_key.is_empty() {
-                "(empty)"
-            } else {
-                "(set)"
-            },
-        );
-        log.debug(
-            "profile_headers",
-            &prof.headers.keys().cloned().collect::<Vec<_>>().join(", "),
-        );
+        let log_path = get_orchid_dir()
+            .ok()
+            .map(|d| d.join("conversations").join(&convo_id).join("orchid.log"));
 
         let provider =
-            create_provider_with_log(prof, Some(convo_dir.join("orchid.log"))).map_err(|e| {
-                log.error("provider_init_error", &e.to_string());
-                format!("provider error: {}", e)
-            })?;
-        log.debug("provider_init", "ok");
+            create_provider_from_connection(connection, log_path).map_err(|e| e.to_string())?;
 
-        run_tool_loop(&convo_id, provider.as_ref())?;
+        run_tool_loop(&convo_id, &effective, config_dir, provider.as_ref())?;
 
         let final_meta = store.get(&convo_id)?;
         Ok(json!({
             "id": convo_id,
             "status": final_meta.status,
-            "completed": true
+            "completed": true,
+            "policy": effective.policy_name,
         }))
     } else {
-        let pid = fork_tool_loop(&convo_id, &profile, active_profile)?;
-
-        let updates = crate::MetadataUpdate {
-            pid: Some(pid),
-            ..Default::default()
-        };
-
-        store.update(&convo_id, updates)?;
-
-        Ok(json!({
-            "id": convo_id,
-            "status": "running",
-            "pid": pid
-        }))
+        fork_tool_loop(&convo_id, &effective, config_dir)
     }
 }
 
 fn fork_tool_loop(
     convo_id: &str,
-    profile: &Option<String>,
-    active_profile: Option<String>,
-) -> Result<Option<u32>, String> {
-    let profile_arg = profile
-        .clone()
-        .or(active_profile)
-        .ok_or_else(|| "no profile configured and no --profile given".to_string())?;
+    effective: &EffectiveSessionConfig,
+    config_dir: &std::path::Path,
+) -> Result<serde_json::Value, String> {
+    let temp_dir = std::env::temp_dir();
+    let effective_path = temp_dir.join(format!("orchid-effective-{}.json", convo_id));
+    let json_str = serde_json::to_string_pretty(effective)
+        .map_err(|e| format!("failed to serialize effective config: {}", e))?;
+    std::fs::write(&effective_path, &json_str)
+        .map_err(|e| format!("failed to write effective config: {}", e))?;
 
     let mut cmd = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     cmd.arg("__run")
         .arg(convo_id)
-        .arg("--profile")
-        .arg(profile_arg)
+        .arg("--effective-config")
+        .arg(effective_path.display().to_string())
+        .arg("--config")
+        .arg(config_dir.display().to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    // Detach from the caller's process group and controlling terminal so the
-    // daemon survives when the parent process exits (e.g. when spawned via
-    // Emacs make-process which places children in its own process group).
     #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| {
@@ -153,5 +123,21 @@ fn fork_tool_loop(
         .spawn()
         .map_err(|e| format!("failed to spawn background process: {}", e))?;
 
-    Ok(Some(child.id()))
+    let pid = child.id();
+
+    let _ = std::fs::remove_file(&effective_path);
+
+    let updates = crate::MetadataUpdate {
+        pid: Some(Some(pid)),
+        ..Default::default()
+    };
+
+    Store::new()?.update(convo_id, updates)?;
+
+    Ok(json!({
+        "id": convo_id,
+        "status": "running",
+        "pid": pid,
+        "policy": effective.policy_name,
+    }))
 }

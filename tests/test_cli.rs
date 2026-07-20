@@ -135,7 +135,7 @@ fn test_parse_send() {
             id: None,
             message,
             await_completion: false,
-            profile: None,
+            
             ..
         } => assert_eq!(message, "hello world"),
         _ => panic!("expected Send command"),
@@ -160,13 +160,11 @@ fn test_parse_send_await_does_not_consume_message() {
             message,
             await_completion,
             id,
-            profile,
             ..
         } => {
             assert_eq!(message, "the message");
             assert!(await_completion, "--await should be set");
             assert_eq!(id, Some("abc123".to_string()));
-            assert_eq!(profile, Some("myprofile".to_string()));
         }
         _ => panic!("expected Send command"),
     }

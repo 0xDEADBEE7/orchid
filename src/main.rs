@@ -52,19 +52,16 @@ fn main() {
         Command::Config(ConfigSubcommand::Validate) => cmd::config_validate(&config_dir),
         Command::Create {
             label,
-            persona,
             working_dir,
-            profile,
             scope_exceptions,
-        } => cmd::create(label, persona, working_dir, profile, scope_exceptions),
+        } => cmd::create(label, working_dir, scope_exceptions),
         Command::Send {
             id,
             message,
             await_completion,
-            profile,
             label,
             working_dir,
-        } => cmd::send(id, message, await_completion, profile, label, working_dir),
+        } => cmd::send(id, message, await_completion, &config_dir, label, working_dir),
         Command::Set {
             id,
             label,
@@ -75,10 +72,12 @@ fn main() {
         Command::Delete(id) => cmd::delete(id),
         Command::Stop(id) => cmd::stop(id),
         Command::Kill(id) => cmd::stop(id),
-        Command::InternalRun { id, profile } => match cmd::internal_run(&id, &profile) {
-            Ok(()) => Ok(serde_json::json!({"status": "ok"})),
-            Err(e) => Err(e),
-        },
+        Command::InternalRun { id } => {
+            match cmd::internal_run(&id, &config_dir) {
+                Ok(()) => Ok(serde_json::json!({"status": "ok"})),
+                Err(e) => Err(e),
+            }
+        }
         Command::ServerAction {
             action,
             profile,

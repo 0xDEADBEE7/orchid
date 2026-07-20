@@ -10,16 +10,13 @@ pub enum Command {
     Config(ConfigSubcommand),
     Create {
         label: Option<String>,
-        persona: Option<String>,
         working_dir: Option<String>,
-        profile: Option<String>,
         scope_exceptions: Option<Vec<String>>,
     },
     Send {
         id: Option<String>,
         message: String,
         await_completion: bool,
-        profile: Option<String>,
         label: Option<String>,
         working_dir: Option<String>,
     },
@@ -35,7 +32,6 @@ pub enum Command {
     Kill(String),
     InternalRun {
         id: String,
-        profile: Option<String>,
     },
     ServerAction {
         action: String,
@@ -196,18 +192,14 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         }
         "create" => {
             let label = flags.remove("label").flatten();
-            let persona = flags.remove("persona").flatten();
             let working_dir = flags.remove("working-dir").flatten();
-            let profile = flags.remove("profile").flatten();
             let scope_exceptions = flags
                 .remove("scope-exception")
                 .map(|v| v.map(|s| vec![s]))
                 .unwrap_or_default();
             Command::Create {
                 label,
-                persona,
                 working_dir,
-                profile,
                 scope_exceptions,
             }
         }
@@ -240,7 +232,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let id = flags.remove("id").flatten();
             let await_completion = flags.contains_key("await");
             flags.remove("await");
-            let profile = flags.remove("profile").flatten();
             let label = flags.remove("label").flatten();
             let working_dir = flags.remove("working-dir").flatten();
 
@@ -257,7 +248,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 id,
                 message,
                 await_completion,
-                profile,
                 label,
                 working_dir,
             }
@@ -309,8 +299,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .first()
                 .cloned()
                 .ok_or_else(|| "__run requires <id>".to_string())?;
-            let profile = flags.remove("profile").flatten();
-            Command::InternalRun { id, profile }
+            Command::InternalRun { id }
         }
         "server-action" => {
             let action = positional

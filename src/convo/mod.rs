@@ -2,7 +2,7 @@ use crate::get_orchid_dir;
 use crate::types::{Metadata, Status};
 use chrono::Utc;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod id;
 pub mod resolve;
@@ -24,8 +24,24 @@ impl Store {
         Ok(Store { base_path })
     }
 
+    /// Create a store rooted under a config directory's sessions path.
+    /// This is the new-path that stores sessions under `./config/sessions/`.
+    pub fn with_config_dir(config_dir: &Path) -> Result<Self, String> {
+        let base_path = config_dir.join("sessions");
+
+        fs::create_dir_all(&base_path)
+            .map_err(|e| format!("failed to create sessions dir: {}", e))?;
+
+        Ok(Store { base_path })
+    }
+
     pub fn with_base(base_path: PathBuf) -> Self {
         Store { base_path }
+    }
+
+    /// Get the base path for this store (for tests).
+    pub fn base_path(&self) -> &Path {
+        &self.base_path
     }
 
     pub fn create(
@@ -179,4 +195,18 @@ pub fn get_convo_jsonl_path(convo_id: &str) -> Result<PathBuf, String> {
     let base_path = get_orchid_dir()?.join("conversations").join(convo_id);
 
     Ok(base_path.join("conversation.jsonl"))
+}
+
+/// Get the conversation directory under the default XDG location.
+pub fn get_convo_dir(convo_id: &str) -> Result<PathBuf, String> {
+    let base_path = get_orchid_dir()?.join("conversations").join(convo_id);
+
+    Ok(base_path)
+}
+
+/// Get the conversation directory under a config directory's sessions path.
+pub fn get_convo_dir_from_config(convo_id: &str, config_dir: &Path) -> Result<PathBuf, String> {
+    let base_path = config_dir.join("sessions").join(convo_id);
+
+    Ok(base_path)
 }
