@@ -46,24 +46,23 @@ impl OpenAiClient {
     }
 
     pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
-        let raw_key = if let Some(key) = &connection.api_key {
-            if let Some(var) = key.strip_prefix("env.") {
-                env::var(var).unwrap_or_default()
-            } else {
-                key.clone()
-            }
-        } else {
-            env::var("OPENAI_API_KEY").unwrap_or_default()
+        let raw_key = match &connection.api_key {
+            Some(key) => crate::client::resolve::resolve_env_inline_strict(key)
+                .map_err(|e| ProviderError::AuthError(e.to_string()))?,
+            None => env::var("OPENAI_API_KEY").map_err(|_| {
+                ProviderError::AuthError("OPENAI_API_KEY environment variable not set".to_string())
+            })?,
         };
 
         let extra_headers: Vec<(String, String)> = connection
             .headers
             .iter()
             .map(|(k, v)| {
-                let resolved = crate::client::resolve::resolve_env_inline(v);
-                (k.clone(), resolved)
+                crate::client::resolve::resolve_env_inline_strict(v)
+                    .map(|resolved| (k.clone(), resolved))
+                    .map_err(|e| ProviderError::AuthError(e.to_string()))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let has_auth_header = extra_headers.iter().any(|(k, _)| {
             k.eq_ignore_ascii_case("authorization") || k.eq_ignore_ascii_case("api-key")
