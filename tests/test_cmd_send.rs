@@ -28,9 +28,7 @@ fn test_fork_errors_when_no_policy_connection_available() {
     let config_dir = orchid_dir.clone();
     std::fs::remove_file(config_dir.join("connections/local.json")).unwrap();
     let store = Store::with_config_dir(&config_dir).unwrap();
-    let meta = store
-        .create(None, Some("/tmp".to_string()), None, None, None)
-        .unwrap();
+    let meta = store.create(None, Some("/tmp".to_string()), None).unwrap();
     let result = send(
         Some(meta.id.clone()),
         "test".to_string(),
@@ -59,9 +57,7 @@ fn test_send_writes_user_message_to_session_jsonl() {
     write_resource_config(orchid_dir.as_path());
     let config_dir = orchid_dir.clone();
     let store = Store::with_config_dir(&config_dir).unwrap();
-    let meta = store
-        .create(None, Some("/tmp".to_string()), None, None, None)
-        .unwrap();
+    let meta = store.create(None, Some("/tmp".to_string()), None).unwrap();
     let send_result = send(
         Some(meta.id.clone()),
         "hello world".to_string(),

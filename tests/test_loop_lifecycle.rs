@@ -1,5 +1,4 @@
 use orchid::r#loop::lifecycle::{on_run_end, on_run_start};
-use orchid::SessionStore;
 use orchid::SessionStore as Store;
 use orchid::Status;
 mod support;
@@ -13,7 +12,7 @@ fn test_on_run_start() {
     let sessions_dir = orchid_dir.join("sessions");
     std::fs::create_dir_all(&sessions_dir).unwrap();
     let store = Store::with_base(sessions_dir);
-    let meta = store.create(None, None, None, None, None).unwrap();
+    let meta = store.create(None, None, None).unwrap();
     on_run_start(&meta.id, &orchid_dir).ok();
     let _updated = store.get(&meta.id).unwrap();
     let state = store.state(&meta.id).unwrap();
@@ -29,7 +28,7 @@ fn test_on_run_end() {
     let sessions_dir = orchid_dir.join("sessions");
     std::fs::create_dir_all(&sessions_dir).unwrap();
     let store = Store::with_base(sessions_dir);
-    let meta = store.create(None, None, None, None, None).unwrap();
+    let meta = store.create(None, None, None).unwrap();
     on_run_start(&meta.id, &orchid_dir).ok();
     on_run_end(&meta.id, &orchid_dir).ok();
     let _updated = store.get(&meta.id).unwrap();

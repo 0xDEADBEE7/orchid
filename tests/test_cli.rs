@@ -180,8 +180,8 @@ fn test_parse_send_await_does_not_consume_message() {
         "send".to_string(),
         "--id".to_string(),
         "abc123".to_string(),
-        "--profile".to_string(),
-        "myprofile".to_string(),
+        "--policy".to_string(),
+        "default".to_string(),
         "--await".to_string(),
         "the message".to_string(),
     ];

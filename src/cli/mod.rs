@@ -217,7 +217,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             // Check for unknown flags.
             if let Some(unknown) = flags
                 .iter()
-                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()) && k.as_str() != "profile")
+                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()))
                 .map(|(k, _)| k.as_str())
             {
                 return Err(format!("unknown flag: --{}", unknown));
@@ -243,10 +243,6 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .remove("scope-exception")
                 .map(|v| v.map(|s| vec![s]))
                 .unwrap_or_default();
-            if flags.remove("profile").is_some() {
-                return Err("--profile is not supported on set; select a policy with --policy on create/send".to_string());
-            }
-
             Command::Set {
                 id,
                 label,

@@ -30,7 +30,6 @@ pub struct LoopContext {
 }
 
 /// Build the loop context from an `EffectiveSessionConfig` and session ID.
-/// This is the new-path that uses resource-based config instead of legacy profiles.
 pub fn build_context(
     session_id: &str,
     effective: &EffectiveSessionConfig,

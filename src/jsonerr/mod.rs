@@ -25,7 +25,7 @@ impl JsonError {
     pub fn config_not_found() -> Self {
         JsonError::new(
             "config_not_found",
-            "No profile configured. Run: orchid config use <profile>",
+            "No resource configuration found. Initialize config.json and the connections, policies, prompts, and sessions directories.",
         )
     }
 
