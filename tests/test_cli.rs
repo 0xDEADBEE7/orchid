@@ -3,6 +3,24 @@ use orchid::cli::{parse_args, Command, ConfigSubcommand};
 mod support;
 
 #[test]
+fn test_parse_config_flag_is_not_a_command_argument() {
+    let args = vec![
+        "send".to_string(),
+        "hello".to_string(),
+        "--config".to_string(),
+        "/tmp/example".to_string(),
+    ];
+    let (cmd, flags) = parse_args(&args).unwrap();
+    match cmd {
+        Command::Send { message, .. } => assert_eq!(message, "hello"),
+        _ => panic!("expected Send"),
+    }
+    assert_eq!(
+        flags.get("config").and_then(|v| v.as_deref()),
+        Some("/tmp/example")
+    );
+}
+#[test]
 fn test_parse_create_policy() {
     let args = vec![
         "create".to_string(),
