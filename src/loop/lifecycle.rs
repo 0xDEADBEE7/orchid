@@ -1,9 +1,11 @@
 use crate::convo::{MetadataUpdate, Store};
 use crate::types::Status;
 use chrono::Utc;
+use std::path::Path;
 use std::process;
-pub fn on_run_start(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
+
+pub fn on_run_start(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = Store::with_config_dir(config_dir)?;
 
     let updates = MetadataUpdate {
         status: Some(Status::Running),
@@ -16,8 +18,8 @@ pub fn on_run_start(convo_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn on_run_end(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
+pub fn on_run_end(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = Store::with_config_dir(config_dir)?;
 
     let updates = MetadataUpdate {
         status: Some(Status::Idle),
@@ -31,8 +33,8 @@ pub fn on_run_end(convo_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn reconcile_crashed(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
+pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = Store::with_config_dir(config_dir)?;
     let updates = MetadataUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
@@ -43,8 +45,8 @@ pub fn reconcile_crashed(convo_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn detect_crashed(convo_id: &str) -> Result<bool, String> {
-    let store = Store::new()?;
+pub fn detect_crashed(convo_id: &str, config_dir: &Path) -> Result<bool, String> {
+    let store = Store::with_config_dir(config_dir)?;
     let meta = store.get(convo_id)?;
 
     match (meta.status, meta.pid) {

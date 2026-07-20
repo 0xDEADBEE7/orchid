@@ -1,12 +1,18 @@
-use crate::get_convo_jsonl_path;
 use crate::log::{DiagLogger, LogReader};
 use crate::tools::fs_read::extract_paths;
 use crate::types::{ConvoEvent, Message, ToolResult};
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub fn build_message_history(convo_id: &str, log: &DiagLogger) -> Result<Vec<Message>, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
+pub fn build_message_history(
+    convo_id: &str,
+    config_dir: &std::path::Path,
+    log: &DiagLogger,
+) -> Result<Vec<Message>, String> {
+    let path = config_dir
+        .join("sessions")
+        .join(convo_id)
+        .join("conversation.jsonl");
 
     if !std::path::Path::new(&path).exists() {
         return Ok(Vec::new());

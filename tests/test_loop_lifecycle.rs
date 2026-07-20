@@ -9,11 +9,11 @@ use support::TestEnv;
 fn test_on_run_start() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    let convos_dir = orchid_dir.join("conversations");
+    let convos_dir = orchid_dir.join("sessions");
     std::fs::create_dir_all(&convos_dir).unwrap();
     let store = Store::with_base(convos_dir);
     let meta = store.create(None, None, None, None, None).unwrap();
-    on_run_start(&meta.id).ok();
+    on_run_start(&meta.id, &orchid_dir).ok();
     let updated = store.get(&meta.id).unwrap();
     assert_eq!(updated.status, Status::Running);
     assert!(updated.pid.is_some());
@@ -24,12 +24,12 @@ fn test_on_run_start() {
 fn test_on_run_end() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    let convos_dir = orchid_dir.join("conversations");
+    let convos_dir = orchid_dir.join("sessions");
     std::fs::create_dir_all(&convos_dir).unwrap();
     let store = Store::with_base(convos_dir);
     let meta = store.create(None, None, None, None, None).unwrap();
-    on_run_start(&meta.id).ok();
-    on_run_end(&meta.id).ok();
+    on_run_start(&meta.id, &orchid_dir).ok();
+    on_run_end(&meta.id, &orchid_dir).ok();
     let updated = store.get(&meta.id).unwrap();
     assert_eq!(updated.status, Status::Idle);
     assert!(updated.pid.is_none());

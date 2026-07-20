@@ -50,7 +50,11 @@ fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message
 
 #[test]
 fn test_build_empty_history() {
-    let result = build_message_history("nonexistent-id", &DiagLogger::noop());
+    let result = build_message_history(
+        "nonexistent-id",
+        std::path::Path::new("/tmp/nonexistent-orchid-config"),
+        &DiagLogger::noop(),
+    );
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 0);
 }
@@ -81,10 +85,10 @@ fn test_build_message_history() -> Result<(), Box<dyn std::error::Error>> {
 fn test_stale_read_replacement() -> Result<(), Box<dyn std::error::Error>> {
     let env = TestEnv::new();
     let base = env.dir();
-    let convos_dir = base.join("conversations");
-    std::fs::create_dir_all(&convos_dir).unwrap();
+    let sessions_dir = base.join("sessions");
+    std::fs::create_dir_all(&sessions_dir).unwrap();
     let convo_id = "stale-test-001";
-    let convo_path = convos_dir.join(convo_id);
+    let convo_path = base.join("sessions").join(convo_id);
     fs::create_dir_all(&convo_path)?;
     let jsonl_path = convo_path.join("conversation.jsonl");
     let tc1 = ConvoEvent::ToolCall(ToolCallEvent::new(vec![ToolCall {
@@ -110,7 +114,7 @@ fn test_stale_read_replacement() -> Result<(), Box<dyn std::error::Error>> {
     }
     let disk_before = fs::read_to_string(&jsonl_path)?;
     let log = DiagLogger::for_convo(convo_path.clone(), LogLevel::Debug);
-    let messages = build_message_history(convo_id, &log)?;
+    let messages = build_message_history(convo_id, &base, &log)?;
     let user_messages: Vec<&Message> = messages.iter().filter(|m| m.role == "user").collect();
     assert_eq!(user_messages.len(), 2);
     let tr1_content = &user_messages[0].tool_result.as_ref().unwrap().content;

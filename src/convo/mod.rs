@@ -44,6 +44,15 @@ impl Store {
         &self.base_path
     }
 
+    pub fn update_for_config(
+        &self,
+        config_dir: &Path,
+        id: &str,
+        updates: MetadataUpdate,
+    ) -> Result<Metadata, String> {
+        Store::with_config_dir(config_dir)?.update(id, updates)
+    }
+
     pub fn create(
         &self,
         label: Option<String>,

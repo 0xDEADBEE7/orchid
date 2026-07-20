@@ -18,6 +18,7 @@ pub struct LoopContext {
     pub meta: crate::types::Metadata,
     pub convo_dir: PathBuf,
     pub log: DiagLogger,
+    pub config_dir: PathBuf,
     pub working_dir: String,
     pub permissions: crate::config::Permissions,
     pub limits: crate::config::PolicyLimits,
@@ -35,14 +36,14 @@ pub fn build_context(
     effective: &EffectiveSessionConfig,
     config_dir: &Path,
 ) -> Result<LoopContext, String> {
-    let store = crate::convo::Store::new()?;
+    let store = crate::convo::Store::with_config_dir(config_dir)?;
     let meta = store.get(convo_id)?;
 
     let convo_dir = get_convo_dir_from_config(convo_id, config_dir)?;
     let log_level = LogLevel::Info;
     let log = DiagLogger::for_convo(convo_dir.clone(), log_level);
 
-    if lifecycle::detect_crashed(convo_id)? {
+    if lifecycle::detect_crashed(convo_id, config_dir)? {
         let stale_pid = meta
             .pid
             .map(|p| p.to_string())
@@ -51,7 +52,7 @@ pub fn build_context(
             "run_crashed",
             &format!("pid={} stale — reconciling", stale_pid),
         );
-        lifecycle::reconcile_crashed(convo_id)?;
+        lifecycle::reconcile_crashed(convo_id, config_dir)?;
     }
 
     log.info("run_start", convo_id);
@@ -67,7 +68,7 @@ pub fn build_context(
         &format!("candidates={}", effective.connection_candidates.len()),
     );
 
-    lifecycle::on_run_start(convo_id)?;
+    lifecycle::on_run_start(convo_id, config_dir)?;
 
     let working_dir = effective.working_dir.to_string_lossy().to_string();
 
@@ -87,6 +88,7 @@ pub fn build_context(
         meta,
         convo_dir,
         log,
+        config_dir: config_dir.to_path_buf(),
         working_dir,
         permissions: effective.permissions.clone(),
         limits: effective.limits.clone(),
@@ -100,11 +102,11 @@ pub fn build_context(
 
 /// Execute the main conversation loop.
 pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), String> {
-    let mut guard = RunGuard::new(&ctx.meta.id);
+    let mut guard = RunGuard::new(&ctx.meta.id, &ctx.config_dir);
     let mut last_warn_tokens: Option<u32> = None;
 
     loop {
-        let messages = history::build_message_history(&ctx.meta.id, &ctx.log)?;
+        let messages = history::build_message_history(&ctx.meta.id, &ctx.config_dir, &ctx.log)?;
 
         let estimated_tokens = history::estimate_tokens_from_messages(&messages);
         let hard_limit = ctx.limits.token_hard_limit.unwrap_or(120_000);
@@ -128,7 +130,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             };
             ctx.store.update(&ctx.meta.id, updates)?;
             guard.disarm();
-            lifecycle::on_run_end(&ctx.meta.id)?;
+            lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
             ctx.log.info("run_end", "pre_send_budget_exceeded");
             return Err(format!(
                 "token hard limit would be exceeded before sending: {} estimated tokens",
@@ -201,7 +203,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             };
             ctx.store.update(&ctx.meta.id, updates)?;
             guard.disarm();
-            lifecycle::on_run_end(&ctx.meta.id)?;
+            lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
             ctx.log.info("run_end", "budget_exceeded");
             return Err(format!(
                 "token hard limit exceeded: {} tokens",
@@ -302,7 +304,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         }
     }
 
-    lifecycle::on_run_end(&ctx.meta.id)?;
+    lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
     guard.disarm();
     ctx.log.info("run_end", &ctx.meta.id);
     Ok(())
