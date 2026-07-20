@@ -1,6 +1,43 @@
+use orchid::client::create_provider_from_connections_with_log;
+use orchid::config::Connection;
 use orchid::provider::{ProviderError, Response};
 
-mod support;
+fn connection(interface: &str) -> Connection {
+    Connection {
+        interface: interface.to_string(),
+        base_url: "http://127.0.0.1:1".to_string(),
+        api_key: None,
+        model: "test-model".to_string(),
+        params: Default::default(),
+        headers: Default::default(),
+    }
+}
+
+#[test]
+fn provider_fallback_skips_unknown_first_candidate() {
+    let connections = vec![
+        connection("unsupported-first"),
+        connection("unsupported-second"),
+    ];
+    let error = match create_provider_from_connections_with_log(&connections, None) {
+        Ok(_) => panic!("expected all candidates to fail"),
+        Err(error) => error,
+    };
+    let message = error.to_string();
+    assert!(message.contains("unknown provider: unsupported-first"));
+    assert!(message.contains("unknown provider: unsupported-second"));
+}
+
+#[test]
+fn provider_fallback_reports_empty_candidates() {
+    let error = match create_provider_from_connections_with_log(&[], None) {
+        Ok(_) => panic!("expected empty candidates to fail"),
+        Err(error) => error,
+    };
+    assert!(error
+        .to_string()
+        .contains("all connection candidates failed"));
+}
 
 // Tests from src/provider/mod.rs
 
