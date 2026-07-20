@@ -51,6 +51,9 @@ pub fn detect_crashed(session_id: &str, config_dir: &Path) -> Result<bool, Strin
 
     match (state.status, state.pid) {
         (Status::Running, Some(stored_pid)) => {
+            if stored_pid == 0 || stored_pid > i32::MAX as u32 {
+                return Ok(true);
+            }
             #[cfg(unix)]
             {
                 use nix::sys::signal;

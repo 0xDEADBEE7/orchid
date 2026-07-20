@@ -157,7 +157,11 @@ impl SessionStore {
                 sessions.push(meta);
             }
         }
-        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        sessions.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(sessions)
     }
 
