@@ -1,0 +1,5 @@
+{
+  "interface": "openai",
+  "base_url": "http://localhost:1234",
+  "model": "local-model"
+}
