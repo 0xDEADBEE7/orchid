@@ -3,6 +3,27 @@ use orchid::cli::{parse_args, Command, ConfigSubcommand};
 mod support;
 
 #[test]
+#[cfg(unix)]
+fn test_main_accepts_config_before_and_after_command() {
+    use std::process::Command;
+
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    for args in [
+        vec!["--config", "config-before", "config", "validate"],
+        vec!["config", "validate", "--config", "config-after"],
+    ] {
+        let output = Command::new(binary).args(&args).output().unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let combined = format!("{}{}", stdout, stderr);
+        assert!(
+            combined.contains(&args[1]) || combined.contains("missing root config"),
+            "args={args:?}, output={combined}"
+        );
+    }
+}
+#[test]
 fn test_parse_config_flag_is_not_a_command_argument() {
     let args = vec![
         "send".to_string(),

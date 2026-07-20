@@ -1,6 +1,6 @@
+use orchid::cmd::stop;
 use orchid::r#loop::lifecycle::{on_run_end, on_run_start};
-use orchid::SessionStore as Store;
-use orchid::Status;
+use orchid::{SessionStore as Store, SessionUpdate, Status};
 mod support;
 use support::TestEnv;
 #[test]
@@ -57,6 +57,55 @@ fn failed_state_write_does_not_change_existing_state() {
     std::fs::remove_dir(temp).unwrap();
 }
 
+#[test]
+#[cfg(unix)]
+fn test_stop_marks_running_session_idle() {
+    use std::process::{Command, Stdio};
+
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    let child = Command::new("sleep")
+        .arg("30")
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    store
+        .update(
+            &meta.id,
+            SessionUpdate {
+                status: Some(Status::Running),
+                pid: Some(Some(child.id())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let result = stop(meta.id.clone(), &config_dir).unwrap();
+    assert_eq!(result["status"], "stopped");
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Idle);
+    assert!(state.pid.is_none());
+    let mut child = child;
+    let exit = child.try_wait().unwrap();
+    if exit.is_none() {
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+}
+
+#[test]
+fn test_stop_idle_session_is_noop() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+
+    let result = stop(meta.id.clone(), &config_dir).unwrap();
+    assert_eq!(result["status"], "idle");
+    assert_eq!(store.state(&meta.id).unwrap().status, Status::Idle);
+}
 #[test]
 #[serial_test::serial]
 fn test_on_run_start() {
