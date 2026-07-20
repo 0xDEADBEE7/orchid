@@ -16,4 +16,4 @@ pub use internal_run::internal_run;
 pub use list::list;
 pub use send::send;
 pub use set::set;
-pub use stop::stop;
+pub use stop::{kill, stop};

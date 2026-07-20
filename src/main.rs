@@ -77,7 +77,7 @@ fn main() {
         } => cmd::set(id, label, working_dir, scope_exceptions, &config_dir),
         Command::Delete(id) => cmd::delete(id, &config_dir),
         Command::Stop(id) => cmd::stop(id, &config_dir),
-        Command::Kill(id) => cmd::stop(id, &config_dir),
+        Command::Kill(id) => cmd::kill(id, &config_dir),
         Command::InternalRun { id } => match cmd::internal_run(&id, &config_dir) {
             Ok(()) => Ok(serde_json::json!({"status": "ok"})),
             Err(e) => Err(e),

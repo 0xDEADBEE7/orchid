@@ -7,6 +7,10 @@ pub fn stop(id: String, config_dir: &Path) -> Result<serde_json::Value, String> 
     stop_impl(&id, false, config_dir)
 }
 
+pub fn kill(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
+    stop_impl(&id, true, config_dir)
+}
+
 fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Value, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
     let base_path = config_dir.join("sessions");
