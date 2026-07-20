@@ -77,6 +77,27 @@ fn compute_policy_hash(path: &Path) -> String {
     format!("{:x}", hasher.finish())
 }
 
+pub fn intersect_permissions(
+    policy: &super::Permissions,
+    session_paths: Option<&[String]>,
+) -> super::Permissions {
+    let paths = session_paths.map(|requested| {
+        requested
+            .iter()
+            .filter(|requested| {
+                policy.paths.iter().any(|allowed| {
+                    requested == &allowed
+                        || requested.starts_with(&format!("{}/", allowed.trim_end_matches('/')))
+                })
+            })
+            .cloned()
+            .collect()
+    });
+    super::Permissions {
+        tools: policy.tools.clone(),
+        paths: paths.unwrap_or_else(|| policy.paths.clone()),
+    }
+}
 pub fn create_provider_from_connection(
     conn: &Connection,
     log_path: Option<PathBuf>,

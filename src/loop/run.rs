@@ -38,6 +38,18 @@ pub fn build_context(
     let store = crate::session::SessionStore::with_config_dir(config_dir)?;
     let meta = store.get(session_id)?;
 
+    let session_paths = store.state(session_id)?.scope_exceptions;
+    let permissions = crate::config::resolve::intersect_permissions(
+        &effective.permissions,
+        session_paths.as_deref(),
+    );
+    if session_paths.is_some()
+        && permissions.paths.is_empty()
+        && !effective.permissions.paths.is_empty()
+    {
+        return Err("session path restrictions do not overlap policy permissions".to_string());
+    }
+
     let session_dir = get_session_dir_from_config(session_id, config_dir)?;
     let log_level = LogLevel::Info;
     let log = DiagLogger::for_session(session_dir.clone(), log_level);
@@ -90,7 +102,7 @@ pub fn build_context(
         log,
         config_dir: config_dir.to_path_buf(),
         working_dir,
-        permissions: effective.permissions.clone(),
+        permissions,
         limits: effective.limits.clone(),
         prompt: effective.prompt.clone(),
         warn_interval,
