@@ -1,4 +1,5 @@
 use crate::client::base::BaseClient;
+use crate::config::Connection;
 use crate::provider::ProviderError;
 use std::env;
 
@@ -44,16 +45,18 @@ impl OpenAiClient {
         })
     }
 
-    pub fn from_profile(profile: &crate::config::Profile) -> Result<Self, ProviderError> {
-        let raw_key = if profile.api_key.is_empty() {
-            env::var("OPENAI_API_KEY").unwrap_or_default()
-        } else if let Some(var) = profile.api_key.strip_prefix("env.") {
-            env::var(var).unwrap_or_default()
+    pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
+        let raw_key = if let Some(key) = &connection.api_key {
+            if let Some(var) = key.strip_prefix("env.") {
+                env::var(var).unwrap_or_default()
+            } else {
+                key.clone()
+            }
         } else {
-            profile.api_key.clone()
+            env::var("OPENAI_API_KEY").unwrap_or_default()
         };
 
-        let extra_headers: Vec<(String, String)> = profile
+        let extra_headers: Vec<(String, String)> = connection
             .headers
             .iter()
             .map(|(k, v)| {
@@ -72,19 +75,19 @@ impl OpenAiClient {
             ));
         }
 
-        let base_url = if profile.base_url.is_empty() {
+        let base_url = if connection.base_url.is_empty() {
             DEFAULT_API_URL.to_string()
         } else {
             format!(
                 "{}/v1/chat/completions",
-                profile.base_url.trim_end_matches('/')
+                connection.base_url.trim_end_matches('/')
             )
         };
 
-        let model = if profile.model.is_empty() {
+        let model = if connection.model.is_empty() {
             DEFAULT_MODEL.to_string()
         } else {
-            profile.model.clone()
+            connection.model.clone()
         };
 
         let auth_header = if raw_key.is_empty() && has_auth_header {
@@ -99,7 +102,7 @@ impl OpenAiClient {
             model,
             extra_headers,
             auth_header,
-            params: profile
+            params: connection
                 .params
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))

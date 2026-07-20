@@ -13,9 +13,9 @@ use support::TestEnv;
 fn test_set_label() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    let convos_dir = orchid_dir.join("conversations");
-    std::fs::create_dir_all(&convos_dir).unwrap();
-    let store = Store::with_base(convos_dir);
+    let config_dir = orchid_dir.clone();
+    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
+    let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store.create(None, None, None, None, None).unwrap();
     let result = set(
         meta.id.clone(),
@@ -23,6 +23,7 @@ fn test_set_label() {
         None,
         None,
         None,
+        &config_dir,
     )
     .unwrap();
     assert_eq!(result["label"], "my-label");
@@ -38,9 +39,9 @@ fn test_set_label() {
 fn test_set_updates_metadata() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
-    let convos_dir = orchid_dir.join("conversations");
-    std::fs::create_dir_all(&convos_dir).unwrap();
-    let store = Store::with_base(convos_dir);
+    let config_dir = orchid_dir.clone();
+    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
+    let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store.create(None, None, None, None, None).unwrap();
     set(
         meta.id.clone(),
@@ -48,6 +49,7 @@ fn test_set_updates_metadata() {
         Some("coder".to_string()),
         Some("/tmp/work".to_string()),
         None,
+        &config_dir,
     )
     .unwrap();
     let updated = store.get(&meta.id).unwrap();

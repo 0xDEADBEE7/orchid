@@ -15,7 +15,7 @@ pub mod loop_module {
 
 pub use cli::{parse_args, Command, ConfigSubcommand, ListSubcommand};
 pub use client::base::{is_retryable, BaseClient};
-pub use client::{create_provider, create_provider_with_log, resolve_env_inline};
+pub use client::{create_provider_from_connection_with_log, resolve_env_inline};
 pub use cmd::{config_current, config_path, config_use, delete, internal_run, list, send, set};
 pub use config::resolve::{
     create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,

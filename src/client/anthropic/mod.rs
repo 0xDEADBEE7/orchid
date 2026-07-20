@@ -1,4 +1,5 @@
 use crate::client::base::BaseClient;
+use crate::config::Connection;
 use crate::provider::ProviderError;
 
 use std::env;
@@ -44,16 +45,18 @@ impl AnthropicClient {
         })
     }
 
-    pub fn from_profile(profile: &crate::config::Profile) -> Result<Self, ProviderError> {
-        let raw_key = if profile.api_key.is_empty() {
-            env::var("ANTHROPIC_API_KEY").unwrap_or_default()
-        } else if let Some(var) = profile.api_key.strip_prefix("env.") {
-            env::var(var).unwrap_or_default()
+    pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
+        let raw_key = if let Some(key) = &connection.api_key {
+            if let Some(var) = key.strip_prefix("env.") {
+                env::var(var).unwrap_or_default()
+            } else {
+                key.clone()
+            }
         } else {
-            profile.api_key.clone()
+            env::var("ANTHROPIC_API_KEY").unwrap_or_default()
         };
 
-        let extra_headers: Vec<(String, String)> = profile
+        let extra_headers: Vec<(String, String)> = connection
             .headers
             .iter()
             .map(|(k, v)| {
@@ -71,16 +74,16 @@ impl AnthropicClient {
                 "no API key configured".to_string(),
             ));
         }
-        let base_url = if profile.base_url.is_empty() {
+        let base_url = if connection.base_url.is_empty() {
             API_URL.to_string()
         } else {
-            format!("{}/v1/messages", profile.base_url.trim_end_matches('/'))
+            format!("{}/v1/messages", connection.base_url.trim_end_matches('/'))
         };
 
-        let model = if profile.model.is_empty() {
+        let model = if connection.model.is_empty() {
             DEFAULT_MODEL.to_string()
         } else {
-            profile.model.clone()
+            connection.model.clone()
         };
 
         Ok(AnthropicClient {
@@ -89,7 +92,7 @@ impl AnthropicClient {
             api_key: raw_key,
             model,
             extra_headers,
-            params: profile
+            params: connection
                 .params
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))

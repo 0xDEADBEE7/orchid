@@ -34,7 +34,9 @@ fn test_fork_errors_when_no_profile_available() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
     write_minimal_config(orchid_dir.as_path(), None);
-    let store = Store::with_base(orchid_dir.join("conversations"));
+    let config_dir = orchid_dir.clone();
+    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
+    let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store
         .create(None, Some("/tmp".to_string()), None, None, None)
         .unwrap();
@@ -42,6 +44,7 @@ fn test_fork_errors_when_no_profile_available() {
         Some(meta.id.clone()),
         "test".to_string(),
         false,
+        &config_dir,
         None,
         None,
         None,
@@ -59,7 +62,9 @@ fn test_send_writes_user_message_to_jsonl() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
     write_minimal_config(orchid_dir.as_path(), Some("test-profile"));
-    let store = Store::with_base(orchid_dir.join("conversations"));
+    let config_dir = orchid_dir.clone();
+    std::fs::create_dir_all(config_dir.join("sessions")).unwrap();
+    let store = Store::with_config_dir(&config_dir).unwrap();
     let meta = store
         .create(None, Some("/tmp".to_string()), None, None, None)
         .unwrap();
@@ -67,9 +72,10 @@ fn test_send_writes_user_message_to_jsonl() {
         Some(meta.id.clone()),
         "hello world".to_string(),
         false,
+        &config_dir,
+        None,
+        None,
         Some("test-profile".to_string()),
-        None,
-        None,
     );
     if let Err(ref e) = send_result {
         assert!(
@@ -79,7 +85,7 @@ fn test_send_writes_user_message_to_jsonl() {
         );
     }
     let jsonl = orchid_dir
-        .join("conversations")
+        .join("sessions")
         .join(&meta.id)
         .join("conversation.jsonl");
     assert!(
