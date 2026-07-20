@@ -105,13 +105,13 @@ fn expand_pattern_tilde(pattern: &str) -> String {
 /// Resolution order:
 /// 1. In-scope (path starts with working_dir) → allowed
 /// 2. Global exceptions match → allowed
-/// 3. Per-conversation exceptions match → allowed
+/// 3. Per-session exceptions match → allowed
 /// 4. Nothing matched → denied
 pub fn is_allowed(
     path: &str,
     working_dir: &str,
     global_set: &GlobSet,
-    convo_set: &GlobSet,
+    session_set: &GlobSet,
 ) -> bool {
     let expanded = expand_path(path, working_dir);
 
@@ -125,8 +125,8 @@ pub fn is_allowed(
         return true;
     }
 
-    // 3. Per-conversation exceptions
-    if convo_set.is_match(&expanded) {
+    // 3. Per-session exceptions
+    if session_set.is_match(&expanded) {
         return true;
     }
 

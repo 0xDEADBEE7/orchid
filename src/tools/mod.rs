@@ -74,7 +74,7 @@ pub fn execute_tool(
     allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<Value, String> {
     match name {
         "bash" => bash::execute(
@@ -83,7 +83,7 @@ pub fn execute_tool(
             allow_scope_escape,
             env_vars,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         )
         .map(Value::String),
         "fs_read" => fs_read::execute(
@@ -91,14 +91,14 @@ pub fn execute_tool(
             working_dir,
             allow_scope_escape,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         ),
         "fs_edit" => fs_edit::execute(
             input,
             working_dir,
             allow_scope_escape,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         )
         .map(Value::String),
         _ => Err(format!("unknown tool: {}", name)),

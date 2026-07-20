@@ -1,7 +1,7 @@
 use orchid::log::{DiagLogger, LogLevel, LogReader, LogWriter};
 use orchid::r#loop::history::build_message_history;
 use orchid::types::{
-    ConvoEvent, Message, MessageEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent,
+    Message, MessageEvent, SessionEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent,
 };
 mod support;
 use std::fs;
@@ -16,7 +16,7 @@ fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message
     let mut messages = Vec::new();
     for event in all_events {
         match event {
-            ConvoEvent::Message(e) => {
+            SessionEvent::Message(e) => {
                 if e.message.role != "system" {
                     messages.push(Message {
                         role: e.message.role,
@@ -26,7 +26,7 @@ fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message
                     });
                 }
             }
-            ConvoEvent::ToolCall(e) => {
+            SessionEvent::ToolCall(e) => {
                 messages.push(Message {
                     role: "assistant".to_string(),
                     content: String::new(),
@@ -34,7 +34,7 @@ fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message
                     tool_result: None,
                 });
             }
-            ConvoEvent::ToolResult(e) => {
+            SessionEvent::ToolResult(e) => {
                 messages.push(Message {
                     role: "user".to_string(),
                     content: String::new(),
@@ -42,7 +42,7 @@ fn build_message_history_from_path(path: &std::path::Path) -> Result<Vec<Message
                     tool_result: Some(e.tool_result),
                 });
             }
-            ConvoEvent::Reasoning(_) => {}
+            SessionEvent::Reasoning(_) => {}
         }
     }
     Ok(messages)
@@ -62,16 +62,16 @@ fn test_build_empty_history() {
 #[test]
 fn test_build_message_history() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let convo_path = temp_dir.path().join("test-id");
-    fs::create_dir(&convo_path)?;
-    let jsonl_path = convo_path.join("conversation.jsonl");
+    let session_path = temp_dir.path().join("test-id");
+    fs::create_dir(&session_path)?;
+    let jsonl_path = session_path.join("conversation.jsonl");
     LogWriter::append(
         &jsonl_path,
-        &ConvoEvent::Message(MessageEvent::new("user", "hello")),
+        &SessionEvent::Message(MessageEvent::new("user", "hello")),
     )?;
     LogWriter::append(
         &jsonl_path,
-        &ConvoEvent::Message(MessageEvent::new("assistant", "hi there")),
+        &SessionEvent::Message(MessageEvent::new("assistant", "hi there")),
     )?;
     let messages = build_message_history_from_path(&jsonl_path)?;
     assert_eq!(messages.len(), 2);
@@ -88,24 +88,24 @@ fn test_stale_read_replacement() -> Result<(), Box<dyn std::error::Error>> {
     let sessions_dir = base.join("sessions");
     std::fs::create_dir_all(&sessions_dir).unwrap();
     let convo_id = "stale-test-001";
-    let convo_path = base.join("sessions").join(convo_id);
-    fs::create_dir_all(&convo_path)?;
-    let jsonl_path = convo_path.join("conversation.jsonl");
-    let tc1 = ConvoEvent::ToolCall(ToolCallEvent::new(vec![ToolCall {
+    let session_path = base.join("sessions").join(convo_id);
+    fs::create_dir_all(&session_path)?;
+    let jsonl_path = session_path.join("conversation.jsonl");
+    let tc1 = SessionEvent::ToolCall(ToolCallEvent::new(vec![ToolCall {
         id: "c1".to_string(),
         name: "fs_read".to_string(),
         input: serde_json::json!({"paths": ["foo.rs"]}),
     }]));
-    let tr1 = ConvoEvent::ToolResult(ToolResultEvent::new(ToolResult {
+    let tr1 = SessionEvent::ToolResult(ToolResultEvent::new(ToolResult {
         call_id: "c1".to_string(),
         content: serde_json::json!({"foo.rs": "original content"}),
     }));
-    let tc2 = ConvoEvent::ToolCall(ToolCallEvent::new(vec![ToolCall {
+    let tc2 = SessionEvent::ToolCall(ToolCallEvent::new(vec![ToolCall {
         id: "c2".to_string(),
         name: "fs_read".to_string(),
         input: serde_json::json!({"paths": ["foo.rs"]}),
     }]));
-    let tr2 = ConvoEvent::ToolResult(ToolResultEvent::new(ToolResult {
+    let tr2 = SessionEvent::ToolResult(ToolResultEvent::new(ToolResult {
         call_id: "c2".to_string(),
         content: serde_json::json!({"foo.rs": "updated content"}),
     }));
@@ -113,7 +113,7 @@ fn test_stale_read_replacement() -> Result<(), Box<dyn std::error::Error>> {
         LogWriter::append(&jsonl_path, e)?;
     }
     let disk_before = fs::read_to_string(&jsonl_path)?;
-    let log = DiagLogger::for_convo(convo_path.clone(), LogLevel::Debug);
+    let log = DiagLogger::for_session(session_path.clone(), LogLevel::Debug);
     let messages = build_message_history(convo_id, &base, &log)?;
     let user_messages: Vec<&Message> = messages.iter().filter(|m| m.role == "user").collect();
     assert_eq!(user_messages.len(), 2);
@@ -136,7 +136,7 @@ fn test_stale_read_replacement() -> Result<(), Box<dyn std::error::Error>> {
         disk_before, disk_after,
         "build_message_history must not rewrite the JSONL"
     );
-    let log_path = convo_path.join("orchid.log");
+    let log_path = session_path.join("orchid.log");
     let log_contents = fs::read_to_string(&log_path)?;
     assert!(
         log_contents.contains("tombstone_savings"),

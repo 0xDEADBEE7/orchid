@@ -4,7 +4,7 @@ use chrono::Utc;
 use std::path::Path;
 use std::process;
 
-pub fn on_run_start(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+pub fn on_run_start(session_id: &str, config_dir: &Path) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
     let updates = SessionUpdate {
@@ -14,11 +14,11 @@ pub fn on_run_start(convo_id: &str, config_dir: &Path) -> Result<(), String> {
         ..Default::default()
     };
 
-    store.update(convo_id, updates)?;
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn on_run_end(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+pub fn on_run_end(session_id: &str, config_dir: &Path) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
     let updates = SessionUpdate {
@@ -29,11 +29,11 @@ pub fn on_run_end(convo_id: &str, config_dir: &Path) -> Result<(), String> {
         ..Default::default()
     };
 
-    store.update(convo_id, updates)?;
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String> {
+pub fn reconcile_crashed(session_id: &str, config_dir: &Path) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
     let updates = SessionUpdate {
         status: Some(Status::Idle),
@@ -41,13 +41,13 @@ pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String
         run_started_at: Some(None),
         ..Default::default()
     };
-    store.update(convo_id, updates)?;
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn detect_crashed(convo_id: &str, config_dir: &Path) -> Result<bool, String> {
+pub fn detect_crashed(session_id: &str, config_dir: &Path) -> Result<bool, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
-    let state = store.state(convo_id)?;
+    let state = store.state(session_id)?;
 
     match (state.status, state.pid) {
         (Status::Running, Some(stored_pid)) => {

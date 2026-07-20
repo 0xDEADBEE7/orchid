@@ -1,18 +1,18 @@
 use crate::log::{DiagLogger, LogReader};
 use crate::tools::fs_read::extract_paths;
-use crate::types::{ConvoEvent, Message, ToolResult};
+use crate::types::{Message, SessionEvent, ToolResult};
 use serde_json::Value;
 use std::collections::HashMap;
 
 pub fn build_message_history(
-    convo_id: &str,
+    session_id: &str,
     config_dir: &std::path::Path,
     log: &DiagLogger,
 ) -> Result<Vec<Message>, String> {
     let path = config_dir
         .join("sessions")
-        .join(convo_id)
-        .join("conversation.jsonl");
+        .join(session_id)
+        .join("session.jsonl");
 
     if !std::path::Path::new(&path).exists() {
         return Ok(Vec::new());
@@ -24,7 +24,7 @@ pub fn build_message_history(
     let mut last_read: HashMap<String, usize> = HashMap::new();
 
     for (idx, event) in all_events.iter().enumerate() {
-        if let ConvoEvent::ToolCall(e) = event {
+        if let SessionEvent::ToolCall(e) = event {
             for tc in &e.tool_call.calls {
                 if tc.name == "fs_read" {
                     for p in extract_paths(&tc.input) {
@@ -43,7 +43,7 @@ pub fn build_message_history(
 
     for (idx, event) in all_events.iter().enumerate() {
         match event {
-            ConvoEvent::Message(e) => {
+            SessionEvent::Message(e) => {
                 if e.message.role != "system" {
                     let msg = Message {
                         role: e.message.role.clone(),
@@ -55,7 +55,7 @@ pub fn build_message_history(
                     messages.push(msg);
                 }
             }
-            ConvoEvent::ToolCall(e) => {
+            SessionEvent::ToolCall(e) => {
                 for tc in &e.tool_call.calls {
                     call_map.insert(tc.id.clone(), (tc.name.clone(), tc.input.clone()));
                 }
@@ -68,7 +68,7 @@ pub fn build_message_history(
                 raw_messages.push(msg.clone());
                 messages.push(msg);
             }
-            ConvoEvent::ToolResult(e) => {
+            SessionEvent::ToolResult(e) => {
                 let tr = &e.tool_result;
                 let raw_msg = Message {
                     role: "user".to_string(),
@@ -104,7 +104,7 @@ pub fn build_message_history(
                 raw_messages.push(raw_msg.clone());
                 messages.push(raw_msg);
             }
-            ConvoEvent::Reasoning(_) => {
+            SessionEvent::Reasoning(_) => {
                 // Reasoning content is persisted in the file for observability,
                 // but omitted from history since it's internal to the model.
             }

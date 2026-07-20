@@ -1,4 +1,3 @@
-use crate::config::ConfigDir;
 use crate::types::{Metadata, SessionState, Status};
 use chrono::Utc;
 use std::fs;
@@ -37,6 +36,22 @@ impl SessionStore {
     /// Get the base path for this store (for tests).
     pub fn base_path(&self) -> &Path {
         &self.base_path
+    }
+
+    pub fn session_path(&self, id: &str) -> PathBuf {
+        self.base_path.join(id)
+    }
+
+    pub fn transcript_path(&self, id: &str) -> PathBuf {
+        self.session_path(id).join("conversation.jsonl")
+    }
+
+    pub fn metadata_path(&self, id: &str) -> PathBuf {
+        self.session_path(id).join("metadata.json")
+    }
+
+    pub fn state_path(&self, id: &str) -> PathBuf {
+        self.session_path(id).join("state.json")
     }
 
     pub fn update_for_config(
@@ -95,7 +110,7 @@ impl SessionStore {
         }
     }
     pub fn state(&self, id: &str) -> Result<SessionState, String> {
-        let path = self.base_path.join(id).join("state.json");
+        let path = self.state_path(id);
         let contents =
             fs::read_to_string(&path).map_err(|e| format!("failed to read state: {}", e))?;
         serde_json::from_str(&contents).map_err(|e| format!("invalid state JSON: {}", e))
@@ -110,15 +125,15 @@ impl SessionStore {
     }
 
     fn write_state(&self, id: &str, state: &SessionState) -> Result<(), String> {
-        let path = self.base_path.join(id).join("state.json");
-        let temp = self.base_path.join(id).join(".state.json.tmp");
+        let path = self.state_path(id);
+        let temp = self.session_path(id).join(".state.json.tmp");
         let json = serde_json::to_string_pretty(state)
             .map_err(|e| format!("failed to serialize state: {}", e))?;
         fs::write(&temp, json).map_err(|e| format!("failed to write temp state: {}", e))?;
         fs::rename(&temp, &path).map_err(|e| format!("failed to rename state file: {}", e))
     }
     pub fn get(&self, id: &str) -> Result<Metadata, String> {
-        let metadata_path = self.base_path.join(id).join("metadata.json");
+        let metadata_path = self.metadata_path(id);
         let contents = fs::read_to_string(&metadata_path)
             .map_err(|e| format!("failed to read metadata: {}", e))?;
         serde_json::from_str(&contents).map_err(|e| format!("invalid metadata JSON: {}", e))
@@ -196,8 +211,8 @@ impl SessionStore {
     }
 
     fn write_metadata(&self, id: &str, meta: &Metadata) -> Result<(), String> {
-        let metadata_path = self.base_path.join(id).join("metadata.json");
-        let temp_path = self.base_path.join(id).join(".metadata.json.tmp");
+        let metadata_path = self.metadata_path(id);
+        let temp_path = self.session_path(id).join(".metadata.json.tmp");
 
         let json = serde_json::to_string_pretty(meta)
             .map_err(|e| format!("failed to serialize metadata: {}", e))?;
@@ -228,11 +243,11 @@ pub struct SessionUpdate {
     pub scope_exceptions: Option<Option<Vec<String>>>,
 }
 
-/// Helper to resolve convo.jsonl path with XDG support.
+/// Resolve the default session transcript path.
 pub fn get_session_jsonl_path(session_id: &str) -> Result<PathBuf, String> {
-    let base_path = ConfigDir::new("config").sessions_path().join(session_id);
+    let base_path = Path::new("config").join("sessions").join(session_id);
 
-    Ok(base_path.join("session.jsonl"))
+    Ok(base_path.join("conversation.jsonl"))
 }
 
 pub fn get_session_jsonl_path_from_config(
@@ -245,11 +260,11 @@ pub fn get_session_jsonl_path_from_config(
     Ok(config_dir
         .join("sessions")
         .join(session_id)
-        .join("session.jsonl"))
+        .join("conversation.jsonl"))
 }
 
 pub fn get_session_dir(session_id: &str) -> Result<PathBuf, String> {
-    let base_path = ConfigDir::new("config").sessions_path().join(session_id);
+    let base_path = Path::new("config").join("sessions").join(session_id);
 
     Ok(base_path)
 }
@@ -260,6 +275,3 @@ pub fn get_session_dir_from_config(session_id: &str, config_dir: &Path) -> Resul
 
     Ok(base_path)
 }
-
-pub type MetadataUpdate = SessionUpdate;
-pub type Store = SessionStore;

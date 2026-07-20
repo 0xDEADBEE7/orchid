@@ -14,5 +14,5 @@ fn test_is_id_format() {
 fn test_resolve_rejects_non_id() {
     let temp = TempDir::new().unwrap();
     let err = resolve("my-label", temp.path()).unwrap_err();
-    assert!(err.contains("invalid conversation ID"), "got: {}", err);
+    assert!(err.contains("invalid session ID"), "got: {}", err);
 }

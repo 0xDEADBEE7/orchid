@@ -30,7 +30,7 @@ impl SessionStore {
 pub fn resolve(id: &str, base_path: &std::path::Path) -> Result<Metadata, String> {
     if !is_id_format(id) {
         return Err(format!(
-            "invalid conversation ID: '{}' (must be 32 hex characters)",
+            "invalid session ID: '{}' (must be 32 hex characters)",
             id
         ));
     }
@@ -45,7 +45,7 @@ fn read_metadata(id: &str, base_path: &Path) -> Result<Metadata, String> {
     let metadata_path = base_path.join(id).join("metadata.json");
     let contents = std::fs::read_to_string(&metadata_path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            format!("conversation not found: {}", id)
+            format!("session not found: {}", id)
         } else {
             format!("failed to read metadata: {}", e)
         }

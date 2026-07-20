@@ -26,7 +26,7 @@ pub fn execute(
     working_dir: &str,
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<Value, String> {
     let paths = extract_paths(&input);
 
@@ -40,7 +40,7 @@ pub fn execute(
             working_dir,
             allow_scope_escape,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         )?;
         Ok(serde_json::json!({ &paths[0]: content }))
     } else {
@@ -51,7 +51,7 @@ pub fn execute(
                 working_dir,
                 allow_scope_escape,
                 global_scope_set,
-                convo_scope_set,
+                session_scope_set,
             ) {
                 Ok(content) => {
                     map.insert(path.clone(), Value::String(content));
@@ -70,9 +70,9 @@ fn read_one(
     working_dir: &str,
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<String, String> {
-    if !allow_scope_escape && !is_allowed(path, working_dir, global_scope_set, convo_scope_set) {
+    if !allow_scope_escape && !is_allowed(path, working_dir, global_scope_set, session_scope_set) {
         return Err(format!("path out of scope: {}", path));
     }
 

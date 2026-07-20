@@ -17,10 +17,10 @@ impl BudgetStatus {
     }
 }
 
-/// Estimate token usage by dividing conversation JSONL byte length by 3.
+/// Estimate token usage by dividing session JSONL byte length by 3.
 /// This is vendor-agnostic and conservative enough to be reliable at scale.
-pub fn check(convo_id: &str, budget: &TokenBudget) -> BudgetStatus {
-    let total = estimate_tokens(convo_id).unwrap_or(0);
+pub fn check(session_id: &str, budget: &TokenBudget) -> BudgetStatus {
+    let total = estimate_tokens(session_id).unwrap_or(0);
 
     if total >= budget.hard_limit {
         BudgetStatus::Exceeded { total }
@@ -31,8 +31,8 @@ pub fn check(convo_id: &str, budget: &TokenBudget) -> BudgetStatus {
     }
 }
 
-fn estimate_tokens(convo_id: &str) -> Option<u32> {
-    let path = get_session_jsonl_path(convo_id).ok()?;
+fn estimate_tokens(session_id: &str) -> Option<u32> {
+    let path = get_session_jsonl_path(session_id).ok()?;
     let bytes = std::fs::metadata(&path).ok()?.len();
     Some((bytes / 3) as u32)
 }

@@ -7,7 +7,7 @@ use crate::config::ConfigDir;
 use crate::log::LogWriter;
 use crate::loop_module::run as run_tool_loop;
 use crate::session::{resolve, SessionStore};
-use crate::types::{ConvoEvent, MessageEvent};
+use crate::types::{MessageEvent, SessionEvent};
 use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -24,7 +24,7 @@ pub fn send(
 ) -> Result<serde_json::Value, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
-    let convo_id = if let Some(id_or_label) = id {
+    let session_id = if let Some(id_or_label) = id {
         let base_path = config_dir.join("sessions");
         let resolved_id = resolve::resolve(&id_or_label, &base_path)?.id;
 
@@ -57,23 +57,23 @@ pub fn send(
         meta.id
     };
 
-    let meta = store.get(&convo_id)?;
+    let meta = store.get(&session_id)?;
     let _working_dir = meta
         .working_dir
         .clone()
-        .ok_or_else(|| "conversation has no working directory configured".to_string())?;
+        .ok_or_else(|| "session has no working directory configured".to_string())?;
 
-    let state = store.state(&convo_id)?;
+    let state = store.state(&session_id)?;
     if state.status == crate::types::Status::Running {
-        return Err(format!("conversation {} is already running", convo_id));
+        return Err(format!("session {} is already running", session_id));
     }
 
-    let convo_path = config_dir
+    let session_path = config_dir
         .join("sessions")
-        .join(&convo_id)
-        .join("conversation.jsonl");
-    let event = ConvoEvent::Message(MessageEvent::new("user", &message));
-    LogWriter::append(&convo_path, &event)?;
+        .join(&session_id)
+        .join("session.jsonl");
+    let event = SessionEvent::Message(MessageEvent::new("user", &message));
+    LogWriter::append(&session_path, &event)?;
 
     let config_dir_ref = ConfigDir::new(config_dir);
     let effective = resolve_effective_config(
@@ -87,7 +87,7 @@ pub fn send(
         let log_path = Some(
             config_dir
                 .join("sessions")
-                .join(&convo_id)
+                .join(&session_id)
                 .join("orchid.log"),
         );
 
@@ -95,28 +95,28 @@ pub fn send(
             create_provider_from_connections_with_log(&effective.connection_candidates, log_path)
                 .map_err(|e| e.to_string())?;
 
-        run_tool_loop(&convo_id, &effective, config_dir, provider.as_ref())?;
+        run_tool_loop(&session_id, &effective, config_dir, provider.as_ref())?;
 
-        let _final_meta = store.get(&convo_id)?;
+        let _final_meta = store.get(&session_id)?;
         Ok(json!({
-            "id": convo_id,
-            "status": store.state(&convo_id)?.status,
+            "id": session_id,
+            "status": store.state(&session_id)?.status,
             "completed": true,
             "policy": effective.policy_name,
         }))
     } else {
-        fork_tool_loop(&convo_id, &effective, config_dir)
+        fork_tool_loop(&session_id, &effective, config_dir)
     }
 }
 
 fn fork_tool_loop(
-    convo_id: &str,
+    session_id: &str,
     effective: &EffectiveSessionConfig,
     config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
     let mut cmd = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     cmd.arg("__run")
-        .arg(convo_id)
+        .arg(session_id)
         .arg("--config")
         .arg(config_dir.display().to_string())
         .stdout(Stdio::null())
@@ -141,10 +141,10 @@ fn fork_tool_loop(
         ..Default::default()
     };
 
-    SessionStore::with_config_dir(config_dir)?.update(convo_id, updates)?;
+    SessionStore::with_config_dir(config_dir)?.update(session_id, updates)?;
 
     Ok(json!({
-        "id": convo_id,
+        "id": session_id,
         "status": "running",
         "pid": pid,
         "policy": effective.policy_name,

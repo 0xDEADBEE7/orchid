@@ -11,18 +11,18 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
     let store = SessionStore::with_config_dir(config_dir)?;
     let base_path = config_dir.join("sessions");
     let meta = resolve::resolve(id, &base_path)?;
-    let convo_id = meta.id;
+    let session_id = meta.id;
 
-    let state = store.state(&convo_id)?;
+    let state = store.state(&session_id)?;
     if state.status == Status::Idle {
         return Ok(json!({
-            "id": convo_id,
+            "id": session_id,
             "status": "idle",
-            "message": "conversation is not running"
+            "message": "session is not running"
         }));
     }
 
-    if let Some(pid) = store.state(&convo_id)?.pid {
+    if let Some(pid) = store.state(&session_id)?.pid {
         #[cfg(unix)]
         {
             use nix::sys::signal::{self, Signal};
@@ -51,7 +51,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
     }
 
     store.update(
-        &convo_id,
+        &session_id,
         crate::session::SessionUpdate {
             status: Some(Status::Idle),
             pid: Some(None),
@@ -61,7 +61,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
     )?;
 
     Ok(json!({
-        "id": convo_id,
+        "id": session_id,
         "status": "stopped",
         "killed": true
     }))

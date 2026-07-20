@@ -16,7 +16,7 @@ pub fn execute(
     allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<String, String> {
     let bash_input: BashInput =
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
@@ -26,7 +26,7 @@ pub fn execute(
             &bash_input.cmd,
             working_dir,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         )?;
     }
 
@@ -58,7 +58,7 @@ fn validate_cmd_scope(
     cmd: &str,
     working_dir: &str,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<(), String> {
     let tokens = tokenize_cmd(cmd);
     for token in tokens {
@@ -78,7 +78,7 @@ fn validate_cmd_scope(
             continue;
         }
         if token.contains("/")
-            && !is_allowed(&token, working_dir, global_scope_set, convo_scope_set)
+            && !is_allowed(&token, working_dir, global_scope_set, session_scope_set)
         {
             return Err(format!("path out of scope: {}", token));
         }

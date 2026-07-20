@@ -23,7 +23,7 @@ pub struct ToolResult {
     pub content: serde_json::Value,
 }
 
-// ── Conversation event types ──────────────────────────────────────────────────
+// ── Session event types ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessagePayload {
@@ -85,7 +85,7 @@ impl ReasoningEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum ConvoEvent {
+pub enum SessionEvent {
     Message(MessageEvent),
     ToolCall(ToolCallEvent),
     ToolResult(ToolResultEvent),

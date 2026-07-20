@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 pub struct LoopContext {
     pub store: crate::session::SessionStore,
     pub meta: crate::types::Metadata,
-    pub convo_dir: PathBuf,
+    pub session_dir: PathBuf,
     pub log: DiagLogger,
     pub config_dir: PathBuf,
     pub working_dir: String,
@@ -26,25 +26,25 @@ pub struct LoopContext {
     pub prompt: String,
     pub warn_interval: u32,
     pub global_scope_set: GlobSet,
-    pub convo_scope_set: GlobSet,
+    pub session_scope_set: GlobSet,
 }
 
-/// Build the loop context from an `EffectiveSessionConfig` and conversation ID.
+/// Build the loop context from an `EffectiveSessionConfig` and session ID.
 /// This is the new-path that uses resource-based config instead of legacy profiles.
 pub fn build_context(
-    convo_id: &str,
+    session_id: &str,
     effective: &EffectiveSessionConfig,
     config_dir: &Path,
 ) -> Result<LoopContext, String> {
     let store = crate::session::SessionStore::with_config_dir(config_dir)?;
-    let meta = store.get(convo_id)?;
+    let meta = store.get(session_id)?;
 
-    let convo_dir = get_session_dir_from_config(convo_id, config_dir)?;
+    let session_dir = get_session_dir_from_config(session_id, config_dir)?;
     let log_level = LogLevel::Info;
-    let log = DiagLogger::for_convo(convo_dir.clone(), log_level);
+    let log = DiagLogger::for_session(session_dir.clone(), log_level);
 
-    if lifecycle::detect_crashed(convo_id, config_dir)? {
-        let state = store.state(convo_id)?;
+    if lifecycle::detect_crashed(session_id, config_dir)? {
+        let state = store.state(session_id)?;
         let stale_pid = state
             .pid
             .map(|p| p.to_string())
@@ -53,10 +53,10 @@ pub fn build_context(
             "run_crashed",
             &format!("pid={} stale — reconciling", stale_pid),
         );
-        lifecycle::reconcile_crashed(convo_id, config_dir)?;
+        lifecycle::reconcile_crashed(session_id, config_dir)?;
     }
 
-    log.info("run_start", convo_id);
+    log.info("run_start", session_id);
     log.info(
         "policy_selected",
         &format!(
@@ -69,7 +69,7 @@ pub fn build_context(
         &format!("candidates={}", effective.connection_candidates.len()),
     );
 
-    lifecycle::on_run_start(convo_id, config_dir)?;
+    lifecycle::on_run_start(session_id, config_dir)?;
 
     let working_dir = effective.working_dir.to_string_lossy().to_string();
 
@@ -82,12 +82,12 @@ pub fn build_context(
         .unwrap_or(4_000); // default: 4000 (from 40k warn / 80k hard)
 
     let global_scope_set = GlobSet::empty();
-    let convo_scope_set = GlobSet::empty();
+    let session_scope_set = GlobSet::empty();
 
     Ok(LoopContext {
         store,
         meta,
-        convo_dir,
+        session_dir,
         log,
         config_dir: config_dir.to_path_buf(),
         working_dir,
@@ -97,11 +97,11 @@ pub fn build_context(
         prompt: effective.prompt.clone(),
         warn_interval,
         global_scope_set,
-        convo_scope_set,
+        session_scope_set,
     })
 }
 
-/// Execute the main conversation loop.
+/// Execute the main session loop.
 pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), String> {
     let mut guard = RunGuard::new(&ctx.meta.id, &ctx.config_dir);
     let mut last_warn_tokens: Option<u32> = None;
@@ -120,7 +120,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             );
             let termination_msg = format!(
                 "[SESSION TERMINATED] Estimated token count ({}) would exceed hard limit ({}) before sending. \
-                Start a new conversation to continue.",
+                Start a new session to continue.",
                 estimated_tokens, hard_limit
             );
             events::append_system(&ctx.meta.id, &termination_msg)?;
@@ -142,7 +142,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         ctx.log
             .info("provider_send", &format!("messages={}", messages.len()));
 
-        let mut stream_state = StreamState::create(&ctx.convo_dir);
+        let mut stream_state = StreamState::create(&ctx.session_dir);
         let response = {
             let event_iter = provider
                 .send_streaming(ctx.prompt.clone(), messages)
@@ -194,7 +194,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             );
             let termination_msg = format!(
                 "[SESSION TERMINATED] Token hard limit reached ({} / {} tokens). \
-                The run has been stopped. Start a new conversation to continue.",
+                The run has been stopped. Start a new session to continue.",
                 estimated_tokens, hard_limit
             );
             events::append_system(&ctx.meta.id, &termination_msg)?;
@@ -256,7 +256,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     false, // scope enforcement is now governed by policy permissions, not per-session
                     &ctx.env_vars,
                     &ctx.global_scope_set,
-                    &ctx.convo_scope_set,
+                    &ctx.session_scope_set,
                 ) {
                     Ok(raw) => {
                         ctx.log
@@ -313,24 +313,24 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
 
 /// Top-level entry point: setup + loop.
 pub fn run(
-    convo_id: &str,
+    session_id: &str,
     effective: &EffectiveSessionConfig,
     config_dir: &Path,
     provider: &dyn Provider,
 ) -> Result<(), String> {
-    let mut ctx = build_context(convo_id, effective, config_dir)?;
+    let mut ctx = build_context(session_id, effective, config_dir)?;
     run_loop(&mut ctx, provider)?;
     Ok(())
 }
 
 /// Build context with a custom budget (used by tests).
 pub fn build_context_with_budget(
-    convo_id: &str,
+    session_id: &str,
     effective: &EffectiveSessionConfig,
     config_dir: &Path,
     budget_override: &TokenBudget,
 ) -> Result<LoopContext, String> {
-    let mut ctx = build_context(convo_id, effective, config_dir)?;
+    let mut ctx = build_context(session_id, effective, config_dir)?;
     // Override limits with the test budget.
     ctx.limits = crate::config::PolicyLimits {
         token_warn_threshold: Some(budget_override.warn_threshold),

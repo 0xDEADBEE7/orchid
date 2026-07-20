@@ -6,10 +6,10 @@ use std::path::Path;
 pub fn delete(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
     let base_path = config_dir.join("sessions");
     let resolved_id = resolve::resolve(&id, &base_path)?.id;
-    let convo_path = base_path.join(&resolved_id);
+    let session_path = base_path.join(&resolved_id);
 
-    if !convo_path.exists() {
-        return Err(format!("conversation '{}' not found", id));
+    if !session_path.exists() {
+        return Err(format!("session '{}' not found", id));
     }
 
     let archive_base = base_path.join(".archive");
@@ -19,8 +19,8 @@ pub fn delete(id: String, config_dir: &Path) -> Result<serde_json::Value, String
 
     let archive_path = archive_base.join(&resolved_id);
 
-    fs::rename(&convo_path, &archive_path)
-        .map_err(|e| format!("failed to move conversation to archive: {}", e))?;
+    fs::rename(&session_path, &archive_path)
+        .map_err(|e| format!("failed to move session to archive: {}", e))?;
 
     Ok(json!({
         "id": resolved_id,

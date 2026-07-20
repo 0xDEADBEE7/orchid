@@ -1,5 +1,6 @@
 use orchid::cmd::set;
-use orchid::convo::Store;
+use orchid::SessionStore;
+use orchid::SessionStore as Store;
 mod support;
 use support::TestEnv;
 

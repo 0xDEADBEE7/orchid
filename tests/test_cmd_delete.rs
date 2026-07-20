@@ -1,5 +1,6 @@
 use orchid::cmd::{delete, list};
-use orchid::convo::Store;
+use orchid::SessionStore;
+use orchid::SessionStore as Store;
 mod support;
 use support::TestEnv;
 
@@ -25,14 +26,14 @@ fn test_list_uses_selected_config_sessions() {
 
 // Original: test_delete_not_found
 // What it tests: Verifying that deleting a non-existent conversation (fake 32-char ID)
-// returns an error containing "not found" or "conversation not found".
+// returns an error containing "not found" or "session not found".
 #[test]
 fn test_delete_not_found() {
     let env = TestEnv::new();
     let fake_id = "a".repeat(32);
     let err = delete(fake_id, &env.dir()).unwrap_err();
     assert!(
-        err.contains("not found") || err.contains("conversation not found"),
+        err.contains("not found") || err.contains("session not found"),
         "got: {}",
         err
     );
@@ -40,7 +41,7 @@ fn test_delete_not_found() {
 
 // Original: test_delete_creates_archive
 // What it tests: Verifying that deleting an existing conversation archives it:
-// the conversation dir is removed, and the conversation appears in .archive.
+// the session directory is removed, and the conversation appears in .archive.
 // Uses serial_test to avoid race conditions.
 #[test]
 #[serial_test::serial]
@@ -56,7 +57,7 @@ fn test_delete_creates_archive() {
     assert_eq!(result["status"], "archived");
     assert!(
         !sessions_dir.join(&meta.id).exists(),
-        "conversation dir should be gone after archive"
+        "session directory should be gone after archive"
     );
     assert!(
         sessions_dir.join(".archive").join(&meta.id).exists(),

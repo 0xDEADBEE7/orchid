@@ -51,7 +51,7 @@ pub fn execute(
     working_dir: &str,
     allow_scope_escape: bool,
     global_scope_set: &GlobSet,
-    convo_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
 ) -> Result<String, String> {
     let edit_input: FsEditInput =
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
@@ -61,7 +61,7 @@ pub fn execute(
             &edit_input.path,
             working_dir,
             global_scope_set,
-            convo_scope_set,
+            session_scope_set,
         )
     {
         return Err(format!("path out of scope: {}", edit_input.path));
