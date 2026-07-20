@@ -1,4 +1,4 @@
-use crate::get_convo_jsonl_path;
+use crate::session::get_session_jsonl_path;
 pub use crate::types::TokenBudget;
 
 pub enum BudgetStatus {
@@ -32,7 +32,7 @@ pub fn check(convo_id: &str, budget: &TokenBudget) -> BudgetStatus {
 }
 
 fn estimate_tokens(convo_id: &str) -> Option<u32> {
-    let path = get_convo_jsonl_path(convo_id).ok()?;
+    let path = get_session_jsonl_path(convo_id).ok()?;
     let bytes = std::fs::metadata(&path).ok()?.len();
     Some((bytes / 3) as u32)
 }

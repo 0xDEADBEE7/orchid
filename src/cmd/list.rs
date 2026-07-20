@@ -1,11 +1,11 @@
-use crate::Store;
+use crate::SessionStore;
 use serde_json::json;
 use std::path::Path;
 
 pub fn list(config_dir: &Path, resource: Option<&str>) -> Result<serde_json::Value, String> {
     match resource.unwrap_or("sessions") {
         "sessions" => {
-            let store = Store::with_config_dir(config_dir)?;
+            let store = SessionStore::with_config_dir(config_dir)?;
             Ok(json!(store.list()?))
         }
         kind @ ("connections" | "policies" | "prompts") => list_resources(config_dir, kind),

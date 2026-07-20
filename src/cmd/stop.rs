@@ -1,4 +1,4 @@
-use crate::convo::{resolve, Store};
+use crate::session::{resolve, SessionStore};
 use crate::types::Status;
 use serde_json::json;
 use std::path::Path;
@@ -8,7 +8,7 @@ pub fn stop(id: String, config_dir: &Path) -> Result<serde_json::Value, String> 
 }
 
 fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Value, String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
     let base_path = config_dir.join("sessions");
     let meta = resolve::resolve(id, &base_path)?;
     let convo_id = meta.id;
@@ -52,7 +52,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
 
     store.update(
         &convo_id,
-        crate::convo::MetadataUpdate {
+        crate::session::SessionUpdate {
             status: Some(Status::Idle),
             pid: Some(None),
             run_started_at: Some(None),

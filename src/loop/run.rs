@@ -1,11 +1,11 @@
 use crate::config::resolve::EffectiveSessionConfig;
-use crate::convo::get_convo_dir_from_config;
 use crate::log::{DiagLogger, LogLevel};
 use crate::provider::{Provider, StreamEvent};
 use crate::r#loop::guard::RunGuard;
 use crate::r#loop::lifecycle;
 use crate::r#loop::stream::StreamState;
 use crate::r#loop::{events, history};
+use crate::session::get_session_dir_from_config;
 use crate::tools;
 use crate::types::{TokenBudget, ToolResult};
 use globset::GlobSet;
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 /// Context gathered during the setup phase, passed into the main loop.
 pub struct LoopContext {
-    pub store: crate::convo::Store,
+    pub store: crate::session::SessionStore,
     pub meta: crate::types::Metadata,
     pub convo_dir: PathBuf,
     pub log: DiagLogger,
@@ -36,10 +36,10 @@ pub fn build_context(
     effective: &EffectiveSessionConfig,
     config_dir: &Path,
 ) -> Result<LoopContext, String> {
-    let store = crate::convo::Store::with_config_dir(config_dir)?;
+    let store = crate::session::SessionStore::with_config_dir(config_dir)?;
     let meta = store.get(convo_id)?;
 
-    let convo_dir = get_convo_dir_from_config(convo_id, config_dir)?;
+    let convo_dir = get_session_dir_from_config(convo_id, config_dir)?;
     let log_level = LogLevel::Info;
     let log = DiagLogger::for_convo(convo_dir.clone(), log_level);
 
@@ -124,7 +124,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 estimated_tokens, hard_limit
             );
             events::append_system(&ctx.meta.id, &termination_msg)?;
-            let updates = crate::convo::MetadataUpdate {
+            let updates = crate::session::SessionUpdate {
                 last_message: Some(termination_msg.clone()),
                 token_estimate: Some(estimated_tokens),
                 ..Default::default()
@@ -180,7 +180,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         }
 
         {
-            let updates = crate::convo::MetadataUpdate {
+            let updates = crate::session::SessionUpdate {
                 token_estimate: Some(estimated_tokens),
                 ..Default::default()
             };
@@ -198,7 +198,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 estimated_tokens, hard_limit
             );
             events::append_system(&ctx.meta.id, &termination_msg)?;
-            let updates = crate::convo::MetadataUpdate {
+            let updates = crate::session::SessionUpdate {
                 last_message: Some(termination_msg),
                 ..Default::default()
             };
@@ -290,7 +290,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     events::append_reasoning(&ctx.meta.id, reasoning)?;
                 }
 
-                let updates = crate::convo::MetadataUpdate {
+                let updates = crate::session::SessionUpdate {
                     last_message: Some(message),
                     ..Default::default()
                 };

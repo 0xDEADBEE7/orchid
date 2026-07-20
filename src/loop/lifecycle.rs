@@ -1,13 +1,13 @@
-use crate::convo::{MetadataUpdate, Store};
+use crate::session::{SessionStore, SessionUpdate};
 use crate::types::Status;
 use chrono::Utc;
 use std::path::Path;
 use std::process;
 
 pub fn on_run_start(convo_id: &str, config_dir: &Path) -> Result<(), String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
 
-    let updates = MetadataUpdate {
+    let updates = SessionUpdate {
         status: Some(Status::Running),
         pid: Some(Some(process::id())),
         run_started_at: Some(Some(Utc::now())),
@@ -19,9 +19,9 @@ pub fn on_run_start(convo_id: &str, config_dir: &Path) -> Result<(), String> {
 }
 
 pub fn on_run_end(convo_id: &str, config_dir: &Path) -> Result<(), String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
 
-    let updates = MetadataUpdate {
+    let updates = SessionUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
         run_started_at: Some(None),
@@ -34,8 +34,8 @@ pub fn on_run_end(convo_id: &str, config_dir: &Path) -> Result<(), String> {
 }
 
 pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String> {
-    let store = Store::with_config_dir(config_dir)?;
-    let updates = MetadataUpdate {
+    let store = SessionStore::with_config_dir(config_dir)?;
+    let updates = SessionUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
         run_started_at: Some(None),
@@ -46,7 +46,7 @@ pub fn reconcile_crashed(convo_id: &str, config_dir: &Path) -> Result<(), String
 }
 
 pub fn detect_crashed(convo_id: &str, config_dir: &Path) -> Result<bool, String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
     let state = store.state(convo_id)?;
 
     match (state.status, state.pid) {

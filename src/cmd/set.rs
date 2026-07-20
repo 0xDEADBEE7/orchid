@@ -1,4 +1,4 @@
-use crate::convo::{resolve, MetadataUpdate, Store};
+use crate::session::{resolve, SessionStore, SessionUpdate};
 use std::path::Path;
 
 pub fn set(
@@ -9,11 +9,11 @@ pub fn set(
     scope_exceptions: Option<Vec<String>>,
     config_dir: &Path,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
     let base_path = config_dir.join("sessions");
     let resolved_id = resolve::resolve(&id, &base_path)?.id;
 
-    let mut updates = MetadataUpdate::default();
+    let mut updates = SessionUpdate::default();
 
     if let Some(l) = label {
         updates.label = Some(Some(l));

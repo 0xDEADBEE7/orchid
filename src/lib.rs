@@ -2,11 +2,14 @@ pub mod cli;
 pub mod client;
 pub mod cmd;
 pub mod config;
-pub mod convo;
 pub mod jsonerr;
 pub mod log;
 pub mod r#loop;
 pub mod provider;
+pub mod session;
+pub mod convo {
+    pub use crate::session::*;
+}
 pub mod tools;
 pub mod types;
 pub mod loop_module {
@@ -24,12 +27,14 @@ pub use config::resolve::{
 pub use config::{
     ConfigDir, Connection, Permissions, Policy, PolicyLimits, ResourceLoadError, RootConfig,
 };
-pub use convo::id::generate_id;
-pub use convo::{get_convo_jsonl_path, is_id_format, resolve, MetadataUpdate, Store};
 pub use jsonerr::JsonError;
 pub use log::{DiagLogger, LogReader, LogWriter};
 pub use provider::{Provider, ProviderError, Response, StreamEvent};
 pub use r#loop::history::{build_message_history, replace_stale_in_value};
+pub use session::{
+    generate_id, get_session_jsonl_path as get_convo_jsonl_path, is_id_format, resolve,
+    SessionStore, SessionUpdate,
+};
 pub use tools::{execute_tool, tool_definitions, Tool};
 pub use types::{Message, Metadata, SessionState, Status, TokenBudget, ToolCall, ToolResult};
 

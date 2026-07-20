@@ -1,4 +1,4 @@
-use crate::convo::resolve;
+use crate::session::resolve;
 use serde_json::json;
 use std::fs;
 use std::path::Path;

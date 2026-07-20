@@ -4,9 +4,9 @@ use crate::config::resolve::{
     EffectiveSessionConfig,
 };
 use crate::config::ConfigDir;
-use crate::convo::{resolve, Store};
 use crate::log::LogWriter;
 use crate::loop_module::run as run_tool_loop;
+use crate::session::{resolve, SessionStore};
 use crate::types::{ConvoEvent, MessageEvent};
 use serde_json::json;
 #[cfg(unix)]
@@ -22,14 +22,14 @@ pub fn send(
     working_dir: Option<String>,
     policy: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
 
     let convo_id = if let Some(id_or_label) = id {
         let base_path = config_dir.join("sessions");
         let resolved_id = resolve::resolve(&id_or_label, &base_path)?.id;
 
         if label.is_some() || working_dir.is_some() {
-            let mut updates = crate::MetadataUpdate::default();
+            let mut updates = crate::SessionUpdate::default();
             if let Some(l) = label {
                 updates.label = Some(Some(l));
             }
@@ -48,7 +48,7 @@ pub fn send(
                 .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         let meta = store.update(
             &meta.id,
-            crate::MetadataUpdate {
+            crate::SessionUpdate {
                 policy: Some(Some(effective.policy_name)),
                 policy_hash: Some(Some(effective.policy_hash)),
                 ..Default::default()
@@ -136,12 +136,12 @@ fn fork_tool_loop(
 
     let pid = child.id();
 
-    let updates = crate::MetadataUpdate {
+    let updates = crate::SessionUpdate {
         pid: Some(Some(pid)),
         ..Default::default()
     };
 
-    Store::with_config_dir(config_dir)?.update(convo_id, updates)?;
+    SessionStore::with_config_dir(config_dir)?.update(convo_id, updates)?;
 
     Ok(json!({
         "id": convo_id,

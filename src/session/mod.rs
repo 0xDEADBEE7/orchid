@@ -8,15 +8,15 @@ pub mod id;
 pub mod resolve;
 
 pub use id::generate_id;
-pub use resolve::{is_id_format, resolve, SessionStore};
+pub use resolve::{is_id_format, resolve};
 
-pub struct Store {
+pub struct SessionStore {
     base_path: PathBuf,
 }
 
-impl Store {
+impl SessionStore {
     pub fn new() -> Result<Self, String> {
-        Self::with_config_dir(&ConfigDir::new("config").path().to_path_buf())
+        Self::with_config_dir(Path::new("config"))
     }
 
     /// Create a store rooted under a config directory's sessions path.
@@ -27,11 +27,11 @@ impl Store {
         fs::create_dir_all(&base_path)
             .map_err(|e| format!("failed to create sessions dir: {}", e))?;
 
-        Ok(Store { base_path })
+        Ok(SessionStore { base_path })
     }
 
     pub fn with_base(base_path: PathBuf) -> Self {
-        Store { base_path }
+        SessionStore { base_path }
     }
 
     /// Get the base path for this store (for tests).
@@ -43,7 +43,7 @@ impl Store {
         &self,
         config_dir: &Path,
         id: &str,
-        updates: MetadataUpdate,
+        updates: SessionUpdate,
     ) -> Result<Metadata, String> {
         SessionStore::with_config_dir(config_dir)?.update(id, updates)
     }
@@ -60,9 +60,9 @@ impl Store {
             let id = id::generate_id();
 
             if !id::exists_check(&id, &self.base_path) {
-                let convo_dir = self.base_path.join(&id);
-                fs::create_dir_all(&convo_dir)
-                    .map_err(|e| format!("failed to create conversation dir: {}", e))?;
+                let session_dir = self.base_path.join(&id);
+                fs::create_dir_all(&session_dir)
+                    .map_err(|e| format!("failed to create session directory: {}", e))?;
 
                 let now = Utc::now();
                 let meta = Metadata {
@@ -125,7 +125,7 @@ impl Store {
     }
 
     pub fn list(&self) -> Result<Vec<Metadata>, String> {
-        let mut convos = Vec::new();
+        let mut sessions = Vec::new();
         let entries = fs::read_dir(&self.base_path)
             .map_err(|e| format!("failed to read sessions dir: {}", e))?;
 
@@ -142,14 +142,14 @@ impl Store {
                 continue;
             }
             if let Ok(meta) = self.get(dir_name) {
-                convos.push(meta);
+                sessions.push(meta);
             }
         }
-        convos.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        Ok(convos)
+        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(sessions)
     }
 
-    pub fn update(&self, id: &str, updates: MetadataUpdate) -> Result<Metadata, String> {
+    pub fn update(&self, id: &str, updates: SessionUpdate) -> Result<Metadata, String> {
         let mut state = self.state(id)?;
         if let Some(status) = updates.status {
             state.status = status;
@@ -213,7 +213,7 @@ impl Store {
 }
 
 #[derive(Default)]
-pub struct MetadataUpdate {
+pub struct SessionUpdate {
     pub policy: Option<Option<String>>,
     pub policy_hash: Option<Option<String>>,
     pub label: Option<Option<String>>,
@@ -229,34 +229,37 @@ pub struct MetadataUpdate {
 }
 
 /// Helper to resolve convo.jsonl path with XDG support.
-pub fn get_convo_jsonl_path(convo_id: &str) -> Result<PathBuf, String> {
-    let base_path = ConfigDir::new("config").sessions_path().join(convo_id);
+pub fn get_session_jsonl_path(session_id: &str) -> Result<PathBuf, String> {
+    let base_path = ConfigDir::new("config").sessions_path().join(session_id);
 
-    Ok(base_path.join("conversation.jsonl"))
+    Ok(base_path.join("session.jsonl"))
 }
 
-pub fn get_convo_jsonl_path_from_config(
-    convo_id: &str,
+pub fn get_session_jsonl_path_from_config(
+    session_id: &str,
     config_dir: &Path,
 ) -> Result<PathBuf, String> {
-    if !is_id_format(convo_id) {
-        return Err(format!("invalid conversation ID: '{}'", convo_id));
+    if !is_id_format(session_id) {
+        return Err(format!("invalid session ID: '{}'", session_id));
     }
     Ok(config_dir
         .join("sessions")
-        .join(convo_id)
-        .join("conversation.jsonl"))
+        .join(session_id)
+        .join("session.jsonl"))
 }
 
-pub fn get_convo_dir(convo_id: &str) -> Result<PathBuf, String> {
-    let base_path = ConfigDir::new("config").sessions_path().join(convo_id);
+pub fn get_session_dir(session_id: &str) -> Result<PathBuf, String> {
+    let base_path = ConfigDir::new("config").sessions_path().join(session_id);
 
     Ok(base_path)
 }
 
-/// Get the conversation directory under a config directory's sessions path.
-pub fn get_convo_dir_from_config(convo_id: &str, config_dir: &Path) -> Result<PathBuf, String> {
-    let base_path = config_dir.join("sessions").join(convo_id);
+/// Get the session directoryectory under a config directory's sessions path.
+pub fn get_session_dir_from_config(session_id: &str, config_dir: &Path) -> Result<PathBuf, String> {
+    let base_path = config_dir.join("sessions").join(session_id);
 
     Ok(base_path)
 }
+
+pub type MetadataUpdate = SessionUpdate;
+pub type Store = SessionStore;

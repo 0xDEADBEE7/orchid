@@ -3,8 +3,8 @@ use crate::{
         create_provider_from_connections_with_log, resolve as resolve_effective_config,
     },
     config::ConfigDir,
-    convo::Store,
     r#loop,
+    session::SessionStore,
 };
 
 pub fn internal_run(convo_id: &str, config_dir: &std::path::Path) -> Result<(), String> {
@@ -12,7 +12,7 @@ pub fn internal_run(convo_id: &str, config_dir: &std::path::Path) -> Result<(), 
     let root = config_dir_ref
         .load_root()
         .map_err(|e| format!("failed to resolve effective config: {}", e))?;
-    let store = Store::with_config_dir(config_dir)?;
+    let store = SessionStore::with_config_dir(config_dir)?;
     let meta = store.get(convo_id)?;
     let policy = meta.policy.as_deref().unwrap_or(&root.policy);
     let effective =
