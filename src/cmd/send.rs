@@ -116,18 +116,12 @@ fn fork_tool_loop(
     effective: &EffectiveSessionConfig,
     config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
-    let temp_dir = std::env::temp_dir();
-    let effective_path = temp_dir.join(format!("orchid-effective-{}.json", convo_id));
-    let json_str = serde_json::to_string_pretty(effective)
-        .map_err(|e| format!("failed to serialize effective config: {}", e))?;
-    std::fs::write(&effective_path, &json_str)
-        .map_err(|e| format!("failed to write effective config: {}", e))?;
+    let store = Store::with_config_dir(config_dir)?;
+    store.write_snapshot(convo_id, effective)?;
 
     let mut cmd = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     cmd.arg("__run")
         .arg(convo_id)
-        .arg("--effective-config")
-        .arg(effective_path.display().to_string())
         .arg("--config")
         .arg(config_dir.display().to_string())
         .stdout(Stdio::null())
@@ -146,8 +140,6 @@ fn fork_tool_loop(
         .map_err(|e| format!("failed to spawn background process: {}", e))?;
 
     let pid = child.id();
-
-    let _ = std::fs::remove_file(&effective_path);
 
     let updates = crate::MetadataUpdate {
         pid: Some(Some(pid)),

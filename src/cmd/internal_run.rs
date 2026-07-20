@@ -25,14 +25,18 @@ pub fn internal_run_with_snapshot(
         serde_json::from_str::<EffectiveSessionConfig>(&contents)
             .map_err(|e| format!("invalid effective config {}: {}", path, e))?
     } else {
-        let root = config_dir_ref
-            .load_root()
-            .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         let store = Store::with_config_dir(config_dir)?;
-        let meta = store.get(convo_id)?;
-        let policy = meta.policy.as_deref().unwrap_or(&root.policy);
-        resolve_effective_config(&config_dir_ref, Some(policy), meta.working_dir.as_deref())
-            .map_err(|e| format!("failed to resolve effective config: {}", e))?
+        if let Some(snapshot) = store.read_snapshot(convo_id)? {
+            snapshot
+        } else {
+            let root = config_dir_ref
+                .load_root()
+                .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+            let meta = store.get(convo_id)?;
+            let policy = meta.policy.as_deref().unwrap_or(&root.policy);
+            resolve_effective_config(&config_dir_ref, Some(policy), meta.working_dir.as_deref())
+                .map_err(|e| format!("failed to resolve effective config: {}", e))?
+        }
     };
 
     let connection = effective

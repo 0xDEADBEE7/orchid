@@ -1,3 +1,4 @@
+use crate::config::resolve::EffectiveSessionConfig;
 use crate::get_orchid_dir;
 use crate::types::{Metadata, Status};
 use chrono::Utc;
@@ -95,6 +96,38 @@ impl Store {
                 return Ok(meta);
             }
         }
+    }
+
+    pub fn snapshot_path(&self, id: &str) -> PathBuf {
+        self.base_path.join(id).join("effective-config.json")
+    }
+
+    pub fn write_snapshot(
+        &self,
+        id: &str,
+        snapshot: &EffectiveSessionConfig,
+    ) -> Result<(), String> {
+        let session_dir = self.base_path.join(id);
+        let path = self.snapshot_path(id);
+        let temp_path = session_dir.join(".effective-config.json.tmp");
+        let json = serde_json::to_string_pretty(snapshot)
+            .map_err(|e| format!("failed to serialize effective config: {}", e))?;
+        fs::write(&temp_path, json)
+            .map_err(|e| format!("failed to write effective config: {}", e))?;
+        fs::rename(&temp_path, path)
+            .map_err(|e| format!("failed to rename effective config: {}", e))
+    }
+
+    pub fn read_snapshot(&self, id: &str) -> Result<Option<EffectiveSessionConfig>, String> {
+        let path = self.snapshot_path(id);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let contents = fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read effective config: {}", e))?;
+        serde_json::from_str(&contents)
+            .map(Some)
+            .map_err(|e| format!("invalid effective config JSON: {}", e))
     }
 
     pub fn get(&self, id: &str) -> Result<Metadata, String> {
