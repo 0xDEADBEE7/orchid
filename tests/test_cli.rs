@@ -135,7 +135,6 @@ fn test_parse_send() {
             id: None,
             message,
             await_completion: false,
-            
             ..
         } => assert_eq!(message, "hello world"),
         _ => panic!("expected Send command"),

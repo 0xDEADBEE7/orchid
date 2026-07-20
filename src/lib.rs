@@ -17,11 +17,13 @@ pub use cli::{parse_args, Command, ConfigSubcommand, ListSubcommand};
 pub use client::base::{is_retryable, BaseClient};
 pub use client::{create_provider, create_provider_with_log, resolve_env_inline};
 pub use cmd::{config_current, config_path, config_use, delete, internal_run, list, send, set};
+pub use config::resolve::{
+    create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,
+};
 pub use config::{
     get_orchid_dir, load_config, resolve_env, Config, ConfigDir, Connection, Limits, Permissions,
     Policy, PolicyLimits, Profile, ResourceLoadError, RootConfig, ServerAction,
 };
-pub use config::resolve::{create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig};
 pub use convo::id::generate_id;
 pub use convo::{get_convo_jsonl_path, is_id_format, resolve, MetadataUpdate, Store};
 pub use jsonerr::JsonError;

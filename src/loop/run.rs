@@ -57,7 +57,10 @@ pub fn build_context(
     log.info("run_start", convo_id);
     log.info(
         "policy_selected",
-        &format!("name={} hash={}", effective.policy_name, effective.policy_hash),
+        &format!(
+            "name={} hash={}",
+            effective.policy_name, effective.policy_hash
+        ),
     );
     log.info(
         "connection_selected",
@@ -66,19 +69,14 @@ pub fn build_context(
 
     lifecycle::on_run_start(convo_id)?;
 
-    let working_dir = effective
-        .working_dir
-        .to_string_lossy()
-        .to_string();
+    let working_dir = effective.working_dir.to_string_lossy().to_string();
 
     // Compute warn interval from limits (same logic as before).
     let warn_interval = effective
         .limits
         .token_warn_threshold
         .zip(effective.limits.token_hard_limit)
-        .map(|(warn, hard)| {
-            (hard.saturating_sub(warn)) / 10
-        })
+        .map(|(warn, hard)| (hard.saturating_sub(warn)) / 10)
         .unwrap_or(4_000); // default: 4000 (from 40k warn / 80k hard)
 
     let global_scope_set = GlobSet::empty();
@@ -115,10 +113,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         if estimated_tokens >= hard_limit {
             ctx.log.info(
                 "pre_send_budget_exceeded",
-                &format!(
-                    "estimated={} hard_limit={}",
-                    estimated_tokens, hard_limit
-                ),
+                &format!("estimated={} hard_limit={}", estimated_tokens, hard_limit),
             );
             let termination_msg = format!(
                 "[SESSION TERMINATED] Estimated token count ({}) would exceed hard limit ({}) before sending. \
@@ -192,10 +187,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         if estimated_tokens >= hard_limit {
             ctx.log.warn(
                 "token_budget_exceeded",
-                &format!(
-                    "total={} hard_limit={}",
-                    estimated_tokens, hard_limit
-                ),
+                &format!("total={} hard_limit={}", estimated_tokens, hard_limit),
             );
             let termination_msg = format!(
                 "[SESSION TERMINATED] Token hard limit reached ({} / {} tokens). \
@@ -234,9 +226,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     &format!(
                         "[WARNING] This session has consumed {} tokens (warn threshold: {}). \
                         Consider wrapping up or the session will be terminated at {} tokens.",
-                        estimated_tokens,
-                        warn_threshold,
-                        hard_limit
+                        estimated_tokens, warn_threshold, hard_limit
                     ),
                 )?;
             }
@@ -344,10 +334,9 @@ pub fn build_context_with_budget(
         token_hard_limit: Some(budget_override.hard_limit),
         max_steps: None,
     };
-    ctx.warn_interval = (
-        budget_override
-            .hard_limit
-            .saturating_sub(budget_override.warn_threshold)
-    ) / 10;
+    ctx.warn_interval = (budget_override
+        .hard_limit
+        .saturating_sub(budget_override.warn_threshold))
+        / 10;
     Ok(ctx)
 }

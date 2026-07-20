@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::env;
@@ -27,23 +27,29 @@ pub fn resolve(
     working_dir: Option<&str>,
 ) -> Result<EffectiveSessionConfig, String> {
     let root = config_dir.load_root().map_err(|e| e.to_string())?;
-    let policy_name = explicit_policy
-        .unwrap_or(&root.policy)
-        .to_string();
+    let policy_name = explicit_policy.unwrap_or(&root.policy).to_string();
 
-    let policy = config_dir.load_policy(&policy_name).map_err(|e| e.to_string())?;
+    let policy = config_dir
+        .load_policy(&policy_name)
+        .map_err(|e| e.to_string())?;
 
-    let policy_path = config_dir.policies_path().join(format!("{}.json", &policy_name));
+    let policy_path = config_dir
+        .policies_path()
+        .join(format!("{}.json", &policy_name));
     let policy_hash = compute_policy_hash(&policy_path);
 
     let mut connection_candidates = Vec::new();
     for conn_name in &policy.connections {
-        let conn = config_dir.load_connection(conn_name).map_err(|e| e.to_string())?;
+        let conn = config_dir
+            .load_connection(conn_name)
+            .map_err(|e| e.to_string())?;
         connection_candidates.push(conn);
     }
 
     let prompt = if let Some(prompt_name) = &policy.prompt {
-        config_dir.load_prompt(prompt_name).map_err(|e| e.to_string())?
+        config_dir
+            .load_prompt(prompt_name)
+            .map_err(|e| e.to_string())?
     } else {
         String::new()
     };

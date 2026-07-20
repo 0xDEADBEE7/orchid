@@ -1,6 +1,6 @@
 mod support;
-use orchid::config::{ConfigDir, Connection, Permissions, Policy, PolicyLimits, RootConfig};
 use orchid::config::resolve::{resolve as resolve_effective_config, EffectiveSessionConfig};
+use orchid::config::{ConfigDir, Connection, Permissions, Policy, PolicyLimits, RootConfig};
 use std::collections::HashMap;
 use support::TestEnv;
 
@@ -22,12 +22,7 @@ fn write_connection(dir: &std::path::Path, name: &str, iface: &str, base_url: &s
     .unwrap();
 }
 
-fn write_policy(
-    dir: &std::path::Path,
-    name: &str,
-    connections: &[&str],
-    prompt: Option<&str>,
-) {
+fn write_policy(dir: &std::path::Path, name: &str, connections: &[&str], prompt: Option<&str>) {
     let policy = serde_json::json!({
         "connections": connections,
         "prompt": prompt,
@@ -52,7 +47,13 @@ fn test_resolve_uses_root_policy() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
     write_policy(&dir, "default", &["local"], None);
 
     let config_dir = ConfigDir::new(&dir);
@@ -73,8 +74,20 @@ fn test_resolve_explicit_policy_overrides_root() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "fast", "openai", "http://localhost:1234", "fast-model");
-    write_connection(&dir, "smart", "openai", "http://localhost:1235", "smart-model");
+    write_connection(
+        &dir,
+        "fast",
+        "openai",
+        "http://localhost:1234",
+        "fast-model",
+    );
+    write_connection(
+        &dir,
+        "smart",
+        "openai",
+        "http://localhost:1235",
+        "smart-model",
+    );
     write_policy(&dir, "default", &["fast"], None);
     write_policy(&dir, "advanced", &["fast", "smart"], None);
 
@@ -126,7 +139,13 @@ fn test_resolve_with_prompt() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
     write_prompt(&dir, "default", "You are a helpful assistant.");
     write_policy(&dir, "default", &["local"], Some("default"));
 
@@ -146,7 +165,13 @@ fn test_resolve_no_prompt_defaults_empty() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
     write_policy(&dir, "default", &["local"], None);
 
     let config_dir = ConfigDir::new(&dir);
@@ -165,7 +190,13 @@ fn test_resolve_missing_prompt_fails() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
     write_policy(&dir, "default", &["local"], Some("missing-prompt"));
 
     let config_dir = ConfigDir::new(&dir);
@@ -235,7 +266,13 @@ fn test_resolve_preserves_permissions() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
 
     let policy = serde_json::json!({
         "connections": ["local"],
@@ -267,7 +304,13 @@ fn test_resolve_preserves_limits() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
 
     let policy = serde_json::json!({
         "connections": ["local"],
@@ -301,7 +344,13 @@ fn test_resolve_policy_hash_is_deterministic() {
     std::fs::create_dir_all(dir.join("prompts")).unwrap();
 
     write_config(&dir, "default");
-    write_connection(&dir, "local", "openai", "http://localhost:1234", "local-model");
+    write_connection(
+        &dir,
+        "local",
+        "openai",
+        "http://localhost:1234",
+        "local-model",
+    );
     write_policy(&dir, "default", &["local"], None);
 
     let config_dir = ConfigDir::new(&dir);
@@ -322,11 +371,7 @@ fn test_resolve_invalid_connection_json_fails() {
 
     write_config(&dir, "default");
     let conn = "{invalid json here";
-    std::fs::write(
-        dir.join("connections").join("local.json"),
-        conn,
-    )
-    .unwrap();
+    std::fs::write(dir.join("connections").join("local.json"), conn).unwrap();
     write_policy(&dir, "default", &["local"], None);
 
     let config_dir = ConfigDir::new(&dir);
@@ -345,11 +390,7 @@ fn test_resolve_connection_missing_required_fields() {
 
     write_config(&dir, "default");
     let conn = serde_json::json!({ "base_url": "http://localhost:1234" });
-    std::fs::write(
-        dir.join("connections").join("bad.json"),
-        conn.to_string(),
-    )
-    .unwrap();
+    std::fs::write(dir.join("connections").join("bad.json"), conn.to_string()).unwrap();
     write_policy(&dir, "default", &["bad"], None);
 
     let config_dir = ConfigDir::new(&dir);

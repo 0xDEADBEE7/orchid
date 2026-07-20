@@ -61,7 +61,14 @@ fn main() {
             await_completion,
             label,
             working_dir,
-        } => cmd::send(id, message, await_completion, &config_dir, label, working_dir),
+        } => cmd::send(
+            id,
+            message,
+            await_completion,
+            &config_dir,
+            label,
+            working_dir,
+        ),
         Command::Set {
             id,
             label,
@@ -72,12 +79,10 @@ fn main() {
         Command::Delete(id) => cmd::delete(id),
         Command::Stop(id) => cmd::stop(id),
         Command::Kill(id) => cmd::stop(id),
-        Command::InternalRun { id } => {
-            match cmd::internal_run(&id, &config_dir) {
-                Ok(()) => Ok(serde_json::json!({"status": "ok"})),
-                Err(e) => Err(e),
-            }
-        }
+        Command::InternalRun { id } => match cmd::internal_run(&id, &config_dir) {
+            Ok(()) => Ok(serde_json::json!({"status": "ok"})),
+            Err(e) => Err(e),
+        },
         Command::ServerAction {
             action,
             profile,
