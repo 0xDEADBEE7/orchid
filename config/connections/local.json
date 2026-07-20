@@ -2,4 +2,9 @@
   "interface": "openai",
   "base_url": "http://localhost:1234",
   "model": "local-model"
+  "api_key": "dummy",
+  "params": {
+    "reasoning_effort": "none",
+    "max_tokens": 4096
+  }
 }

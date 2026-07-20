@@ -4,6 +4,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub mod resolve;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDir(PathBuf);
 
