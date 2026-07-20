@@ -15,7 +15,7 @@ pub use config::{
 pub use create::create;
 pub use delete::delete;
 pub use help::{help, help_command};
-pub use internal_run::{internal_run, internal_run_with_snapshot};
+pub use internal_run::internal_run;
 pub use list::{list, list_personas, list_profiles};
 pub use send::send;
 pub use server_action::server_action;

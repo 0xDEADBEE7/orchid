@@ -116,9 +116,6 @@ fn fork_tool_loop(
     effective: &EffectiveSessionConfig,
     config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::with_config_dir(config_dir)?;
-    store.write_snapshot(convo_id, effective)?;
-
     let mut cmd = std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     cmd.arg("__run")
         .arg(convo_id)

@@ -34,7 +34,6 @@ pub enum Command {
     Kill(String),
     InternalRun {
         id: String,
-        effective_config: Option<String>,
     },
     ServerAction {
         action: String,
@@ -306,11 +305,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .first()
                 .cloned()
                 .ok_or_else(|| "__run requires <id>".to_string())?;
-            let effective_config = flags.remove("effective-config").flatten();
-            Command::InternalRun {
-                id,
-                effective_config,
-            }
+            Command::InternalRun { id }
         }
         "server-action" => {
             let action = positional
