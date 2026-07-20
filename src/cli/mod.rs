@@ -35,11 +35,6 @@ pub enum Command {
     InternalRun {
         id: String,
     },
-    ServerAction {
-        action: String,
-        profile: Option<String>,
-        body_params: Vec<(String, String)>,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

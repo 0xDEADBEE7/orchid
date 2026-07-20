@@ -22,8 +22,7 @@ pub use config::resolve::{
     resolve as resolve_effective_config, EffectiveSessionConfig,
 };
 pub use config::{
-    get_orchid_dir, load_config, resolve_env, Config, ConfigDir, Connection, Limits, Permissions,
-    Policy, PolicyLimits, Profile, ResourceLoadError, RootConfig, ServerAction,
+    ConfigDir, Connection, Permissions, Policy, PolicyLimits, ResourceLoadError, RootConfig,
 };
 pub use convo::id::generate_id;
 pub use convo::{get_convo_jsonl_path, is_id_format, resolve, MetadataUpdate, Store};

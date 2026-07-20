@@ -8,8 +8,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let args_slice = if args.len() > 1 { &args[1..] } else { &[] };
 
-    let mut config_dir =
-        orchid::get_orchid_dir().unwrap_or_else(|_| std::path::PathBuf::from("config"));
+    let mut config_dir = std::path::PathBuf::from("config");
     let mut filtered_args = Vec::new();
     let mut i = 0;
     while i < args_slice.len() {
@@ -84,11 +83,6 @@ fn main() {
             Ok(()) => Ok(serde_json::json!({"status": "ok"})),
             Err(e) => Err(e),
         },
-        Command::ServerAction {
-            action,
-            profile,
-            body_params,
-        } => cmd::server_action(&action, profile.as_deref(), &body_params),
     };
 
     match result {

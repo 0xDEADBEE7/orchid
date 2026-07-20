@@ -155,7 +155,7 @@ pub struct TokenBudget {
 }
 
 impl TokenBudget {
-    pub fn from_limits(limits: &crate::config::Limits) -> Self {
+    pub fn from_policy_limits(limits: &crate::config::PolicyLimits) -> Self {
         TokenBudget {
             warn_threshold: limits.token_warn_threshold.unwrap_or(80_000),
             hard_limit: limits.token_hard_limit.unwrap_or(120_000),
@@ -165,7 +165,7 @@ impl TokenBudget {
 
 impl Default for TokenBudget {
     fn default() -> Self {
-        TokenBudget::from_limits(&crate::config::Limits::default())
+        TokenBudget::from_policy_limits(&crate::config::PolicyLimits::default())
     }
 }
 
