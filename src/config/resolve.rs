@@ -2,8 +2,6 @@ use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -18,7 +16,6 @@ pub struct EffectiveSessionConfig {
     pub working_dir: PathBuf,
     pub permissions: super::Permissions,
     pub limits: super::PolicyLimits,
-    pub env_vars: HashMap<String, String>,
 }
 
 pub fn resolve(
@@ -59,22 +56,6 @@ pub fn resolve(
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| "no working directory configured".to_string())?;
 
-    let mut env_vars = HashMap::new();
-    for conn in &connection_candidates {
-        if let Some(ref api_key) = conn.api_key {
-            if let Some(var_name) = api_key.strip_prefix("env.") {
-                let value = env::var(var_name).unwrap_or_default();
-                env_vars.insert(var_name.to_string(), value);
-            }
-        }
-        for (key, value) in &conn.headers {
-            let resolved = resolve_env_inline(value);
-            if resolved != *value {
-                env_vars.insert(key.clone(), resolved);
-            }
-        }
-    }
-
     Ok(EffectiveSessionConfig {
         policy_name,
         policy_hash,
@@ -83,7 +64,6 @@ pub fn resolve(
         working_dir,
         permissions: policy.permissions,
         limits: policy.limits,
-        env_vars,
     })
 }
 
@@ -95,20 +75,6 @@ fn compute_policy_hash(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     contents.hash(&mut hasher);
     format!("{:x}", hasher.finish())
-}
-
-pub fn resolve_env_inline(s: &str) -> String {
-    let mut result = s.to_string();
-    while let Some(start) = result.find("env.") {
-        let after = &result[start + 4..];
-        let end = after
-            .find(|c: char| !c.is_alphanumeric() && c != '_')
-            .unwrap_or(after.len());
-        let var_name = &after[..end];
-        let value = env::var(var_name).unwrap_or_default();
-        result = format!("{}{}{}", &result[..start], value, &after[end..]);
-    }
-    result
 }
 
 pub fn create_provider_from_connection(

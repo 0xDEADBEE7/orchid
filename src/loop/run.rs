@@ -22,7 +22,6 @@ pub struct LoopContext {
     pub working_dir: String,
     pub permissions: crate::config::Permissions,
     pub limits: crate::config::PolicyLimits,
-    pub env_vars: HashMap<String, String>,
     pub prompt: String,
     pub warn_interval: u32,
     pub global_scope_set: GlobSet,
@@ -92,7 +91,6 @@ pub fn build_context(
         working_dir,
         permissions: effective.permissions.clone(),
         limits: effective.limits.clone(),
-        env_vars: effective.env_vars.clone(),
         prompt: effective.prompt.clone(),
         warn_interval,
         global_scope_set,
@@ -253,7 +251,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     tool_call.input.clone(),
                     &ctx.working_dir,
                     false, // scope enforcement is now governed by policy permissions, not per-session
-                    &ctx.env_vars,
+                    &HashMap::new(),
                     &ctx.global_scope_set,
                     &ctx.session_scope_set,
                 ) {
