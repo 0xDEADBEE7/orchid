@@ -18,7 +18,8 @@ pub use client::base::{is_retryable, BaseClient};
 pub use client::{create_provider_from_connection_with_log, resolve_env_inline};
 pub use cmd::{config_list, config_show, config_validate, delete, internal_run, list, send, set};
 pub use config::resolve::{
-    create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,
+    create_provider_from_connection, create_provider_from_connections_with_log,
+    resolve as resolve_effective_config, EffectiveSessionConfig,
 };
 pub use config::{
     get_orchid_dir, load_config, resolve_env, Config, ConfigDir, Connection, Limits, Permissions,

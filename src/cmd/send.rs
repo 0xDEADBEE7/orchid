@@ -1,6 +1,7 @@
 use crate::cmd::create::resolve_working_dir;
 use crate::config::resolve::{
-    create_provider_from_connection, resolve as resolve_effective_config, EffectiveSessionConfig,
+    create_provider_from_connections_with_log, resolve as resolve_effective_config,
+    EffectiveSessionConfig,
 };
 use crate::config::ConfigDir;
 use crate::convo::{resolve, Store};
@@ -82,11 +83,6 @@ pub fn send(
     .map_err(|e| format!("failed to resolve effective config: {}", e))?;
 
     if await_completion {
-        let connection = effective
-            .connection_candidates
-            .first()
-            .ok_or_else(|| "policy has no connections configured".to_string())?;
-
         let log_path = Some(
             config_dir
                 .join("sessions")
@@ -95,7 +91,8 @@ pub fn send(
         );
 
         let provider =
-            create_provider_from_connection(connection, log_path).map_err(|e| e.to_string())?;
+            create_provider_from_connections_with_log(&effective.connection_candidates, log_path)
+                .map_err(|e| e.to_string())?;
 
         run_tool_loop(&convo_id, &effective, config_dir, provider.as_ref())?;
 

@@ -11,6 +11,22 @@ use std::sync::Arc;
 
 pub use resolve::{resolve_env_inline, resolve_env_inline_strict, EnvResolutionError};
 
+pub fn create_provider_from_connections_with_log(
+    connections: &[Connection],
+    log_path: Option<std::path::PathBuf>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    let mut diagnostics = Vec::new();
+    for connection in connections {
+        match create_provider_from_connection_with_log(connection, log_path.clone()) {
+            Ok(provider) => return Ok(provider),
+            Err(error) => diagnostics.push(format!("{}: {}", connection.interface, error)),
+        }
+    }
+    Err(ProviderError::InvalidResponse(format!(
+        "all connection candidates failed: {}",
+        diagnostics.join("; ")
+    )))
+}
 pub fn create_provider_from_connection(
     connection: &Connection,
 ) -> Result<Arc<dyn Provider>, ProviderError> {

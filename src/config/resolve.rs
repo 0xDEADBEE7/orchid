@@ -111,11 +111,15 @@ pub fn resolve_env_inline(s: &str) -> String {
     result
 }
 
-/// Build a provider from a resolved Connection.
-/// This is the new-path equivalent of `create_provider(profile)`.
 pub fn create_provider_from_connection(
     conn: &Connection,
     log_path: Option<PathBuf>,
 ) -> Result<Arc<dyn Provider>, ProviderError> {
     crate::client::create_provider_from_connection_with_log(conn, log_path)
+}
+pub fn create_provider_from_connections_with_log(
+    connections: &[Connection],
+    log_path: Option<PathBuf>,
+) -> Result<Arc<dyn Provider>, ProviderError> {
+    crate::client::create_provider_from_connections_with_log(connections, log_path)
 }
