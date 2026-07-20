@@ -11,59 +11,11 @@ pub trait Tool: Send + Sync {
     fn execute(&self, args: Value, working_dir: &str) -> Result<String, String>;
 }
 
-/// Static registry of tool JSON schemas sent to the provider on every request.
 pub fn tool_definitions() -> Vec<Value> {
     vec![
-        serde_json::json!({
-            "name": "bash",
-            "description": "Run a shell command. Output is captured and returned.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "cmd": { "type": "string", "description": "Shell command to execute" }
-                },
-                "required": ["cmd"]
-            }
-        }),
-        serde_json::json!({
-            "name": "fs_read",
-            "description": "Read one or more files. Pass a list of paths for batch reads.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "paths": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "File paths to read"
-                    }
-                },
-                "required": ["paths"]
-            }
-        }),
-        serde_json::json!({
-            "name": "fs_edit",
-            "description": "Apply one or more string replacements to a file. All edits are applied atomically — if any patch fails, nothing is written.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "File to edit" },
-                    "edits": {
-                        "type": "array",
-                        "description": "Ordered list of patches to apply",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "old_string": { "type": "string", "description": "Exact text to find" },
-                                "new_string": { "type": "string", "description": "Replacement text" },
-                                "replace_all": { "type": "boolean", "description": "Replace all occurrences (default false)" }
-                            },
-                            "required": ["old_string", "new_string"]
-                        }
-                    }
-                },
-                "required": ["path", "edits"]
-            }
-        }),
+        serde_json::json!({"name":"bash","description":"Run a shell command.","input_schema":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}),
+        serde_json::json!({"name":"fs_read","description":"Read files.","input_schema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}}},"required":["paths"]}}),
+        serde_json::json!({"name":"fs_edit","description":"Edit a file.","input_schema":{"type":"object","properties":{"path":{"type":"string"},"edits":{"type":"array"}},"required":["path","edits"]}}),
     ]
 }
 
@@ -103,7 +55,6 @@ pub fn execute_tool_with_permissions(
     if !allowed_tools.is_empty() && !allowed_tools.iter().any(|tool| tool == name || tool == "*") {
         return Err(format!("tool denied by policy: {}", name));
     }
-
     match name {
         "bash" => bash::execute(
             input,
@@ -133,5 +84,66 @@ pub fn execute_tool_with_permissions(
         )
         .map(Value::String),
         _ => Err(format!("unknown tool: {}", name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn denies_tools_not_in_policy() {
+        let error = execute_tool_with_permissions(
+            "bash",
+            serde_json::json!({"cmd":"printf denied"}),
+            ".",
+            false,
+            &HashMap::new(),
+            &GlobSet::empty(),
+            &GlobSet::empty(),
+            &["fs_read".to_string()],
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(error, "tool denied by policy: bash");
+    }
+
+    #[test]
+    fn injects_only_explicit_tool_environment() {
+        let result = execute_tool_with_permissions(
+            "bash",
+            serde_json::json!({"cmd":"printf %s \\\"$ORCHID_TOOL_TEST\\\""}),
+            ".",
+            false,
+            &HashMap::from([("ORCHID_TOOL_TEST".to_string(), "runtime-secret".to_string())]),
+            &GlobSet::empty(),
+            &GlobSet::empty(),
+            &["bash".to_string()],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(result, serde_json::json!("\"runtime-secret\""));
+    }
+
+    #[test]
+    fn denies_paths_outside_policy() {
+        let temp = TempDir::new().unwrap();
+        let allowed = temp.path().join("allowed.txt");
+        let denied = temp.path().join("denied.txt");
+        std::fs::write(&allowed, "allowed").unwrap();
+        std::fs::write(&denied, "denied").unwrap();
+        let result = execute_tool_with_permissions(
+            "fs_read",
+            serde_json::json!({"paths":[denied.to_string_lossy()]}),
+            ".",
+            false,
+            &HashMap::new(),
+            &GlobSet::empty(),
+            &GlobSet::empty(),
+            &["fs_read".to_string()],
+            &[allowed.to_string_lossy().to_string()],
+        );
+        assert!(result.unwrap_err().contains("out of scope"));
     }
 }
