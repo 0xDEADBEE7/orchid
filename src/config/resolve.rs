@@ -1,6 +1,5 @@
 use crate::config::Connection;
 use crate::provider::{Provider, ProviderError};
-use serde::Deserialize;
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::fs;
 use std::hash::{Hash, Hasher};

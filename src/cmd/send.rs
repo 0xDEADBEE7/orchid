@@ -58,7 +58,7 @@ pub fn send(
     };
 
     let meta = store.get(&session_id)?;
-    let _working_dir = meta
+    let working_dir = meta
         .working_dir
         .clone()
         .ok_or_else(|| "session has no working directory configured".to_string())?;
@@ -68,34 +68,45 @@ pub fn send(
         return Err(format!("session {} is already running", session_id));
     }
 
-    let session_path = config_dir
-        .join("sessions")
-        .join(&session_id)
-        .join("session.jsonl");
-    let event = SessionEvent::Message(MessageEvent::new("user", &message));
-    LogWriter::append(&session_path, &event)?;
-
+    // Resolve and construct the provider before mutating the transcript. This
+    // keeps missing secrets and invalid provider configuration side-effect free.
     let config_dir_ref = ConfigDir::new(config_dir);
     let effective = resolve_effective_config(
         &config_dir_ref,
         meta.policy.as_deref().or(policy.as_deref()),
-        Some(&_working_dir),
+        Some(&working_dir),
     )
     .map_err(|e| format!("failed to resolve effective config: {}", e))?;
 
-    if await_completion {
-        let log_path = Some(
-            config_dir
-                .join("sessions")
-                .join(&session_id)
-                .join("orchid.log"),
-        );
-
-        let provider =
+    let log_path = Some(
+        config_dir
+            .join("sessions")
+            .join(&session_id)
+            .join("orchid.log"),
+    );
+    let provider = if await_completion {
+        Some(
             create_provider_from_connections_with_log(&effective.connection_candidates, log_path)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string())?,
+        )
+    } else {
+        None
+    };
 
-        run_tool_loop(&session_id, &effective, config_dir, provider.as_ref())?;
+    let session_path = store.transcript_path(&session_id);
+    let event = SessionEvent::Message(MessageEvent::new("user", &message));
+    LogWriter::append(&session_path, &event)?;
+
+    if await_completion {
+        run_tool_loop(
+            &session_id,
+            &effective,
+            config_dir,
+            provider
+                .as_ref()
+                .expect("provider created for await")
+                .as_ref(),
+        )?;
 
         let _final_meta = store.get(&session_id)?;
         Ok(json!({

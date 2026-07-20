@@ -77,7 +77,7 @@ fn test_send_writes_user_message_to_session_jsonl() {
     let jsonl = orchid_dir
         .join("sessions")
         .join(&meta.id)
-        .join("session.jsonl");
+        .join("conversation.jsonl");
     assert!(
         std::fs::read_to_string(&jsonl)
             .map(|c| c.contains("hello world"))
