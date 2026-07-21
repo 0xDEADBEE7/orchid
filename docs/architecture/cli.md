@@ -12,7 +12,7 @@ All commands write JSON to stdout. This applies universally — including errors
 [{"id":"a3f9c1b2...","label":"fix-auth-bug"},{"id":"d7e2a091...","label":"add-tests"}]
 
 # error
-{"error":"profile not found","profile":"missing-profile"}
+{"error":"policy not found","policy":"missing-policy"}
 ```
 
 No human-readable formatting is ever the default. Pipe through `jq` for filtering and display.

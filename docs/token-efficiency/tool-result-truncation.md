@@ -16,7 +16,7 @@ Cap tool result content at a configurable byte limit before it is appended to hi
 [truncated: 3,847 lines omitted — full output available via bash if needed]
 ```
 
-The limit should be configurable per profile or per conversation so it can be tuned for different workloads.
+The limit should be configurable per policy or per session so it can be tuned for different workloads.
 
 ## Signal to look for
 
