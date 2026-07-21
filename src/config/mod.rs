@@ -36,11 +36,13 @@ impl ConfigDir {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RootConfig {
     pub policy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct AuthProfile {
     #[serde(rename = "type")]
     pub kind: String,
@@ -49,6 +51,7 @@ pub struct AuthProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Connection {
     pub interface: String,
     pub base_url: String,
@@ -68,6 +71,7 @@ pub struct Connection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Permissions {
     #[serde(default)]
     pub tools: Vec<String>,
@@ -76,6 +80,7 @@ pub struct Permissions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyLimits {
     #[serde(default)]
     pub token_warn_threshold: Option<u32>,
@@ -86,6 +91,7 @@ pub struct PolicyLimits {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Policy {
     pub connections: Vec<String>,
     #[serde(default)]

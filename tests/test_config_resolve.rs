@@ -9,6 +9,44 @@ fn write_config(dir: &std::path::Path, policy_name: &str) {
     std::fs::write(dir.join("config.json"), config.to_string()).unwrap();
 }
 
+#[test]
+fn resource_loaders_reject_unknown_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("connections")).unwrap();
+    std::fs::write(
+        dir.path().join("config.json"),
+        r#"{"policy":"default","unexpected":true}"#,
+    )
+    .unwrap();
+    let error = orchid::ConfigDir::new(dir.path()).load_root().unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
+
+    std::fs::write(
+        dir.path().join("connections/local.json"),
+        r#"{"interface":"openai","base_url":"http://localhost","model":"local","unexpected":true}"#,
+    )
+    .unwrap();
+    let error = orchid::ConfigDir::new(dir.path())
+        .load_connection("local")
+        .unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
+}
+
+#[test]
+fn nested_policy_objects_reject_unknown_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("policies")).unwrap();
+    std::fs::write(
+        dir.path().join("policies/default.json"),
+        r#"{"connections":["local"],"limits":{"max_steps":10,"unexpected":1}}"#,
+    )
+    .unwrap();
+    let error = orchid::ConfigDir::new(dir.path())
+        .load_policy("default")
+        .unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
+}
+
 fn write_connection(dir: &std::path::Path, name: &str, iface: &str, base_url: &str, model: &str) {
     let conn = serde_json::json!({
         "interface": iface,
