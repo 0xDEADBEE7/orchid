@@ -44,7 +44,8 @@ pub struct RootConfig {
 pub struct AuthProfile {
     #[serde(rename = "type")]
     pub kind: String,
-    pub value: String,
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -57,6 +58,8 @@ pub struct Connection {
     pub auth: Option<String>,
     #[serde(skip)]
     pub auth_profile: Option<AuthProfile>,
+    #[serde(skip)]
+    pub auth_storage: Option<PathBuf>,
     pub model: String,
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
@@ -169,14 +172,33 @@ impl ConfigDir {
         })?;
         let path = self.auth_path().join(format!("{}.json", name));
         let value: AuthProfile = read_json(path.clone(), "authentication profile")?;
-        if !matches!(value.kind.as_str(), "api_key" | "bearer_token") {
+        if !matches!(
+            value.kind.as_str(),
+            "api_key" | "bearer_token" | "openai_codex_oauth"
+        ) {
             return Err(ResourceLoadError::Invalid {
                 path,
                 message: format!("unknown authentication type: {}", value.kind),
             });
         }
-        validate_reference(&value.value)
-            .map_err(|message| ResourceLoadError::Invalid { path, message })?;
+        if value.kind == "openai_codex_oauth" {
+            if value.value.is_some() {
+                return Err(ResourceLoadError::Invalid {
+                    path,
+                    message: "Codex OAuth profiles must not contain a credential value".into(),
+                });
+            }
+        } else {
+            let reference = value
+                .value
+                .as_deref()
+                .ok_or_else(|| ResourceLoadError::Invalid {
+                    path: path.clone(),
+                    message: "credential reference is required".into(),
+                })?;
+            validate_reference(reference)
+                .map_err(|message| ResourceLoadError::Invalid { path, message })?;
+        }
         Ok(value)
     }
     pub fn load_root(&self) -> Result<RootConfig, ResourceLoadError> {
@@ -210,6 +232,7 @@ impl ConfigDir {
             });
         }
         let mut value = value;
+        value.auth_storage = Some(self.auth_path());
         if let Some(auth) = &value.auth {
             if value.api_key.is_some() {
                 return Err(ResourceLoadError::Invalid {

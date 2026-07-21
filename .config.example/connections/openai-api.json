@@ -1,0 +1,8 @@
+{
+  "interface": "openai",
+  "base_url": "https://api.openai.com",
+  "auth": "openai-api",
+  "model": "gpt-5",
+  "params": {},
+  "headers": {}
+}

@@ -1,6 +1,7 @@
 pub mod base;
 pub use base::{is_retryable, BaseClient};
 pub mod anthropic;
+pub mod codex;
 pub mod openai;
 pub mod resolve;
 pub mod sse;
@@ -54,6 +55,11 @@ pub fn create_provider_from_connection_with_log(
             Ok(Arc::new(client))
         }
         "openai" => {
+            if connection.auth_profile.as_ref().map(|p| p.kind.as_str())
+                == Some("openai_codex_oauth")
+            {
+                return Ok(Arc::new(codex::CodexClient::from_connection(connection)?));
+            }
             let mut client = openai::OpenAiClient::from_connection(connection)?;
             if let Some(path) = log_path {
                 client = client.with_log(path);

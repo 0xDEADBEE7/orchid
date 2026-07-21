@@ -49,6 +49,7 @@ fn main() {
         }
         Command::Auth(AuthSubcommand::List) => cmd::auth_list(&config_dir),
         Command::Auth(AuthSubcommand::Validate(name)) => cmd::auth_validate(&config_dir, &name),
+        Command::Auth(AuthSubcommand::Login(name)) => cmd::auth_login(&config_dir, &name),
         Command::Create {
             label,
             working_dir,

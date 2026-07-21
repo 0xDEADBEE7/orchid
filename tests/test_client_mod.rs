@@ -14,6 +14,7 @@ fn test_create_provider_defaults_to_anthropic() {
         api_key: None,
         auth: None,
         auth_profile: None,
+        auth_storage: None,
         model: "test-model".to_string(),
         headers: HashMap::new(),
         params: HashMap::new(),

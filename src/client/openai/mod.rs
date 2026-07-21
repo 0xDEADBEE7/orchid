@@ -48,6 +48,18 @@ impl OpenAiClient {
     pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
         let resolved = crate::client::resolve::resolve_connection(connection)
             .map_err(|e| ProviderError::AuthError(e.to_string()))?;
+        if let Some(profile) = &connection.auth_profile {
+            if profile.kind == "openai_codex_oauth" {
+                if !crate::client::codex::model_allowed(&connection.model) {
+                    return Err(ProviderError::InvalidResponse(
+                        "model is not allowed for OpenAI Codex OAuth".into(),
+                    ));
+                }
+                return Err(ProviderError::AuthError(
+                    "Codex OAuth transport requires a Codex connection adapter".into(),
+                ));
+            }
+        }
         let raw_key = match (&connection.auth_profile, resolved.api_key) {
             (Some(profile), _) if profile.kind == "api_key" => crate::client::resolve::resolve_auth(profile)
                 .map_err(|e| ProviderError::AuthError(e.to_string()))?,

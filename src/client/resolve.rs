@@ -13,11 +13,14 @@ pub struct ResolvedConnection {
 }
 
 pub fn resolve_auth(profile: &crate::config::AuthProfile) -> Result<String, EnvResolutionError> {
-    let value = if let Some(name) = profile.value.strip_prefix("env.") {
+    let reference = profile.value.as_deref().ok_or_else(|| EnvResolutionError {
+        variables: vec!["missing credential reference".into()],
+    })?;
+    let value = if let Some(name) = reference.strip_prefix("env.") {
         env::var(name).map_err(|_| EnvResolutionError {
             variables: vec![name.to_string()],
         })?
-    } else if let Some(path) = profile.value.strip_prefix("file.") {
+    } else if let Some(path) = reference.strip_prefix("file.") {
         fs::read_to_string(path).map_err(|_| EnvResolutionError {
             variables: vec![path.to_string()],
         })?
@@ -29,7 +32,7 @@ pub fn resolve_auth(profile: &crate::config::AuthProfile) -> Result<String, EnvR
     let value = value.strip_suffix('\n').unwrap_or(&value).to_string();
     if value.is_empty() {
         return Err(EnvResolutionError {
-            variables: vec![profile.value.clone()],
+            variables: vec![reference.to_string()],
         });
     }
     Ok(value)
@@ -135,7 +138,7 @@ mod tests {
         std::fs::write(&path, b"file-secret\n").unwrap();
         let profile = AuthProfile {
             kind: "api_key".into(),
-            value: format!("file.{}", path.display()),
+            value: Some(format!("file.{}", path.display())),
         };
         assert_eq!(resolve_auth(&profile).unwrap(), "file-secret");
         std::fs::remove_file(path).unwrap();
@@ -146,7 +149,7 @@ mod tests {
         std::env::set_var("ORCHID_EMPTY_AUTH", "");
         let profile = AuthProfile {
             kind: "api_key".into(),
-            value: "env.ORCHID_EMPTY_AUTH".into(),
+            value: Some("env.ORCHID_EMPTY_AUTH".into()),
         };
         assert!(resolve_auth(&profile).is_err());
         std::env::remove_var("ORCHID_EMPTY_AUTH");

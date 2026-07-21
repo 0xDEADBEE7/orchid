@@ -15,7 +15,7 @@ pub fn auth_list(config_dir: &Path) -> Result<serde_json::Value, String> {
             .and_then(|n| n.to_str())
             .ok_or_else(|| "invalid auth profile filename".to_string())?;
         let profile = dir.load_auth(name).map_err(|e| e.to_string())?;
-        profiles.push(json!({"name": name, "type": profile.kind, "value": profile.value}));
+        profiles.push(json!({"name": name, "type": profile.kind, "reference": profile.value}));
     }
     profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     Ok(json!({"profiles": profiles}))
@@ -24,8 +24,20 @@ pub fn auth_list(config_dir: &Path) -> Result<serde_json::Value, String> {
 pub fn auth_validate(config_dir: &Path, name: &str) -> Result<serde_json::Value, String> {
     let dir = crate::ConfigDir::new(config_dir);
     let profile = dir.load_auth(name).map_err(|e| e.to_string())?;
+    if profile.kind == "openai_codex_oauth" {
+        return crate::client::codex::validate_token(&dir, name);
+    }
     let value = crate::client::resolve::resolve_auth(&profile).map_err(|e| e.to_string())?;
     Ok(
         json!({"status": "ok", "name": name, "type": profile.kind, "credential_present": !value.is_empty()}),
     )
+}
+
+pub fn auth_login(config_dir: &Path, name: &str) -> Result<serde_json::Value, String> {
+    let dir = crate::ConfigDir::new(config_dir);
+    let profile = dir.load_auth(name).map_err(|e| e.to_string())?;
+    if profile.kind != "openai_codex_oauth" {
+        return Err("auth login is only supported for openai_codex_oauth profiles".into());
+    }
+    crate::client::codex::login(config_dir, name)
 }

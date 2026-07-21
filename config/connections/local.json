@@ -1,8 +1,0 @@
-{
-  "interface": "openai",
-  "base_url": "http://localhost:1234/v1",
-  "auth": "openai-local",
-  "model": "local-model",
-  "params": {},
-  "headers": {}
-}

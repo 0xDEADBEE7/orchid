@@ -9,6 +9,7 @@ fn connection(interface: &str) -> Connection {
         api_key: None,
         auth: None,
         auth_profile: None,
+        auth_storage: None,
         model: "test-model".to_string(),
         params: Default::default(),
         headers: Default::default(),
