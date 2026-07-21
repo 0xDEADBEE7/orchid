@@ -111,6 +111,9 @@ pub fn intersect_permissions(
                 policy.paths.iter().any(|allowed| {
                     requested == &allowed
                         || requested.starts_with(&format!("{}/", allowed.trim_end_matches('/')))
+                        || globset::Glob::new(allowed)
+                            .map(|glob| glob.compile_matcher().is_match(requested))
+                            .unwrap_or(false)
                 })
             })
             .cloned()
