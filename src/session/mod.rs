@@ -97,7 +97,6 @@ impl SessionStore {
                     last_message: None,
                     hooks: None,
                     token_estimate: None,
-                    allow_scope_escape: None,
                     restrictions,
                 };
 

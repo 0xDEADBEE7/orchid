@@ -201,7 +201,5 @@ pub struct SessionState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_estimate: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_scope_escape: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub restrictions: Option<Vec<String>>,
 }

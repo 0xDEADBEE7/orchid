@@ -49,7 +49,6 @@ pub fn reconcile_crashed(session_id: &str, config_dir: &Path) -> Result<(), Stri
                 last_message: None,
                 hooks: None,
                 token_estimate: None,
-                allow_scope_escape: None,
                 restrictions: None,
             }
         }

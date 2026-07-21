@@ -10,7 +10,6 @@ fn test_fs_edit_rejects_legacy_single_edit_fields() {
             "new_string": "after"
         }),
         dir.path().to_str().unwrap(),
-        true,
         &globset::GlobSet::empty(),
         &globset::GlobSet::empty(),
         &[],
@@ -27,7 +26,6 @@ fn test_fs_edit_rejects_empty_edits() {
     let result = orchid::tools::fs_edit::execute(
         serde_json::json!({"path": path.display().to_string(), "edits": []}),
         dir.path().to_str().unwrap(),
-        true,
         &globset::GlobSet::empty(),
         &globset::GlobSet::empty(),
         &[],

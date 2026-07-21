@@ -23,7 +23,6 @@ pub fn extract_paths(input: &Value) -> Vec<String> {
 pub fn execute(
     input: Value,
     working_dir: &str,
-    allow_scope_escape: bool,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
     allowed_paths: &[String],
@@ -38,7 +37,6 @@ pub fn execute(
         let content = read_one(
             &paths[0],
             working_dir,
-            allow_scope_escape,
             global_scope_set,
             session_scope_set,
             allowed_paths,
@@ -50,7 +48,6 @@ pub fn execute(
             match read_one(
                 path,
                 working_dir,
-                allow_scope_escape,
                 global_scope_set,
                 session_scope_set,
                 allowed_paths,
@@ -70,14 +67,12 @@ pub fn execute(
 fn read_one(
     path: &str,
     working_dir: &str,
-    allow_scope_escape: bool,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
     allowed_paths: &[String],
 ) -> Result<String, String> {
-    if !allow_scope_escape
-        && (!is_allowed(path, working_dir, global_scope_set, session_scope_set)
-            || !crate::tools::scope::is_allowed_by_policy(path, working_dir, allowed_paths))
+    if !is_allowed(path, working_dir, global_scope_set, session_scope_set)
+        || !crate::tools::scope::is_allowed_by_policy(path, working_dir, allowed_paths)
     {
         return Err(format!("path out of scope: {}", path));
     }

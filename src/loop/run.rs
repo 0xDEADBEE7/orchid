@@ -266,7 +266,6 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     &tool_call.name,
                     tool_call.input.clone(),
                     &ctx.working_dir,
-                    false, // scope enforcement is governed by policy permissions
                     &ctx.env_vars,
                     &ctx.global_scope_set,
                     &ctx.session_scope_set,

@@ -13,7 +13,6 @@ pub struct BashInput {
 pub fn execute(
     input: Value,
     working_dir: &str,
-    allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
     global_scope_set: &GlobSet,
     session_scope_set: &GlobSet,
@@ -22,15 +21,13 @@ pub fn execute(
     let bash_input: BashInput =
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
 
-    if !allow_scope_escape {
-        validate_cmd_scope(
-            &bash_input.cmd,
-            working_dir,
-            global_scope_set,
-            session_scope_set,
-            allowed_paths,
-        )?;
-    }
+    validate_cmd_scope(
+        &bash_input.cmd,
+        working_dir,
+        global_scope_set,
+        session_scope_set,
+        allowed_paths,
+    )?;
 
     let output = Command::new("bash")
         .arg("-c")
