@@ -3,30 +3,17 @@ use orchid::types::Message;
 use std::path::PathBuf;
 
 pub struct TestEnv {
-    prev: Option<String>,
     temp: tempfile::TempDir,
 }
 
 impl TestEnv {
     pub fn new() -> Self {
         let temp = tempfile::TempDir::new().unwrap();
-        let dir = temp.path().to_path_buf();
-        let prev = std::env::var("ORCHID_DIR").ok();
-        std::env::set_var("ORCHID_DIR", dir.to_string_lossy().to_string());
-        Self { prev, temp }
+        Self { temp }
     }
 
     pub fn dir(&self) -> PathBuf {
         self.temp.path().to_path_buf()
-    }
-}
-
-impl Drop for TestEnv {
-    fn drop(&mut self) {
-        match &self.prev {
-            Some(v) => std::env::set_var("ORCHID_DIR", v.clone()),
-            None => std::env::remove_var("ORCHID_DIR"),
-        }
     }
 }
 
