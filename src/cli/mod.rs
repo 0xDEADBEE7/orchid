@@ -25,6 +25,11 @@ pub enum Command {
         policy: Option<String>,
         prompt: Option<String>,
     },
+    Await {
+        ids: Vec<String>,
+        timeout: f64,
+        interval: f64,
+    },
     Set {
         id: String,
         label: Option<String>,
@@ -75,8 +80,8 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         } else {
             // Check if the first positional is a known command.
             let known_commands = [
-                "help", "list", "create", "config", "send", "set", "delete", "stop", "kill",
-                "__run", "validate",
+                "help", "list", "create", "config", "send", "await", "set", "delete", "stop",
+                "kill", "__run", "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
                 // Known command: treat it as such.
@@ -105,6 +110,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "working-dir",
         "max-steps",
         "timeout",
+        "interval",
         "await",
         "restriction",
         "config",
@@ -273,6 +279,24 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 prompt,
             }
         }
+        "await" => {
+            if positional.is_empty() {
+                return Err("await requires at least one session ID".to_string());
+            }
+            let timeout = parse_nonnegative_float(flags.remove("timeout").flatten(), "timeout")?;
+            let interval = parse_nonnegative_float(flags.remove("interval").flatten(), "interval")?;
+            if let Some(unknown) = flags
+                .keys()
+                .find(|key| !matches!(key.as_str(), "timeout" | "interval"))
+            {
+                return Err(format!("unknown flag: --{}", unknown));
+            }
+            Command::Await {
+                ids: positional,
+                timeout,
+                interval,
+            }
+        }
         "set" => {
             let id = flags
                 .remove("id")
@@ -321,4 +345,15 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
     };
 
     Ok((cmd, flags))
+}
+
+fn parse_nonnegative_float(value: Option<String>, name: &str) -> Result<f64, String> {
+    let value = value.unwrap_or_else(|| if name == "timeout" { "60" } else { "2" }.to_string());
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| format!("invalid {} value: {}", name, value))?;
+    if !parsed.is_finite() || parsed < 0.0 {
+        return Err(format!("invalid {} value: {}", name, value));
+    }
+    Ok(parsed)
 }

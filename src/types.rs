@@ -8,6 +8,8 @@ use uuid::Uuid;
 pub enum Status {
     Idle,
     Running,
+    Failed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
