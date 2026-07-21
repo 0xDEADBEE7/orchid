@@ -1,80 +1,15 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub mod resolve;
 pub mod directory;
+pub mod connection;
+pub mod policy;
+pub mod root;
 pub use directory::ConfigDir;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RootConfig {
-    pub policy: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct AuthProfile {
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default)]
-    pub value: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Connection {
-    pub interface: String,
-    pub base_url: String,
-    #[serde(default)]
-    pub api_key: Option<String>,
-    #[serde(default)]
-    pub auth: Option<String>,
-    #[serde(skip)]
-    pub auth_profile: Option<AuthProfile>,
-    #[serde(skip)]
-    pub auth_storage: Option<PathBuf>,
-    pub model: String,
-    #[serde(default)]
-    pub params: HashMap<String, serde_json::Value>,
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Permissions {
-    #[serde(default)]
-    pub tools: Vec<String>,
-    #[serde(default)]
-    pub paths: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct PolicyLimits {
-    #[serde(default)]
-    pub token_warn_threshold: Option<u32>,
-    #[serde(default)]
-    pub token_hard_limit: Option<u32>,
-    #[serde(default)]
-    pub max_steps: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    pub connections: Vec<String>,
-    #[serde(default)]
-    pub prompt: Option<String>,
-    #[serde(default)]
-    pub permissions: Permissions,
-    #[serde(default)]
-    pub limits: PolicyLimits,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-}
+pub use connection::{AuthProfile, Connection};
+pub use policy::{Permissions, Policy, PolicyLimits};
+pub use root::RootConfig;
 
 #[derive(Debug)]
 pub enum ResourceLoadError {
