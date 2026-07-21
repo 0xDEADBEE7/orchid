@@ -7,7 +7,6 @@ use crate::r#loop::stream::StreamState;
 use crate::r#loop::{events, history};
 use crate::session::get_session_dir_from_config;
 use crate::tools;
-use crate::tools::scope::compile_exceptions;
 use crate::types::{TokenBudget, ToolResult};
 use globset::GlobSet;
 use std::collections::HashMap;
@@ -94,7 +93,9 @@ pub fn build_context(
         .unwrap_or(4_000); // default: 4000 (from 40k warn / 80k hard)
 
     let global_scope_set = GlobSet::empty();
-    let session_scope_set = compile_exceptions(&[]);
+    // Session restrictions are intersected with policy permissions above;
+    // they must never become path-escape exceptions.
+    let session_scope_set = GlobSet::empty();
 
     Ok(LoopContext {
         store,

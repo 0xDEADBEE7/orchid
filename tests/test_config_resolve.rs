@@ -401,6 +401,26 @@ fn test_resolve_preserves_permissions() {
 }
 
 #[test]
+fn session_path_restrictions_cannot_expand_policy_paths() {
+    let policy = orchid::config::Permissions {
+        tools: vec!["fs_read".into()],
+        paths: vec!["/tmp/project".into()],
+    };
+    let narrowed = orchid::config::resolve::intersect_permissions(
+        &policy,
+        Some(&["/tmp/project/src".into()]),
+    );
+    assert_eq!(narrowed.tools, policy.tools);
+    assert_eq!(narrowed.paths, vec!["/tmp/project/src"]);
+
+    let outside = orchid::config::resolve::intersect_permissions(
+        &policy,
+        Some(&["/etc".into()]),
+    );
+    assert!(outside.paths.is_empty());
+}
+
+#[test]
 fn test_resolve_preserves_limits() {
     let env = TestEnv::new();
     let dir = env.dir();
