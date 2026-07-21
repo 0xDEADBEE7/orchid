@@ -145,3 +145,32 @@ fn test_send_writes_user_message_to_session_jsonl() {
         "user message should be written to the transcript"
     );
 }
+
+#[test]
+#[serial_test::serial]
+fn test_send_persists_existing_session_prompt_override() {
+    let env = TestEnv::new();
+    let dir = env.dir();
+    write_resource_config(&dir);
+    std::fs::write(
+        dir.join("prompts/override.md"),
+        "Use the override prompt.",
+    )
+    .unwrap();
+    let store = Store::with_config_dir(&dir).unwrap();
+    let meta = store.create(None, Some("/tmp".to_string()), None).unwrap();
+    let result = send(
+        Some(meta.id.clone()),
+        "hello".to_string(),
+        false,
+        &dir,
+        None,
+        None,
+        Some("default".to_string()),
+        Some("override".to_string()),
+    );
+    if let Err(error) = result {
+        assert!(error.contains("spawn") || error.contains("fork"));
+    }
+    assert_eq!(store.get(&meta.id).unwrap().prompt.as_deref(), Some("override"));
+}

@@ -52,6 +52,19 @@ pub fn send(
             prompt.as_deref(), Some(&working_dir),
         )
         .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+        let meta = if policy.is_some() || prompt.is_some() {
+            store.update(
+                &resolved_id,
+                crate::SessionUpdate {
+                    policy: Some(Some(effective.policy_name.clone())),
+                    policy_hash: Some(Some(effective.policy_hash.clone())),
+                    prompt: Some(effective.prompt_name.clone()),
+                    ..Default::default()
+                },
+            )?
+        } else {
+            meta
+        };
         (resolved_id, meta, effective)
     } else {
         let wd = resolve_working_dir(working_dir)?;
