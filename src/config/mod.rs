@@ -4,36 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub mod resolve;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigDir(PathBuf);
-
-impl ConfigDir {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self(path.into())
-    }
-    pub fn path(&self) -> &Path {
-        &self.0
-    }
-    pub fn root_path(&self) -> PathBuf {
-        self.0.join("config.json")
-    }
-    pub fn connections_path(&self) -> PathBuf {
-        self.0.join("connections")
-    }
-    pub fn policies_path(&self) -> PathBuf {
-        self.0.join("policies")
-    }
-    pub fn prompts_path(&self) -> PathBuf {
-        self.0.join("prompts")
-    }
-    pub fn sessions_path(&self) -> PathBuf {
-        self.0.join("sessions")
-    }
-    pub fn auth_path(&self) -> PathBuf {
-        self.0.join("auth")
-    }
-}
+pub mod directory;
+pub use directory::ConfigDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
