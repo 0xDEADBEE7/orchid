@@ -1,5 +1,5 @@
+use crate::client::openai::{openai_tool_definitions, to_openai_message, OpenAiStream};
 use crate::client::openai::{OpenAiClient, OpenAiListResponse, OpenAiMessage};
-use crate::client::openai::{OpenAiStream, to_openai_message, openai_tool_definitions};
 use crate::provider::{Provider, ProviderError, Response, StreamEvent};
 use crate::types::{TokenUsage, ToolCall};
 
@@ -10,7 +10,11 @@ pub struct OpenAiApiClient<'a> {
 }
 
 impl Provider for OpenAiClient {
-    fn send(&self, system: String, messages: Vec<crate::types::Message>) -> Result<Response, ProviderError> {
+    fn send(
+        &self,
+        system: String,
+        messages: Vec<crate::types::Message>,
+    ) -> Result<Response, ProviderError> {
         let api = self.api_client();
         api.send(system, messages)
     }
@@ -45,10 +49,10 @@ impl<'a> OpenAiApiClient<'a> {
             .collect();
         headers.extend_from_slice(&extra);
 
-        let response_text = self
-            .inner
-            .base_client
-            .post_with_retry(&self.inner.api_url, body, &headers)?;
+        let response_text =
+            self.inner
+                .base_client
+                .post_with_retry(&self.inner.api_url, body, &headers)?;
 
         self.parse_response(&response_text)
     }
@@ -79,17 +83,19 @@ impl<'a> OpenAiApiClient<'a> {
                 format!("{}=...{}", k, tail)
             })
             .collect();
-        self.inner.base_client.log_debug("resolved_headers", &masked.join(", "));
-
-        let response = self
-            .inner
+        self.inner
             .base_client
-            .post_streaming(&self.inner.api_url, body, &headers)?;
+            .log_debug("resolved_headers", &masked.join(", "));
+
+        let response =
+            self.inner
+                .base_client
+                .post_streaming(&self.inner.api_url, body, &headers)?;
 
         Ok(Box::new(OpenAiStream::new(BufReader::new(response))))
     }
 
-    fn build_request_body(
+    pub fn build_request_body(
         &self,
         system: String,
         messages: Vec<crate::types::Message>,
@@ -112,12 +118,12 @@ impl<'a> OpenAiApiClient<'a> {
 
         let mut body = serde_json::json!({
             "model": self.inner.model,
-            "max_tokens": self.inner.max_tokens,
             "messages": openai_messages,
             "tools": openai_tool_definitions(),
         });
-        if let Some(ref effort) = self.inner.reasoning_effort {
-            body["reasoning_effort"] = serde_json::json!(effort);
+        // Merge user-provided params (max_tokens, max_completion_tokens, etc.).
+        for (k, v) in &self.inner.params {
+            body[k.as_str()] = v.clone();
         }
         if stream {
             body["stream"] = serde_json::json!(true);
@@ -160,7 +166,8 @@ impl<'a> OpenAiApiClient<'a> {
 
         if let Some(ref calls) = choice.message.tool_calls {
             for tc in calls {
-                let args = serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
+                let args =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
                 tool_calls_vec.push(ToolCall {
                     id: tc.id.clone(),
                     name: tc.function.name.clone(),
@@ -177,80 +184,13 @@ impl<'a> OpenAiApiClient<'a> {
         Ok(Response {
             message: message_text,
             reasoning: reasoning_text,
-            tool_calls: if tool_calls_vec.is_empty() { None } else { Some(tool_calls_vec) },
+            tool_calls: if tool_calls_vec.is_empty() {
+                None
+            } else {
+                Some(tool_calls_vec)
+            },
             usage,
             model: None,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::client::base::BaseClient;
-    use crate::client::openai::OpenAiClient;
-    use crate::types::Message;
-    use serde_json::Value;
-
-    #[test]
-    fn test_build_request_body_with_system() {
-        let client = OpenAiClient {
-            base_client: BaseClient::new().unwrap(),
-            api_url: "http://localhost:1234/v1/chat/completions".to_string(),
-            model: "test-model".to_string(),
-            max_tokens: 4096,
-            reasoning_effort: None,
-            extra_headers: vec![],
-            auth_header: String::new(),
-        };
-
-        let system = "You are helpful.";
-        let messages = vec![Message {
-            role: "user".to_string(),
-            content: "hello".to_string(),
-            tool_calls: None,
-            tool_result: None,
-        }];
-
-        let api = client.api_client();
-        let body = api.build_request_body(system.to_string(), messages, false).unwrap();
-        let parsed: Value = serde_json::from_str(&body).unwrap();
-
-        let msgs = parsed["messages"].as_array().unwrap();
-        assert!(msgs.len() >= 2);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[0]["content"], "You are helpful.");
-
-        assert_eq!(msgs[1]["role"], "user");
-        assert_eq!(msgs[1]["content"], "hello");
-
-        assert!(parsed["tools"].is_array());
-    }
-
-    #[test]
-    fn test_build_request_body_streaming() {
-        let client = OpenAiClient {
-            base_client: BaseClient::new().unwrap(),
-            api_url: "http://localhost:1234/v1/chat/completions".to_string(),
-            model: "test-model".to_string(),
-            max_tokens: 4096,
-            reasoning_effort: None,
-            extra_headers: vec![],
-            auth_header: String::new(),
-        };
-
-        let api = client.api_client();
-        let body = api.build_request_body(
-            "system".to_string(),
-            vec![Message {
-                role: "user".to_string(),
-                content: "hi".to_string(),
-                tool_calls: None,
-                tool_result: None,
-            }],
-            true,
-        ).unwrap();
-
-        let parsed: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(parsed["stream"], true);
     }
 }

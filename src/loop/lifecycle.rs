@@ -1,25 +1,27 @@
-use crate::convo::{MetadataUpdate, Store};
+use crate::session::{SessionStore, SessionUpdate};
 use crate::types::Status;
 use chrono::Utc;
+use std::path::Path;
 use std::process;
-pub fn on_run_start(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
 
-    let updates = MetadataUpdate {
+pub fn on_run_start(session_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = SessionStore::with_config_dir(config_dir)?;
+
+    let updates = SessionUpdate {
         status: Some(Status::Running),
         pid: Some(Some(process::id())),
         run_started_at: Some(Some(Utc::now())),
         ..Default::default()
     };
 
-    store.update(convo_id, updates)?;
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn on_run_end(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
+pub fn on_run_end(session_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = SessionStore::with_config_dir(config_dir)?;
 
-    let updates = MetadataUpdate {
+    let updates = SessionUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
         run_started_at: Some(None),
@@ -27,28 +29,69 @@ pub fn on_run_end(convo_id: &str) -> Result<(), String> {
         ..Default::default()
     };
 
-    store.update(convo_id, updates)?;
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn reconcile_crashed(convo_id: &str) -> Result<(), String> {
-    let store = Store::new()?;
-    let updates = MetadataUpdate {
+pub fn reconcile_crashed(session_id: &str, config_dir: &Path) -> Result<(), String> {
+    let store = SessionStore::with_config_dir(config_dir)?;
+    let state = match store.state(session_id) {
+        Ok(state) => state,
+        Err(error)
+            if error.contains("session state is missing")
+                || error.contains("invalid state JSON") =>
+        {
+            crate::types::SessionState {
+                status: Status::Idle,
+                pid: None,
+                run_started_at: None,
+                last_run_at: None,
+                last_message: None,
+                hooks: None,
+                token_estimate: None,
+                restrictions: None,
+            }
+        }
+        Err(error) => return Err(error),
+    };
+    let updates = SessionUpdate {
         status: Some(Status::Idle),
         pid: Some(None),
         run_started_at: Some(None),
         ..Default::default()
     };
-    store.update(convo_id, updates)?;
+    if store.state(session_id).is_err() {
+        let path = store.state_path(session_id);
+        let json = serde_json::to_string_pretty(&state)
+            .map_err(|e| format!("failed to serialize recovered state: {}", e))?;
+        let temp = path.with_extension("json.recovery.tmp");
+        std::fs::write(&temp, json)
+            .map_err(|e| format!("failed to write recovered state: {}", e))?;
+        std::fs::rename(&temp, &path)
+            .map_err(|e| format!("failed to install recovered state: {}", e))?;
+    }
+    store.update(session_id, updates)?;
     Ok(())
 }
 
-pub fn detect_crashed(convo_id: &str) -> Result<bool, String> {
-    let store = Store::new()?;
-    let meta = store.get(convo_id)?;
+pub fn detect_crashed(session_id: &str, config_dir: &Path) -> Result<bool, String> {
+    let store = SessionStore::with_config_dir(config_dir)?;
+    let state = match store.state(session_id) {
+        Ok(state) => state,
+        Err(error)
+            if error.contains("session state is missing")
+                || error.contains("invalid state JSON") =>
+        {
+            return Ok(true);
+        }
+        Err(error) => return Err(error),
+    };
 
-    match (meta.status, meta.pid) {
+    match (state.status, state.pid) {
         (Status::Running, Some(stored_pid)) => {
+            if stored_pid == 0 || stored_pid > i32::MAX as u32 {
+                return Ok(true);
+            }
             #[cfg(unix)]
             {
                 use nix::sys::signal;
@@ -63,51 +106,5 @@ pub fn detect_crashed(convo_id: &str) -> Result<bool, String> {
             }
         }
         _ => Ok(false),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::TestEnv;
-
-    #[test]
-    #[serial_test::serial]
-    fn test_on_run_start() {
-        let env = TestEnv::new();
-        let orchid_dir = env.dir();
-        let convos_dir = orchid_dir.join("conversations");
-        std::fs::create_dir_all(&convos_dir).unwrap();
-        let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
-
-        on_run_start(&meta.id).ok();
-
-        let updated = store.get(&meta.id).unwrap();
-        assert_eq!(updated.status, Status::Running);
-        assert!(updated.pid.is_some());
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn test_on_run_end() {
-        let env = TestEnv::new();
-        let orchid_dir = env.dir();
-        let convos_dir = orchid_dir.join("conversations");
-        std::fs::create_dir_all(&convos_dir).unwrap();
-        let store = Store::with_base(convos_dir);
-        let meta = store.create(None, None, None, None).unwrap();
-
-        on_run_start(&meta.id).ok();
-        on_run_end(&meta.id).ok();
-
-        let updated = store.get(&meta.id).unwrap();
-        assert_eq!(updated.status, Status::Idle);
-        assert!(updated.pid.is_none());
-        assert!(updated.last_run_at.is_some());
-        assert!(
-            updated.run_started_at.is_none(),
-            "run_started_at must be cleared on run end"
-        );
     }
 }

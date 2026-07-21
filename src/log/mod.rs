@@ -1,16 +1,16 @@
-use crate::types::ConvoEvent;
+use crate::types::SessionEvent;
 use chrono::Utc;
 use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
-// ── Conversation JSONL ────────────────────────────────────────────────────────
+// ── Session JSONL ────────────────────────────────────────────────────────
 
 pub struct LogWriter;
 
 impl LogWriter {
-    pub fn append<P: AsRef<Path>>(path: P, event: &ConvoEvent) -> Result<String, String> {
+    pub fn append<P: AsRef<Path>>(path: P, event: &SessionEvent) -> Result<String, String> {
         let entry = serde_json::to_string(event)
             .map_err(|e| format!("failed to serialize event: {}", e))?;
 
@@ -23,10 +23,10 @@ impl LogWriter {
         writeln!(file, "{}", entry).map_err(|e| format!("failed to write log entry: {}", e))?;
 
         let event_id = match event {
-            ConvoEvent::Message(e) => e.event_id.clone(),
-            ConvoEvent::ToolCall(e) => e.event_id.clone(),
-            ConvoEvent::ToolResult(e) => e.event_id.clone(),
-            ConvoEvent::Reasoning(e) => e.event_id.clone(),
+            SessionEvent::Message(e) => e.event_id.clone(),
+            SessionEvent::ToolCall(e) => e.event_id.clone(),
+            SessionEvent::ToolResult(e) => e.event_id.clone(),
+            SessionEvent::Reasoning(e) => e.event_id.clone(),
         };
 
         Ok(event_id)
@@ -36,7 +36,7 @@ impl LogWriter {
 pub struct LogReader;
 
 impl LogReader {
-    pub fn read_lines<P: AsRef<Path>>(path: P) -> Result<Vec<ConvoEvent>, String> {
+    pub fn read_lines<P: AsRef<Path>>(path: P) -> Result<Vec<SessionEvent>, String> {
         let file =
             std::fs::File::open(path).map_err(|e| format!("failed to open log file: {}", e))?;
 
@@ -50,7 +50,7 @@ impl LogReader {
                 continue;
             }
 
-            let event: ConvoEvent =
+            let event: SessionEvent =
                 serde_json::from_str(&line).map_err(|e| format!("failed to parse JSON: {}", e))?;
 
             events.push(event);
@@ -80,22 +80,22 @@ impl LogLevel {
 }
 
 /// Runtime diagnostic logger. Writes newline-delimited JSON to `orchid.log`
-/// inside the conversation directory. Silently no-ops if the path is unset.
+/// inside the session directory. Silently no-ops if the path is unset.
 pub struct DiagLogger {
     path: Option<PathBuf>,
     level: LogLevel,
 }
 
 impl DiagLogger {
-    /// Logger that writes to `<convo_dir>/orchid.log`.
-    pub fn for_convo(convo_dir: PathBuf, level: LogLevel) -> Self {
+    /// Logger that writes to `<session_dir>/orchid.log`.
+    pub fn for_session(session_dir: PathBuf, level: LogLevel) -> Self {
         DiagLogger {
-            path: Some(convo_dir.join("orchid.log")),
+            path: Some(session_dir.join("orchid.log")),
             level,
         }
     }
 
-    /// No-op logger (e.g. outside a conversation context).
+    /// No-op logger (e.g. outside a session context).
     pub fn noop() -> Self {
         DiagLogger {
             path: None,
@@ -139,44 +139,5 @@ impl DiagLogger {
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
             let _ = writeln!(file, "{}", entry);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::MessageEvent;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_append_and_read() -> Result<(), Box<dyn std::error::Error>> {
-        let tmp_dir = TempDir::new()?;
-        let log_path = tmp_dir.path().join("test.jsonl");
-
-        let e1 = ConvoEvent::Message(MessageEvent::new("user", "hello"));
-        let e2 = ConvoEvent::Message(MessageEvent::new("assistant", "hi there"));
-
-        LogWriter::append(&log_path, &e1)?;
-        LogWriter::append(&log_path, &e2)?;
-
-        let events = LogReader::read_lines(&log_path)?;
-
-        assert_eq!(events.len(), 2);
-        match &events[0] {
-            ConvoEvent::Message(e) => {
-                assert_eq!(e.message.role, "user");
-                assert_eq!(e.message.content, "hello");
-            }
-            _ => panic!("expected Message event"),
-        }
-        match &events[1] {
-            ConvoEvent::Message(e) => {
-                assert_eq!(e.message.role, "assistant");
-                assert_eq!(e.message.content, "hi there");
-            }
-            _ => panic!("expected Message event"),
-        }
-
-        Ok(())
     }
 }

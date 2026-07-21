@@ -23,7 +23,7 @@ pub struct ToolResult {
     pub content: serde_json::Value,
 }
 
-// ── Conversation event types ──────────────────────────────────────────────────
+// ── Session event types ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessagePayload {
@@ -85,7 +85,7 @@ impl ReasoningEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum ConvoEvent {
+pub enum SessionEvent {
     Message(MessageEvent),
     ToolCall(ToolCallEvent),
     ToolResult(ToolResultEvent),
@@ -155,7 +155,7 @@ pub struct TokenBudget {
 }
 
 impl TokenBudget {
-    pub fn from_limits(limits: &crate::config::Limits) -> Self {
+    pub fn from_policy_limits(limits: &crate::config::PolicyLimits) -> Self {
         TokenBudget {
             warn_threshold: limits.token_warn_threshold.unwrap_or(80_000),
             hard_limit: limits.token_hard_limit.unwrap_or(120_000),
@@ -165,7 +165,7 @@ impl TokenBudget {
 
 impl Default for TokenBudget {
     fn default() -> Self {
-        TokenBudget::from_limits(&crate::config::Limits::default())
+        TokenBudget::from_policy_limits(&crate::config::PolicyLimits::default())
     }
 }
 
@@ -173,15 +173,23 @@ impl Default for TokenBudget {
 pub struct Metadata {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    pub policy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub persona: Option<String>,
+    pub policy_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionState {
     pub status: Status,
     pub pid: Option<u32>,
     pub run_started_at: Option<DateTime<Utc>>,
@@ -193,5 +201,5 @@ pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_estimate: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub allow_scope_escape: Option<bool>,
+    pub restrictions: Option<Vec<String>>,
 }

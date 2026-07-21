@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod create;
 pub mod delete;
@@ -5,17 +6,16 @@ pub mod help;
 pub mod internal_run;
 pub mod list;
 pub mod send;
-pub mod server_action;
 pub mod set;
 pub mod stop;
 
-pub use config::{config_current, config_path, config_use};
+pub use auth::{auth_list, auth_login, auth_validate};
+pub use config::{config_list, config_show, config_use, config_validate};
 pub use create::create;
 pub use delete::delete;
 pub use help::{help, help_command};
 pub use internal_run::internal_run;
-pub use list::{list, list_personas, list_profiles};
+pub use list::list;
 pub use send::send;
-pub use server_action::server_action;
 pub use set::set;
-pub use stop::stop;
+pub use stop::{kill, stop};

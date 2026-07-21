@@ -1,0 +1,8 @@
+{
+  "interface": "openai",
+  "base_url": "https://chatgpt.com/backend-api/codex",
+  "auth": "openai-codex",
+  "model": "gpt-5.4-mini",
+  "params": {},
+  "headers": {}
+}

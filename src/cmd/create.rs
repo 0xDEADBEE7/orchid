@@ -1,14 +1,30 @@
-use crate::convo::Store;
+use crate::config::resolve::resolve_with_prompt as resolve_effective_config;
+use crate::config::ConfigDir;
+use crate::session::SessionStore;
 
 pub fn create(
     label: Option<String>,
-    persona: Option<String>,
     working_dir: Option<String>,
-    profile: Option<String>,
+    restrictions: Option<Vec<String>>,
+    policy: Option<String>,
+    prompt: Option<String>,
+    config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
     let wd = resolve_working_dir(working_dir)?;
-    let meta = store.create(label, Some(wd), persona, profile)?;
+    let effective =
+        resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
+            .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+    let store = SessionStore::with_config_dir(config_dir)?;
+    let meta = store.create(label, Some(wd), restrictions)?;
+    let meta = store.update(
+        &meta.id,
+        crate::SessionUpdate {
+            policy: Some(Some(effective.policy_name)),
+            policy_hash: Some(Some(effective.policy_hash)),
+            prompt: Some(effective.prompt_name),
+            ..Default::default()
+        },
+    )?;
     serde_json::to_value(&meta).map_err(|e| e.to_string())
 }
 

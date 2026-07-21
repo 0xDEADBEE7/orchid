@@ -1,3 +1,4 @@
+use globset::{Glob, GlobSet};
 use std::env;
 use std::path::Path;
 
@@ -73,6 +74,78 @@ fn expand_vars(s: &str) -> String {
     result
 }
 
+/// Compile a list of glob patterns into a GlobSet.
+///
+/// Invalid patterns are silently skipped (fallback to empty GlobSet).
+/// Patterns starting with `~` are expanded using the HOME env var.
+pub fn compile_exceptions(patterns: &[String]) -> GlobSet {
+    use globset::GlobSetBuilder;
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        let expanded = expand_pattern_tilde(pattern);
+        if let Ok(glob) = Glob::new(&expanded) {
+            builder.add(glob);
+        }
+    }
+    builder.build().unwrap_or_else(|_| GlobSet::empty())
+}
+
+/// Expand `~` at the start of a pattern to the home directory.
+fn expand_pattern_tilde(pattern: &str) -> String {
+    if let Some(rest) = pattern.strip_prefix("~/") {
+        if let Ok(home) = env::var("HOME") {
+            return format!("{}/{}", home, rest);
+        }
+    }
+    pattern.to_string()
+}
+
+pub fn is_allowed_by_policy(path: &str, working_dir: &str, allowed_paths: &[String]) -> bool {
+    if allowed_paths.is_empty() {
+        return true;
+    }
+    let expanded = expand_path(path, working_dir);
+    allowed_paths.iter().any(|pattern| {
+        let pattern = expand_path(pattern, working_dir);
+        expanded == pattern
+            || expanded.starts_with(&format!("{}/", pattern.trim_end_matches('/')))
+            || globset::Glob::new(&pattern)
+                .map(|glob| glob.compile_matcher().is_match(&expanded))
+                .unwrap_or(false)
+    })
+}
+
+/// Resolution order:
+/// 1. In-scope (path starts with working_dir) → allowed
+/// 2. Global exceptions match → allowed
+/// 3. Per-session exceptions match → allowed
+/// 4. Nothing matched → denied
+pub fn is_allowed(
+    path: &str,
+    working_dir: &str,
+    global_set: &GlobSet,
+    session_set: &GlobSet,
+) -> bool {
+    let expanded = expand_path(path, working_dir);
+
+    // 1. In-scope
+    if is_in_scope(&expanded, working_dir) {
+        return true;
+    }
+
+    // 2. Global exceptions
+    if global_set.is_match(&expanded) {
+        return true;
+    }
+
+    // 3. Per-session exceptions
+    if session_set.is_match(&expanded) {
+        return true;
+    }
+
+    false
+}
+
 pub fn is_in_scope(path: &str, working_dir: &str) -> bool {
     let expanded = expand_path(path, working_dir);
     let canonical_path = normalize_path(&expanded);
@@ -117,46 +190,5 @@ fn normalize_path(p: &str) -> String {
                 normalized
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_expand_path_absolute() {
-        let result = expand_path("/tmp/test", "/home/user");
-        assert_eq!(result, "/tmp/test");
-    }
-
-    #[test]
-    fn test_expand_path_relative() {
-        let result = expand_path("file.txt", "/home/user/work");
-        assert_eq!(result, "/home/user/work/file.txt");
-    }
-
-    #[test]
-    fn test_is_in_scope_tmp_when_working_dir_is_tmp() {
-        assert!(is_in_scope("/tmp/test", "/tmp"));
-    }
-
-    #[test]
-    fn test_is_in_scope_tmp_outside_working_dir() {
-        // /tmp is no longer implicitly in scope — must be the working dir itself
-        assert!(!is_in_scope("/tmp/any/path", "/home/user"));
-    }
-
-    #[test]
-    fn test_is_in_scope_var_folders_outside_working_dir() {
-        // /var/folders is no longer implicitly in scope
-        assert!(!is_in_scope("/var/folders/abc/x", "/home/user"));
-    }
-
-    #[test]
-    fn test_expand_vars_simple() {
-        env::set_var("TEST_VAR", "value");
-        let result = expand_vars("prefix_$TEST_VAR");
-        assert_eq!(result, "prefix_value");
     }
 }

@@ -1,47 +1,40 @@
-use crate::get_convo_jsonl_path;
 use crate::log::LogWriter;
-use crate::types::{ConvoEvent, MessageEvent, ReasoningEvent, ToolCall, ToolCallEvent, ToolResult, ToolResultEvent};
+use std::path::Path;
+use crate::types::{
+    MessageEvent, ReasoningEvent, SessionEvent, ToolCall, ToolCallEvent, ToolResult,
+    ToolResultEvent,
+};
 
-pub fn append_message(convo_id: &str, content: &str) -> Result<String, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
-    let event = ConvoEvent::Message(MessageEvent::new("assistant", content));
+pub fn append_message(session_id: &str, config_dir: &Path, content: &str) -> Result<String, String> {
+    let path = transcript_path(session_id, config_dir)?;
+    let event = SessionEvent::Message(MessageEvent::new("assistant", content));
     LogWriter::append(&path, &event)
 }
 
-pub fn append_system(convo_id: &str, content: &str) -> Result<String, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
-    let event = ConvoEvent::Message(MessageEvent::new("system", content));
+pub fn append_system(session_id: &str, config_dir: &Path, content: &str) -> Result<String, String> {
+    let path = transcript_path(session_id, config_dir)?;
+    let event = SessionEvent::Message(MessageEvent::new("system", content));
     LogWriter::append(&path, &event)
 }
 
-pub fn append_tool_call(convo_id: &str, calls: &[ToolCall]) -> Result<String, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
-    let event = ConvoEvent::ToolCall(ToolCallEvent::new(calls.to_vec()));
+pub fn append_tool_call(session_id: &str, config_dir: &Path, calls: &[ToolCall]) -> Result<String, String> {
+    let path = transcript_path(session_id, config_dir)?;
+    let event = SessionEvent::ToolCall(ToolCallEvent::new(calls.to_vec()));
     LogWriter::append(&path, &event)
 }
 
-pub fn append_tool_result(convo_id: &str, tool_result: &ToolResult) -> Result<String, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
-    let event = ConvoEvent::ToolResult(ToolResultEvent::new(tool_result.clone()));
+pub fn append_tool_result(session_id: &str, config_dir: &Path, tool_result: &ToolResult) -> Result<String, String> {
+    let path = transcript_path(session_id, config_dir)?;
+    let event = SessionEvent::ToolResult(ToolResultEvent::new(tool_result.clone()));
     LogWriter::append(&path, &event)
 }
 
-pub fn append_reasoning(convo_id: &str, reasoning: &str) -> Result<String, String> {
-    let path = get_convo_jsonl_path(convo_id)?;
-    let event = ConvoEvent::Reasoning(ReasoningEvent::new(reasoning.to_string()));
+pub fn append_reasoning(session_id: &str, config_dir: &Path, reasoning: &str) -> Result<String, String> {
+    let path = transcript_path(session_id, config_dir)?;
+    let event = SessionEvent::Reasoning(ReasoningEvent::new(reasoning.to_string()));
     LogWriter::append(&path, &event)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_convo_jsonl_path() {
-        let path = get_convo_jsonl_path("test-id");
-        assert!(path.is_ok());
-        let p = path.unwrap();
-        assert!(p.to_string_lossy().contains("test-id"));
-        assert!(p.to_string_lossy().contains("conversation.jsonl"));
-    }
+fn transcript_path(session_id: &str, config_dir: &Path) -> Result<std::path::PathBuf, String> {
+    crate::session::get_session_jsonl_path_from_config(session_id, config_dir)
 }

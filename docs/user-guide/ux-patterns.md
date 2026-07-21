@@ -18,11 +18,11 @@ ID=$(orchid send "run the tests" | jq -r .id)
 
 ```bash
 ID=$(orchid create | jq -r .id)
-orchid set --id $ID --working-dir /path/to/project --persona dev --label my-project
+orchid set --config ./config --id $ID --working-dir /path/to/project --label my-project
 orchid send --id $ID --await "initialise the project"
 ```
 
-**Why:** `orchid send` without `--id` creates a new conversation with defaults — no persona, no working directory, no label. Separating creation from configuration makes it explicit what context the model will run in, and avoids a first turn where the model is unscoped.
+**Why:** `orchid send` without `--id` creates a new session using the selected policy and prompt. Use `create` when you want to establish metadata before the first message.
 
 ---
 
@@ -41,7 +41,7 @@ orchid send --id $ID --await "summarise any failures"
 ## Stream events to monitor long-running tasks
 
 ```bash
-tail -f ~/.config/orchid/conversations/$ID/conversation.jsonl | jq .
+tail -f ./config/sessions/$ID/conversation.jsonl | jq .
 ```
 
 **Why:** The JSONL file is append-only and written in real time. `tail -f` with `jq` gives you a live stream of every message and tool call without polling the process. Combine with `jq` selectors to filter to just assistant messages or tool results.
@@ -51,7 +51,7 @@ tail -f ~/.config/orchid/conversations/$ID/conversation.jsonl | jq .
 ## Poll for completion without an `--await` re-send
 
 ```bash
-until [ "$(jq -r .status ~/.config/orchid/conversations/$ID/metadata.json)" = "idle" ]; do
+until [ "$(jq -r .status ./config/sessions/$ID/state.json)" = "idle" ]; do
   sleep 2
 done
 ```
@@ -63,7 +63,7 @@ done
 ## Check the conversation before sending to a running one
 
 ```bash
-STATUS=$(jq -r .status ~/.config/orchid/conversations/$ID/metadata.json)
+STATUS=$(jq -r .status ./config/sessions/$ID/state.json)
 if [ "$STATUS" = "running" ]; then
   echo "conversation is running — wait before sending"
   exit 1
@@ -95,11 +95,11 @@ orchid set --id $ID --working-dir /path/to/project
 
 ---
 
-## Use personas to control tool access and prompt composition
+## Use policies and prompts to control execution
 
 ```bash
 ID=$(orchid create | jq -r .id)
-orchid set --id $ID --persona no-edit
+orchid send --id $ID --policy read-only --prompt concise "follow up"
 ```
 
-**Why:** Personas are the right lever for restricting what a model can do. `disabled-tools` in the persona definition removes tools from the model's toolkit entirely — it cannot call them even if it tries. This is more reliable than prompt-level instructions alone.
+**Why:** Policy permissions are the authoritative tool/path boundary; prompts provide reusable instructions without changing enforcement.

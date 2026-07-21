@@ -8,7 +8,10 @@ pub fn openai_tool_definitions() -> Vec<Value> {
         .into_iter()
         .map(|tool| {
             let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            let desc = tool.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let desc = tool
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             let input_schema = tool.get("input_schema").cloned().unwrap_or_default();
             serde_json::json!({
                 "type": "function",

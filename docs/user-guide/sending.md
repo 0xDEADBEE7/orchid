@@ -20,7 +20,8 @@ orchid send --id $ID --await "anything else?"
 | Flag | Description |
 |------|-------------|
 | `--id <id>` | Continue an existing conversation. Omit to create a new one. |
-| `--profile <name>` | Override the active profile for this run only. |
+| `--policy <name>` | Override the root policy for this run/session. |
+| `--prompt <name>` | Override the policy prompt for this run/session. |
 | `--await` | Block until the loop completes. Prints post-run metadata on stdout. |
 
 ## Updating metadata
@@ -28,8 +29,7 @@ orchid send --id $ID --await "anything else?"
 ```bash
 orchid set --id <id> --label <name>        # annotate conversation
 orchid set --id <id> --working-dir <path>  # set working directory
-orchid set --id <id> --profile <name>      # change profile
-orchid set --id <id> --persona <name>      # assign a persona
+orchid send --id <id> --policy <name> --prompt <name> "message"
 ```
 
 ## Stopping a run

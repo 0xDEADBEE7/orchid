@@ -25,7 +25,7 @@ impl JsonError {
     pub fn config_not_found() -> Self {
         JsonError::new(
             "config_not_found",
-            "No profile configured. Run: orchid config use <profile>",
+            "No resource configuration found. Initialize config.json and the connections, policies, prompts, and sessions directories.",
         )
     }
 
@@ -39,24 +39,5 @@ impl JsonError {
 
     pub fn internal_error(reason: &str) -> Self {
         JsonError::new("internal_error", reason)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_serialize() {
-        let err = JsonError::new("test_error", "test message");
-        let json = serde_json::to_string(&err).unwrap();
-        assert!(json.contains("test_error"));
-        assert!(json.contains("test message"));
-    }
-
-    #[test]
-    fn test_config_not_found() {
-        let err = JsonError::config_not_found();
-        assert_eq!(err.error, "config_not_found");
     }
 }

@@ -1,48 +1,34 @@
-use crate::load_config;
-use crate::Store;
+use crate::SessionStore;
 use serde_json::json;
+use std::path::Path;
 
-pub fn list() -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
-    let convos = store.list()?;
-
-    let json_array = json!(convos);
-    Ok(json_array)
-}
-
-pub fn list_profiles() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-    Ok(json!(config.profiles))
-}
-
-pub fn list_personas() -> Result<serde_json::Value, String> {
-    let config = load_config()?;
-    let personas = config.extra.get("personas").cloned().unwrap_or(json!({}));
-    Ok(personas)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_list_empty() {
-        // Use a temp dir to avoid conflicts
-        let _temp = TempDir::new().unwrap();
-
-        // This tests the structure; actual list() uses live Store
-        let result = json!([]);
-        assert!(result.is_array());
-        assert_eq!(result.as_array().unwrap().len(), 0);
+pub fn list(config_dir: &Path, resource: Option<&str>) -> Result<serde_json::Value, String> {
+    match resource.unwrap_or("sessions") {
+        "sessions" => {
+            let store = SessionStore::with_config_dir(config_dir)?;
+            Ok(json!(store.list()?))
+        }
+        kind @ ("connections" | "policies" | "prompts" | "auth") => {
+            list_resources(config_dir, kind)
+        }
+        _ => Err("unknown resource".to_string()),
     }
+}
 
-    #[test]
-    fn test_list_is_json_array() {
-        let result = json!([
-            {"id": "abc123", "label": "test", "status": "idle"}
-        ]);
-        assert!(result.is_array());
-        assert_eq!(result.as_array().unwrap().len(), 1);
+fn list_resources(config_dir: &Path, kind: &str) -> Result<serde_json::Value, String> {
+    let dir = config_dir.join(kind);
+    let suffix = if kind == "prompts" { ".md" } else { ".json" };
+    let mut names = Vec::new();
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some(&suffix[1..]) {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    names.push(stem.to_string());
+                }
+            }
+        }
     }
+    names.sort();
+    Ok(json!(names))
 }

@@ -1,26 +1,46 @@
 # Storage Layout
 
-All orchid state persists under `~/.config/orchid/`.
+The new implementation stores resources and sessions below one selected
+configuration directory:
 
-```
-~/.config/orchid/
+```text
+./config/
   config.json
-  system-prompts/
-    base.md
-    developer.md
-    ...
-  conversations/
+  connections/
+    anthropic.json
+  policies/
+    default.json
+  prompts/
+    engineering.md
+  sessions/
     <id>/
       conversation.jsonl
       metadata.json
-      logs.jsonl
+      state.json
+      orchid.log
 ```
 
-- `config.json` — provider profiles, persona definitions, and active profile selection. See [config.md](config.md).
-- `system-prompts/` — composable Markdown prompt fragments. See [persona.md](persona.md).
-- `conversations/` — one directory per conversation, named by ID. See [conversation.md](conversation.md).
+Select the directory with `--config <directory>`. If omitted, Orchid uses the
+documented default configuration directory. The selected directory is
+self-contained; Orchid does not read or write old global config, prompt, or
+conversation paths.
 
-## Notes
+- `config.json` — default policy selection. See [config.md](config.md).
+- `connections/` — callable inference endpoints.
+- `policies/` — routing, prompts, permissions, and limits.
+- `prompts/` — reusable Markdown documents.
+- `sessions/` — durable work and execution state.
 
-- No state is stored in the project working directory.
-- The `<id>` is a random hash assigned at creation and never changes. See [cli.md](cli.md) for ID vs label resolution.
+## Session files
+
+- `conversation.jsonl` — append-only chronological events.
+- `metadata.json` — identity and resource references.
+- `state.json` — mutable status and execution state.
+- `orchid.log` — diagnostics separate from conversation history.
+
+A local configuration directory allows development without interrupting another
+installation:
+
+```bash
+orchid --config ./config validate
+```

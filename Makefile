@@ -1,4 +1,4 @@
-.PHONY: build clean test lint check help
+.PHONY: build clean test lint check metrics help
 
 help:
 	@echo "Available targets:"
@@ -7,23 +7,24 @@ help:
 	@echo "  make test    - Run tests (single-threaded)"
 	@echo "  make lint    - Run clippy and fmt check"
 	@echo "  make check   - lint + test"
-	@echo "  make help    - Show this message"
+	@echo "  make metrics - Run code health metrics (LoC, complexity, binary size)"
+	@echo "  make help    - Show this help"
 
 build:
-	cargo build --release
-	mkdir -p bin
-	cp target/release/orchid bin/
+	./.scripts/build.sh
 
 clean:
-	rm -rf bin/ target/
+	./.scripts/clean.sh
 
 test:
-	cargo test -- --test-threads=1
+	./.scripts/test.sh
 
 lint:
-	cargo clippy -- -D warnings
-	cargo fmt --check
+	./.scripts/lint.sh
 
 check: lint test
+
+metrics:
+	./.scripts/metrics.sh
 
 .DEFAULT_GOAL := help

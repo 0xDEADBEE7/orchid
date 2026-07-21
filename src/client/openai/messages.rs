@@ -1,5 +1,5 @@
-use crate::types::Message;
 use super::wire::{OpenAiFunction, OpenAiMessage, OpenAiToolCall};
+use crate::types::Message;
 
 /// Convert an orchid Message into an OpenAI wire message.
 ///
@@ -10,15 +10,13 @@ pub fn to_openai_message(m: &Message) -> OpenAiMessage {
     if let Some(tool_calls) = &m.tool_calls {
         let calls: Vec<OpenAiToolCall> = tool_calls
             .iter()
-            .map(|tc| {
-                OpenAiToolCall {
-                    id: tc.id.clone(),
-                    kind: "function".to_string(),
-                    function: OpenAiFunction {
-                        name: tc.name.clone(),
-                        arguments: tc.input.to_string(),
-                    },
-                }
+            .map(|tc| OpenAiToolCall {
+                id: tc.id.clone(),
+                kind: "function".to_string(),
+                function: OpenAiFunction {
+                    name: tc.name.clone(),
+                    arguments: tc.input.to_string(),
+                },
             })
             .collect();
         return OpenAiMessage {

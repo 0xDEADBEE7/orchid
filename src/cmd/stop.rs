@@ -1,33 +1,43 @@
-use crate::convo::{resolve, Store};
+use crate::session::{resolve, SessionStore};
 use crate::types::Status;
 use serde_json::json;
+use std::path::Path;
 
-pub fn stop(id: String) -> Result<serde_json::Value, String> {
-    stop_impl(&id, false)
+pub fn stop(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
+    stop_impl(&id, false, config_dir)
 }
 
-fn stop_impl(id: &str, force: bool) -> Result<serde_json::Value, String> {
-    let store = Store::new()?;
-    let base_path = crate::get_orchid_dir()?.join("conversations");
-    let meta = resolve::resolve(id, &base_path)?;
-    let convo_id = meta.id;
+pub fn kill(id: String, config_dir: &Path) -> Result<serde_json::Value, String> {
+    stop_impl(&id, true, config_dir)
+}
 
-    if meta.status == Status::Idle {
+fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Value, String> {
+    let store = SessionStore::with_config_dir(config_dir)?;
+    let base_path = config_dir.join("sessions");
+    let meta = resolve::resolve(id, &base_path)?;
+    let session_id = meta.id;
+
+    let state = store.state(&session_id)?;
+    if state.status == Status::Idle {
         return Ok(json!({
-            "id": convo_id,
+            "id": session_id,
             "status": "idle",
-            "message": "conversation is not running"
+            "message": "session is not running"
         }));
     }
 
-    if let Some(pid) = meta.pid {
+    if let Some(pid) = store.state(&session_id)?.pid {
         #[cfg(unix)]
         {
             use nix::sys::signal::{self, Signal};
             use nix::unistd::Pid;
 
             let pid = Pid::from_raw(pid as i32);
-            let sig = if force { Signal::SIGKILL } else { Signal::SIGTERM };
+            let sig = if force {
+                Signal::SIGKILL
+            } else {
+                Signal::SIGTERM
+            };
             match signal::kill(pid, Some(sig)) {
                 Ok(()) => {}
                 Err(nix::Error::ESRCH) => {}
@@ -45,8 +55,8 @@ fn stop_impl(id: &str, force: bool) -> Result<serde_json::Value, String> {
     }
 
     store.update(
-        &convo_id,
-        crate::convo::MetadataUpdate {
+        &session_id,
+        crate::session::SessionUpdate {
             status: Some(Status::Idle),
             pid: Some(None),
             run_started_at: Some(None),
@@ -55,7 +65,7 @@ fn stop_impl(id: &str, force: bool) -> Result<serde_json::Value, String> {
     )?;
 
     Ok(json!({
-        "id": convo_id,
+        "id": session_id,
         "status": "stopped",
         "killed": true
     }))

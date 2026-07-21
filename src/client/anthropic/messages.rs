@@ -1,6 +1,6 @@
+use super::wire::AnthropicMessage;
 use crate::types::Message;
 use serde_json::Value;
-use super::wire::AnthropicMessage;
 
 /// Convert an orchid Message into an Anthropic wire message.
 ///

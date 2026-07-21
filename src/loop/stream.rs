@@ -1,9 +1,9 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::io::Write;
 
-/// Manages `stream.state` inside a conversation directory.
+/// Manages `stream.state` inside a session directory.
 ///
 /// Format: `<unix_timestamp_secs> <chunk_count>\n`
 /// - Created when streaming begins, deleted on completion or drop.
@@ -14,16 +14,19 @@ pub struct StreamState {
 }
 
 impl StreamState {
-    pub fn create(convo_dir: &Path) -> Self {
-        let prior = Self::read_chunk_count(convo_dir);
-        let path = convo_dir.join("stream.state");
-        let mut state = StreamState { path, chunk_count: prior };
+    pub fn create(session_dir: &Path) -> Self {
+        let prior = Self::read_chunk_count(session_dir);
+        let path = session_dir.join("stream.state");
+        let mut state = StreamState {
+            path,
+            chunk_count: prior,
+        };
         state.tick();
         state
     }
 
-    fn read_chunk_count(convo_dir: &Path) -> u64 {
-        let path = convo_dir.join("stream.state");
+    fn read_chunk_count(session_dir: &Path) -> u64 {
+        let path = session_dir.join("stream.state");
         fs::read_to_string(&path)
             .ok()
             .and_then(|s| s.split_whitespace().nth(1).and_then(|n| n.parse().ok()))

@@ -60,7 +60,8 @@ curl -X POST "https://d-s-genai-pkgw-alb.dotdtetp01dev01.aws.test.au.internal.cb
 
 ## Orchid integration
 
-The `portkey-aipe` profile in `~/.config/orchid/config.json` uses the `headers` map:
+The Portkey connection is represented as a Connection resource under the
+selected config directory and uses its `headers` map:
 
 ```json
 "portkey-aipe": {

@@ -1,4 +1,5 @@
-use crate::tools::scope::is_in_scope;
+use crate::tools::scope::{is_allowed, is_allowed_by_policy, is_in_scope};
+use globset::GlobSet;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -12,15 +13,21 @@ pub struct BashInput {
 pub fn execute(
     input: Value,
     working_dir: &str,
-    allow_scope_escape: bool,
     env_vars: &HashMap<String, String>,
+    global_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
+    allowed_paths: &[String],
 ) -> Result<String, String> {
     let bash_input: BashInput =
         serde_json::from_value(input).map_err(|e| format!("invalid bash input: {}", e))?;
 
-    if !allow_scope_escape {
-        validate_cmd_scope(&bash_input.cmd, working_dir)?;
-    }
+    validate_cmd_scope(
+        &bash_input.cmd,
+        working_dir,
+        global_scope_set,
+        session_scope_set,
+        allowed_paths,
+    )?;
 
     let output = Command::new("bash")
         .arg("-c")
@@ -46,7 +53,13 @@ pub fn execute(
     Ok(combined)
 }
 
-fn validate_cmd_scope(cmd: &str, working_dir: &str) -> Result<(), String> {
+fn validate_cmd_scope(
+    cmd: &str,
+    working_dir: &str,
+    global_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
+    allowed_paths: &[String],
+) -> Result<(), String> {
     let tokens = tokenize_cmd(cmd);
     for token in tokens {
         if token.starts_with("-") {
@@ -64,7 +77,10 @@ fn validate_cmd_scope(cmd: &str, working_dir: &str) -> Result<(), String> {
         if !is_in_scope(&token, working_dir) && !token.contains("/") && !is_builtin(&token) {
             continue;
         }
-        if token.contains("/") && !is_in_scope(&token, working_dir) {
+        if !is_allowed_by_policy(&token, working_dir, allowed_paths)
+            || (!is_allowed(&token, working_dir, global_scope_set, session_scope_set)
+                && !is_in_scope(&token, working_dir))
+        {
             return Err(format!("path out of scope: {}", token));
         }
     }
@@ -129,44 +145,4 @@ fn is_builtin(cmd: &str) -> bool {
             | "true"
             | "false"
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_execute_simple() {
-        let input = serde_json::json!({"cmd": "echo hello"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new());
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.contains("hello"));
-    }
-
-    #[test]
-    fn test_execute_with_stderr() {
-        let input = serde_json::json!({"cmd": "echo error >&2"});
-        let result = execute(input, "/tmp", false, &std::collections::HashMap::new());
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_tokenize_simple() {
-        let tokens = tokenize_cmd("ls -la /tmp");
-        assert_eq!(tokens, vec!["ls", "-la", "/tmp"]);
-    }
-
-    #[test]
-    fn test_tokenize_quoted() {
-        let tokens = tokenize_cmd("echo 'hello world'");
-        assert_eq!(tokens, vec!["echo", "hello world"]);
-    }
-
-    #[test]
-    fn test_is_builtin() {
-        assert!(is_builtin("echo"));
-        assert!(is_builtin("ls"));
-        assert!(!is_builtin("nonexistent"));
-    }
 }

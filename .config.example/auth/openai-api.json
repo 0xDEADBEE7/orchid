@@ -1,0 +1,4 @@
+{
+  "type": "api_key",
+  "value": "env.OPENAI_API_KEY"
+}

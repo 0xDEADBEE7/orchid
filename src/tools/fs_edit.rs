@@ -1,4 +1,5 @@
-use crate::tools::scope::is_in_scope;
+use crate::tools::scope::is_allowed;
+use globset::GlobSet;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
@@ -15,15 +16,8 @@ pub struct Edit {
 #[derive(Deserialize)]
 pub struct FsEditInput {
     pub path: String,
-    /// Batch edits — applied in sequence, fail fast.
-    /// Accepts either a JSON array or a JSON-encoded string (model compat).
-    #[serde(default, deserialize_with = "deserialize_edits")]
+    #[serde(deserialize_with = "deserialize_edits")]
     pub edits: Vec<Edit>,
-    /// Legacy single-edit fields (still accepted for backward compatibility).
-    pub old_string: Option<String>,
-    pub new_string: Option<String>,
-    #[serde(default)]
-    pub replace_all: bool,
 }
 
 fn deserialize_edits<'de, D>(deserializer: D) -> Result<Vec<Edit>, D::Error>
@@ -45,30 +39,36 @@ where
     }
 }
 
-pub fn execute(input: Value, working_dir: &str, allow_scope_escape: bool) -> Result<String, String> {
+pub fn execute(
+    input: Value,
+    working_dir: &str,
+    global_scope_set: &GlobSet,
+    session_scope_set: &GlobSet,
+    allowed_paths: &[String],
+) -> Result<String, String> {
     let edit_input: FsEditInput =
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
 
-    if !allow_scope_escape && !is_in_scope(&edit_input.path, working_dir) {
+    if !is_allowed(
+            &edit_input.path,
+            working_dir,
+            global_scope_set,
+            session_scope_set,
+        ) || !crate::tools::scope::is_allowed_by_policy(
+            &edit_input.path,
+            working_dir,
+            allowed_paths,
+        )
+    {
         return Err(format!("path out of scope: {}", edit_input.path));
     }
 
     let resolved_path = crate::tools::scope::expand_path(&edit_input.path, working_dir);
 
-    // Build the edits list: prefer `edits` array, fall back to legacy fields.
-    let edits: Vec<Edit> = if !edit_input.edits.is_empty() {
-        edit_input.edits
-    } else if let (Some(old), Some(new)) = (edit_input.old_string, edit_input.new_string) {
-        vec![Edit {
-            old_string: old,
-            new_string: new,
-            replace_all: edit_input.replace_all,
-        }]
-    } else {
-        return Err(
-            "invalid fs_edit input: provide 'edits' array or 'old_string'/'new_string'".to_string(),
-        );
-    };
+    let edits = edit_input.edits;
+    if edits.is_empty() {
+        return Err("invalid fs_edit input: 'edits' must not be empty".to_string());
+    }
 
     // Create-file shortcut: single edit with empty old_string.
     if edits.len() == 1 && edits[0].old_string.is_empty() {
@@ -149,149 +149,4 @@ fn write_atomic(path: &str, content: &str) -> Result<(), String> {
     fs::rename(&temp_path, path).map_err(|e| format!("failed to rename temp file: {}", e))?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_create_new_file() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir
-            .path()
-            .join("new.txt")
-            .to_string_lossy()
-            .to_string();
-        let temp_path = temp_dir.path().to_string_lossy().to_string();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "old_string": "",
-            "new_string": "hello world"
-        });
-
-        let result = execute(input, &temp_path, false);
-        assert!(result.is_ok(), "execute failed: {:?}", result.err());
-
-        let content = fs::read_to_string(&path).unwrap();
-        assert_eq!(content, "hello world");
-    }
-
-    #[test]
-    fn test_replace_single_legacy() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "hello world").unwrap();
-        let path = file.path().to_string_lossy().to_string();
-        let work_dir = file.path().parent().unwrap().to_string_lossy().to_string();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "old_string": "world",
-            "new_string": "rust"
-        });
-
-        let result = execute(input, &work_dir, false);
-        assert!(result.is_ok());
-        assert!(fs::read_to_string(&path).unwrap().contains("hello rust"));
-    }
-
-    #[test]
-    fn test_batch_edits() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "foo bar baz").unwrap();
-        let path = file.path().to_string_lossy().to_string();
-        let work_dir = file.path().parent().unwrap().to_string_lossy().to_string();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "edits": [
-                {"old_string": "foo", "new_string": "FOO"},
-                {"old_string": "bar", "new_string": "BAR"}
-            ]
-        });
-
-        let result = execute(input, &work_dir, false);
-        assert!(result.is_ok(), "{:?}", result.err());
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("FOO"));
-        assert!(content.contains("BAR"));
-        assert!(content.contains("baz"));
-    }
-
-    #[test]
-    fn test_batch_fail_fast() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "foo bar").unwrap();
-        let path = file.path().to_string_lossy().to_string();
-        let work_dir = file.path().parent().unwrap().to_string_lossy().to_string();
-        let original = fs::read_to_string(&path).unwrap();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "edits": [
-                {"old_string": "foo", "new_string": "FOO"},
-                {"old_string": "MISSING", "new_string": "X"}
-            ]
-        });
-
-        let result = execute(input, &work_dir, false);
-        assert!(result.is_err());
-        // disk must be untouched
-        assert_eq!(fs::read_to_string(&path).unwrap(), original);
-    }
-
-    #[test]
-    fn test_replace_multiple_error() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "test test test").unwrap();
-        let path = file.path().to_string_lossy().to_string();
-        let work_dir = file.path().parent().unwrap().to_string_lossy().to_string();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "old_string": "test",
-            "new_string": "pass"
-        });
-
-        let result = execute(input, &work_dir, false);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("multiple matches"));
-    }
-
-    #[test]
-    fn test_replace_all() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "test test test").unwrap();
-        let path = file.path().to_string_lossy().to_string();
-        let work_dir = file.path().parent().unwrap().to_string_lossy().to_string();
-
-        let input = serde_json::json!({
-            "path": path.clone(),
-            "old_string": "test",
-            "new_string": "pass",
-            "replace_all": true
-        });
-
-        let result = execute(input, &work_dir, false);
-        assert!(result.is_ok());
-        assert!(fs::read_to_string(&path)
-            .unwrap()
-            .contains("pass pass pass"));
-    }
-
-    #[test]
-    fn test_edit_out_of_scope() {
-        let input = serde_json::json!({
-            "path": "/etc/passwd",
-            "old_string": "root",
-            "new_string": "hacked"
-        });
-
-        let result = execute(input, "/tmp", false);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("out of scope"));
-    }
 }

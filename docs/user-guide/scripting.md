@@ -29,13 +29,13 @@ The run is already in progress. Use the ID to poll or send follow-ups:
 
 ```bash
 # poll until idle
-until [ "$(jq -r .status ~/.config/orchid/conversations/$ID/metadata.json)" = "idle" ]; do
+until [ "$(jq -r .status ./config/sessions/$ID/state.json)" = "idle" ]; do
   sleep 2
 done
 
 # read last assistant message
 jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content' \
-  ~/.config/orchid/conversations/$ID/conversation.jsonl | tail -1
+  ./config/sessions/$ID/conversation.jsonl | tail -1
 ```
 
 ### Blocking with `--await`
@@ -54,7 +54,7 @@ orchid send --id $ID --await "fix the failing test" || {
 ```bash
 # Create and configure once
 ID=$(orchid create | jq -r .id)
-orchid set --id $ID --label my-project --working-dir /path/to/project --persona dev
+orchid set --config ./config --id $ID --label my-project --working-dir /path/to/project
 
 # All subsequent sends use the ID
 orchid send --id $ID --await "add a readme"
@@ -66,7 +66,7 @@ Labels are for human reference only — always use the hex ID in scripts.
 ## jq recipes
 
 ```bash
-FILE=~/.config/orchid/conversations/<id>/conversation.jsonl
+FILE=./config/sessions/<id>/conversation.jsonl
 
 jq 'select(.type == "message")'                                                          $FILE  # messages only
 jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content'  $FILE  # assistant text
