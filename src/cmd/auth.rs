@@ -3,7 +3,13 @@ use std::path::Path;
 
 pub fn auth_list(config_dir: &Path) -> Result<serde_json::Value, String> {
     let dir = crate::ConfigDir::new(config_dir);
-    let entries = std::fs::read_dir(dir.auth_path()).map_err(|e| e.to_string())?;
+    let entries = match std::fs::read_dir(dir.auth_path()) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(json!({"profiles": []}));
+        }
+        Err(error) => return Err(error.to_string()),
+    };
     let mut profiles = Vec::new();
     for entry in entries {
         let path = entry.map_err(|e| e.to_string())?.path();
