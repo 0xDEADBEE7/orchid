@@ -13,6 +13,7 @@ pub fn config_list(config_dir: &Path) -> Result<serde_json::Value, String> {
         "connections": crate::cmd::list::list(config_dir, Some("connections"))?,
         "policies": crate::cmd::list::list(config_dir, Some("policies"))?,
         "prompts": crate::cmd::list::list(config_dir, Some("prompts"))?,
+        "auth": crate::cmd::auth::auth_list(config_dir)?,
     }))
 }
 
@@ -37,8 +38,12 @@ pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Valu
             let value = root.load_prompt(&name[7..]).map_err(|e| e.to_string())?;
             Ok(json!({"name": &name[7..], "content": value}))
         }
+        name if name.starts_with("auth/") => {
+            let value = root.load_auth(&name[5..]).map_err(|e| e.to_string())?;
+            Ok(json!({"name": &name[5..], "type": value.kind, "value": value.value}))
+        }
         _ => Err(
-            "resource must be root, connection/<name>, policy/<name>, or prompt/<name>".to_string(),
+            "resource must be root, connection/<name>, policy/<name>, prompt/<name>, or auth/<name>".to_string(),
         ),
     }
 }

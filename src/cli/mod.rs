@@ -8,6 +8,7 @@ pub enum Command {
     Help(Option<String>),
     List(Option<String>),
     Config(ConfigSubcommand),
+    Auth(AuthSubcommand),
     Create {
         label: Option<String>,
         working_dir: Option<String>,
@@ -41,6 +42,11 @@ pub enum ConfigSubcommand {
     Validate,
     List,
     Show(String),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum AuthSubcommand {
+    List,
+    Validate(String),
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
@@ -163,7 +169,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             if let Some(name) = &resource {
                 if !matches!(
                     name.as_str(),
-                    "sessions" | "connections" | "policies" | "prompts"
+                    "sessions" | "connections" | "policies" | "prompts" | "auth"
                 ) {
                     return Err(format!("unknown list resource: {}", name));
                 }
@@ -200,6 +206,21 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                     Command::Config(ConfigSubcommand::Show(resource))
                 }
                 other => return Err(format!("unknown config subcommand: {}", other)),
+            }
+        }
+        "auth" => {
+            let sub = positional
+                .first()
+                .ok_or_else(|| "auth requires subcommand: list or validate".to_string())?;
+            match sub.as_str() {
+                "list" => Command::Auth(AuthSubcommand::List),
+                "validate" => Command::Auth(AuthSubcommand::Validate(
+                    positional
+                        .get(1)
+                        .cloned()
+                        .ok_or_else(|| "auth validate requires <name>".to_string())?,
+                )),
+                other => return Err(format!("unknown auth subcommand: {}", other)),
             }
         }
         "send" => {

@@ -1,4 +1,4 @@
-use orchid::cli::{output, parse_args, Command, ConfigSubcommand};
+use orchid::cli::{output, parse_args, AuthSubcommand, Command, ConfigSubcommand};
 use orchid::cmd;
 use orchid::JsonError;
 use std::env;
@@ -47,6 +47,8 @@ fn main() {
         Command::Config(ConfigSubcommand::Show(resource)) => {
             cmd::config_show(&config_dir, &resource)
         }
+        Command::Auth(AuthSubcommand::List) => cmd::auth_list(&config_dir),
+        Command::Auth(AuthSubcommand::Validate(name)) => cmd::auth_validate(&config_dir, &name),
         Command::Create {
             label,
             working_dir,

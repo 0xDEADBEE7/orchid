@@ -8,7 +8,9 @@ pub fn list(config_dir: &Path, resource: Option<&str>) -> Result<serde_json::Val
             let store = SessionStore::with_config_dir(config_dir)?;
             Ok(json!(store.list()?))
         }
-        kind @ ("connections" | "policies" | "prompts") => list_resources(config_dir, kind),
+        kind @ ("connections" | "policies" | "prompts" | "auth") => {
+            list_resources(config_dir, kind)
+        }
         _ => Err("unknown resource".to_string()),
     }
 }

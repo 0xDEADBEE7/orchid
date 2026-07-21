@@ -30,11 +30,21 @@ impl ConfigDir {
     pub fn sessions_path(&self) -> PathBuf {
         self.0.join("sessions")
     }
+    pub fn auth_path(&self) -> PathBuf {
+        self.0.join("auth")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RootConfig {
     pub policy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthProfile {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -43,6 +53,10 @@ pub struct Connection {
     pub base_url: String,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub auth: Option<String>,
+    #[serde(skip)]
+    pub auth_profile: Option<AuthProfile>,
     pub model: String,
     #[serde(default)]
     pub params: HashMap<String, serde_json::Value>,
@@ -148,6 +162,23 @@ fn resource_name(name: &str) -> Result<(), String> {
 }
 
 impl ConfigDir {
+    pub fn load_auth(&self, name: &str) -> Result<AuthProfile, ResourceLoadError> {
+        resource_name(name).map_err(|message| ResourceLoadError::Invalid {
+            path: self.auth_path().join(format!("{}.json", name)),
+            message,
+        })?;
+        let path = self.auth_path().join(format!("{}.json", name));
+        let value: AuthProfile = read_json(path.clone(), "authentication profile")?;
+        if !matches!(value.kind.as_str(), "api_key" | "bearer_token") {
+            return Err(ResourceLoadError::Invalid {
+                path,
+                message: format!("unknown authentication type: {}", value.kind),
+            });
+        }
+        validate_reference(&value.value)
+            .map_err(|message| ResourceLoadError::Invalid { path, message })?;
+        Ok(value)
+    }
     pub fn load_root(&self) -> Result<RootConfig, ResourceLoadError> {
         let root: RootConfig = read_json(self.root_path(), "root config")?;
         if root.policy.trim().is_empty() {
@@ -177,6 +208,23 @@ impl ConfigDir {
                 path,
                 message: "interface, base_url, and model are required".into(),
             });
+        }
+        let mut value = value;
+        if let Some(auth) = &value.auth {
+            if value.api_key.is_some() {
+                return Err(ResourceLoadError::Invalid {
+                    path,
+                    message: "connection cannot contain both api_key and auth".into(),
+                });
+            }
+            value.auth_profile =
+                Some(
+                    self.load_auth(auth)
+                        .map_err(|e| ResourceLoadError::Invalid {
+                            path: path.clone(),
+                            message: e.to_string(),
+                        })?,
+                );
         }
         Ok(value)
     }
@@ -227,4 +275,18 @@ impl ConfigDir {
         let root = self.load_root()?;
         self.load_policy(&root.policy).map(|_| ())
     }
+}
+
+fn validate_reference(value: &str) -> Result<(), String> {
+    if let Some(name) = value.strip_prefix("env.") {
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Ok(());
+        }
+    }
+    if let Some(path) = value.strip_prefix("file.") {
+        if Path::new(path).is_absolute() {
+            return Ok(());
+        }
+    }
+    Err("authentication value must be env.NAME or file./absolute/path".into())
 }

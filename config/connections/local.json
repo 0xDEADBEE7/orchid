@@ -1,7 +1,7 @@
 {
   "interface": "openai",
   "base_url": "http://localhost:1234/v1",
-  "api_key": "env.API_KEY",
+  "auth": "openai-local",
   "model": "local-model",
   "params": {},
   "headers": {}

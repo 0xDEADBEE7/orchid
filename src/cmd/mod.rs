@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod create;
 pub mod delete;
@@ -8,6 +9,7 @@ pub mod send;
 pub mod set;
 pub mod stop;
 
+pub use auth::{auth_list, auth_validate};
 pub use config::{config_list, config_show, config_validate};
 pub use create::create;
 pub use delete::delete;

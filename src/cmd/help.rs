@@ -44,7 +44,8 @@ For command-specific help: orchid <COMMAND> --help"#;
 pub fn help_command(cmd: &str) -> Result<serde_json::Value, String> {
     let text = match cmd {
         "list" => "orchid list - List all sessions\n\nUsage: orchid list\n\nShows all stored sessions.",
-        "config" => "orchid config - Inspect configuration resources\n\nUsage: orchid config <SUBCOMMAND> [--config <DIR>]\n\nSubcommands:\n  validate         Validate the selected resource directory\n  list             List connections, policies, and prompts\n  show <RESOURCE>  Inspect root, connection/name, policy/name, or prompt/name",
+        "config" => "orchid config - Inspect configuration resources\n\nUsage: orchid config <SUBCOMMAND> [--config <DIR>]\n\nSubcommands:\n  validate         Validate the selected resource directory\n  list             List connections, policies, prompts, and auth\n  show <RESOURCE>  Inspect root, connection/name, policy/name, prompt/name, or auth/name",
+        "auth" => "orchid auth - Inspect authentication profiles\n\nUsage: orchid auth list|validate <name> [--config <DIR>]",
         "create" => "orchid create - Create a new session\n\nUsage: orchid create [OPTIONS]\n\nOptions:\n  --label <TEXT>       Set display name\n  --working-dir <PATH> Set working directory",
         "send" => "orchid send - Send message to session\n\nUsage: orchid send <MESSAGE> [OPTIONS]\n\nOptions:\n  --config <DIR>     Use config directory (required)\n  --id <ID>          Target session (required if no current)\n  --await            Wait for response\n  --label <TEXT>     Set session label",
         "set" => "orchid set - Update session settings\n\nUsage: orchid set --id <ID> [OPTIONS]\n\nOptions:\n  --label <TEXT>       Set display name\n  --working-dir <PATH> Set working directory",

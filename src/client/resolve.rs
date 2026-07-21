@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConnection {
@@ -9,6 +10,29 @@ pub struct ResolvedConnection {
     pub model: String,
     pub params: HashMap<String, serde_json::Value>,
     pub headers: HashMap<String, String>,
+}
+
+pub fn resolve_auth(profile: &crate::config::AuthProfile) -> Result<String, EnvResolutionError> {
+    let value = if let Some(name) = profile.value.strip_prefix("env.") {
+        env::var(name).map_err(|_| EnvResolutionError {
+            variables: vec![name.to_string()],
+        })?
+    } else if let Some(path) = profile.value.strip_prefix("file.") {
+        fs::read_to_string(path).map_err(|_| EnvResolutionError {
+            variables: vec![path.to_string()],
+        })?
+    } else {
+        return Err(EnvResolutionError {
+            variables: vec!["invalid authentication reference".into()],
+        });
+    };
+    let value = value.strip_suffix('\n').unwrap_or(&value).to_string();
+    if value.is_empty() {
+        return Err(EnvResolutionError {
+            variables: vec![profile.value.clone()],
+        });
+    }
+    Ok(value)
 }
 
 pub fn resolve_connection(
@@ -83,7 +107,8 @@ pub fn resolve_env_inline_strict(s: &str) -> Result<String, EnvResolutionError> 
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_env_inline_strict;
+    use super::{resolve_auth, resolve_env_inline_strict};
+    use crate::config::AuthProfile;
 
     #[test]
     fn reports_unset_names_without_values() {
@@ -102,5 +127,28 @@ mod tests {
         );
         assert_eq!(resolve_env_inline_strict("literal").unwrap(), "literal");
         std::env::remove_var("ORCHID_TEST_VALUE");
+    }
+
+    #[test]
+    fn resolves_file_reference_and_trims_one_final_newline() {
+        let path = std::env::temp_dir().join("orchid-auth-test-key");
+        std::fs::write(&path, b"file-secret\n").unwrap();
+        let profile = AuthProfile {
+            kind: "api_key".into(),
+            value: format!("file.{}", path.display()),
+        };
+        assert_eq!(resolve_auth(&profile).unwrap(), "file-secret");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejects_empty_environment_credentials() {
+        std::env::set_var("ORCHID_EMPTY_AUTH", "");
+        let profile = AuthProfile {
+            kind: "api_key".into(),
+            value: "env.ORCHID_EMPTY_AUTH".into(),
+        };
+        assert!(resolve_auth(&profile).is_err());
+        std::env::remove_var("ORCHID_EMPTY_AUTH");
     }
 }
