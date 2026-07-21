@@ -105,3 +105,20 @@ fn test_config_use_validates_then_atomically_updates_root() {
     assert!(config_use(dir.path(), "missing").is_err());
     assert!(fs::read_to_string(dir.path().join("config.json")).unwrap().contains("new"));
 }
+
+#[test]
+fn test_config_show_redacts_connection_api_key() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("connections")).unwrap();
+    fs::write(
+        dir.path().join("connections/local.json"),
+        r#"{"interface":"openai","base_url":"http://localhost","model":"local","api_key":"literal-secret"}"#,
+    )
+    .unwrap();
+    let shown = config_show(dir.path(), "connection/local").unwrap();
+    assert_eq!(shown["api_key"], "[REDACTED]");
+    assert!(!shown.to_string().contains("literal-secret"));
+    assert!(fs::read_to_string(dir.path().join("connections/local.json"))
+        .unwrap()
+        .contains("literal-secret"));
+}

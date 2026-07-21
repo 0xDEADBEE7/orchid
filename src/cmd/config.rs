@@ -47,7 +47,11 @@ pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Valu
             let value = root
                 .load_connection(&name[11..])
                 .map_err(|e| e.to_string())?;
-            serde_json::to_value(value).map_err(|e| e.to_string())
+            let mut output = serde_json::to_value(value).map_err(|e| e.to_string())?;
+            if output.get("api_key").is_some_and(|value| !value.is_null()) {
+                output["api_key"] = json!("[REDACTED]");
+            }
+            Ok(output)
         }
         name if name.starts_with("policy/") => {
             let value = root.load_policy(&name[7..]).map_err(|e| e.to_string())?;
