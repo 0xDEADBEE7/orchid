@@ -135,7 +135,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 Start a new session to continue.",
                 estimated_tokens, hard_limit
             );
-            events::append_system(&ctx.meta.id, &termination_msg)?;
+            events::append_system(&ctx.meta.id, &ctx.config_dir, &termination_msg)?;
             let updates = crate::session::SessionUpdate {
                 last_message: Some(termination_msg.clone()),
                 token_estimate: Some(estimated_tokens),
@@ -209,7 +209,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 The run has been stopped. Start a new session to continue.",
                 estimated_tokens, hard_limit
             );
-            events::append_system(&ctx.meta.id, &termination_msg)?;
+            events::append_system(&ctx.meta.id, &ctx.config_dir, &termination_msg)?;
             let updates = crate::session::SessionUpdate {
                 last_message: Some(termination_msg),
                 ..Default::default()
@@ -237,7 +237,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     ),
                 );
                 events::append_system(
-                    &ctx.meta.id,
+                    &ctx.meta.id, &ctx.config_dir,
                     &format!(
                         "[WARNING] This session has consumed {} tokens (warn threshold: {}). \
                         Consider wrapping up or the session will be terminated at {} tokens.",
@@ -250,7 +250,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         if let Some(tool_calls) = response.tool_calls {
             if let Some(ref msg) = response.message {
                 if !msg.trim().is_empty() {
-                    events::append_message(&ctx.meta.id, msg)?;
+                    events::append_message(&ctx.meta.id, &ctx.config_dir, msg)?;
                 }
             }
 
@@ -259,7 +259,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     "tool_call",
                     &format!("tool={} id={}", tool_call.name, tool_call.id),
                 );
-                events::append_tool_call(&ctx.meta.id, std::slice::from_ref(&tool_call))?;
+                events::append_tool_call(&ctx.meta.id, &ctx.config_dir, std::slice::from_ref(&tool_call))?;
 
                 let content = match tools::execute_tool_with_permissions(
                     &tool_call.name,
@@ -289,19 +289,19 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     content,
                 };
 
-                events::append_tool_result(&ctx.meta.id, &tool_result)?;
+                events::append_tool_result(&ctx.meta.id, &ctx.config_dir, &tool_result)?;
             }
         } else if let Some(message) = response.message {
             if message.trim().is_empty() {
                 ctx.log.warn("empty_response", "");
                 let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.".to_string();
-                events::append_system(&ctx.meta.id, &empty_msg)?;
+                events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
             } else {
                 ctx.log.info("run_complete", "");
-                events::append_message(&ctx.meta.id, &message)?;
+                events::append_message(&ctx.meta.id, &ctx.config_dir, &message)?;
 
                 if let Some(ref reasoning) = response.reasoning {
-                    events::append_reasoning(&ctx.meta.id, reasoning)?;
+                    events::append_reasoning(&ctx.meta.id, &ctx.config_dir, reasoning)?;
                 }
 
                 let updates = crate::session::SessionUpdate {
@@ -315,7 +315,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         } else {
             ctx.log.warn("empty_response", "");
             let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.".to_string();
-            events::append_system(&ctx.meta.id, &empty_msg)?;
+        events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
         }
     }
 
