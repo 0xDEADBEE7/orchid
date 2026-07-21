@@ -54,8 +54,9 @@ fn main() {
             label,
             working_dir,
             policy,
+            prompt,
             scope_exceptions,
-        } => cmd::create(label, working_dir, scope_exceptions, policy, &config_dir),
+        } => cmd::create(label, working_dir, scope_exceptions, policy, prompt, &config_dir),
         Command::Send {
             id,
             message,
@@ -63,6 +64,7 @@ fn main() {
             label,
             working_dir,
             policy,
+            prompt,
         } => cmd::send(
             id,
             message,
@@ -71,6 +73,7 @@ fn main() {
             label,
             working_dir,
             policy,
+            prompt,
         ),
         Command::Set {
             id,

@@ -24,6 +24,15 @@ pub fn resolve(
     explicit_policy: Option<&str>,
     working_dir: Option<&str>,
 ) -> Result<EffectiveSessionConfig, String> {
+    resolve_with_prompt(config_dir, explicit_policy, None, working_dir)
+}
+
+pub fn resolve_with_prompt(
+    config_dir: &crate::config::ConfigDir,
+    explicit_policy: Option<&str>,
+    prompt_override: Option<&str>,
+    working_dir: Option<&str>,
+) -> Result<EffectiveSessionConfig, String> {
     let root = config_dir.load_root().map_err(|e| e.to_string())?;
     let policy_name = explicit_policy.unwrap_or(&root.policy).to_string();
 
@@ -44,7 +53,8 @@ pub fn resolve(
         connection_candidates.push(conn);
     }
 
-    let prompt = if let Some(prompt_name) = &policy.prompt {
+    let prompt_name = prompt_override.or(policy.prompt.as_deref()).map(str::to_string);
+    let prompt = if let Some(prompt_name) = &prompt_name {
         config_dir
             .load_prompt(prompt_name)
             .map_err(|e| e.to_string())?
@@ -70,7 +80,7 @@ pub fn resolve(
     Ok(EffectiveSessionConfig {
         policy_name,
         policy_hash,
-        prompt_name: policy.prompt,
+        prompt_name,
         connection_candidates,
         prompt,
         working_dir,

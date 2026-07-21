@@ -13,6 +13,7 @@ pub enum Command {
         label: Option<String>,
         working_dir: Option<String>,
         policy: Option<String>,
+        prompt: Option<String>,
         scope_exceptions: Option<Vec<String>>,
     },
     Send {
@@ -22,6 +23,7 @@ pub enum Command {
         label: Option<String>,
         working_dir: Option<String>,
         policy: Option<String>,
+        prompt: Option<String>,
     },
     Set {
         id: String,
@@ -105,6 +107,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "await",
         "scope-exception",
         "config",
+        "prompt",
     ];
 
     // `flags` collects all flags; for server-action, remaining flags become body params.
@@ -180,6 +183,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "create" => {
             let label = flags.remove("label").flatten();
             let policy = flags.remove("policy").flatten();
+            let prompt = flags.remove("prompt").flatten();
             let working_dir = flags.remove("working-dir").flatten();
             let scope_exceptions = flags
                 .remove("scope-exception")
@@ -189,6 +193,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 label,
                 working_dir,
                 policy,
+                prompt,
                 scope_exceptions,
             }
         }
@@ -239,6 +244,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             flags.remove("await");
             let label = flags.remove("label").flatten();
             let policy = flags.remove("policy").flatten();
+            let prompt = flags.remove("prompt").flatten();
             let working_dir = flags.remove("working-dir").flatten();
 
             // Check for unknown flags.
@@ -257,6 +263,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 label,
                 working_dir,
                 policy,
+                prompt,
             }
         }
         "set" => {

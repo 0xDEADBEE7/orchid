@@ -1,4 +1,4 @@
-use crate::config::resolve::resolve as resolve_effective_config;
+use crate::config::resolve::resolve_with_prompt as resolve_effective_config;
 use crate::config::ConfigDir;
 use crate::session::SessionStore;
 
@@ -7,11 +7,12 @@ pub fn create(
     working_dir: Option<String>,
     scope_exceptions: Option<Vec<String>>,
     policy: Option<String>,
+    prompt: Option<String>,
     config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
     let wd = resolve_working_dir(working_dir)?;
     let effective =
-        resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
+        resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
             .map_err(|e| format!("failed to resolve effective config: {}", e))?;
     let store = SessionStore::with_config_dir(config_dir)?;
     let meta = store.create(label, Some(wd), scope_exceptions)?;

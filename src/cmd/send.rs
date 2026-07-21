@@ -1,6 +1,6 @@
 use crate::cmd::create::resolve_working_dir;
 use crate::config::resolve::{
-    create_provider_from_connections_with_log, resolve as resolve_effective_config,
+    create_provider_from_connections_with_log, resolve_with_prompt as resolve_effective_config,
     EffectiveSessionConfig,
 };
 use crate::config::ConfigDir;
@@ -21,6 +21,7 @@ pub fn send(
     label: Option<String>,
     working_dir: Option<String>,
     policy: Option<String>,
+    prompt: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
@@ -48,14 +49,14 @@ pub fn send(
         let effective = resolve_effective_config(
             &ConfigDir::new(config_dir),
             meta.policy.as_deref().or(policy.as_deref()),
-            Some(&working_dir),
+            prompt.as_deref(), Some(&working_dir),
         )
         .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         (resolved_id, meta, effective)
     } else {
         let wd = resolve_working_dir(working_dir)?;
         let effective =
-            resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), Some(&wd))
+            resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
                 .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         if await_completion {
             create_provider_from_connections_with_log(&effective.connection_candidates, None)

@@ -33,6 +33,7 @@ fn test_create_resolves_policy_before_creating_session() {
         Some("/tmp".to_string()),
         None,
         Some("default".to_string()),
+        None,
         &dir,
     );
     assert!(result.is_err());
@@ -69,6 +70,7 @@ fn test_send_missing_secret_has_no_transcript_side_effect() {
         None,
         Some("/tmp".to_string()),
         Some("default".to_string()),
+        None,
     );
     assert!(result.is_err());
     let after: Vec<_> = std::fs::read_dir(dir.join("sessions"))
@@ -93,6 +95,7 @@ fn test_fork_errors_when_no_policy_connection_available() {
         "test".to_string(),
         false,
         &config_dir,
+        None,
         None,
         None,
         None,
@@ -122,6 +125,7 @@ fn test_send_writes_user_message_to_session_jsonl() {
         None,
         None,
         Some("default".to_string()),
+        None,
     );
     if let Err(ref e) = send_result {
         assert!(
