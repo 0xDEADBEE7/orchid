@@ -5,7 +5,7 @@ use crate::session::SessionStore;
 pub fn create(
     label: Option<String>,
     working_dir: Option<String>,
-    scope_exceptions: Option<Vec<String>>,
+    restrictions: Option<Vec<String>>,
     policy: Option<String>,
     prompt: Option<String>,
     config_dir: &std::path::Path,
@@ -15,7 +15,7 @@ pub fn create(
         resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
             .map_err(|e| format!("failed to resolve effective config: {}", e))?;
     let store = SessionStore::with_config_dir(config_dir)?;
-    let meta = store.create(label, Some(wd), scope_exceptions)?;
+    let meta = store.create(label, Some(wd), restrictions)?;
     let meta = store.update(
         &meta.id,
         crate::SessionUpdate {

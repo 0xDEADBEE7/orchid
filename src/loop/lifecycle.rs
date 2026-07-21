@@ -50,7 +50,7 @@ pub fn reconcile_crashed(session_id: &str, config_dir: &Path) -> Result<(), Stri
                 hooks: None,
                 token_estimate: None,
                 allow_scope_escape: None,
-                scope_exceptions: None,
+                restrictions: None,
             }
         }
         Err(error) => return Err(error),

@@ -67,7 +67,7 @@ impl SessionStore {
         &self,
         label: Option<String>,
         working_dir: Option<String>,
-        scope_exceptions: Option<Vec<String>>,
+        restrictions: Option<Vec<String>>,
     ) -> Result<Metadata, String> {
         loop {
             let id = id::generate_id();
@@ -98,7 +98,7 @@ impl SessionStore {
                     hooks: None,
                     token_estimate: None,
                     allow_scope_escape: None,
-                    scope_exceptions,
+                    restrictions,
                 };
 
                 self.write_metadata(&id, &meta)?;
@@ -191,8 +191,8 @@ impl SessionStore {
         if let Some(value) = updates.token_estimate {
             state.token_estimate = Some(value);
         }
-        if let Some(value) = updates.scope_exceptions {
-            state.scope_exceptions = value;
+        if let Some(value) = updates.restrictions {
+            state.restrictions = value;
         }
         self.write_state(id, &state)?;
 
@@ -256,7 +256,7 @@ pub struct SessionUpdate {
     pub last_run_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub last_message: Option<String>,
     pub token_estimate: Option<u32>,
-    pub scope_exceptions: Option<Option<Vec<String>>>,
+    pub restrictions: Option<Option<Vec<String>>>,
 }
 
 /// Resolve the default session transcript path.

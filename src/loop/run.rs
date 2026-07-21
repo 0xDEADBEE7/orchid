@@ -38,7 +38,7 @@ pub fn build_context(
     let store = crate::session::SessionStore::with_config_dir(config_dir)?;
     let meta = store.get(session_id)?;
 
-    let session_paths = store.state(session_id)?.scope_exceptions;
+    let session_paths = store.state(session_id)?.restrictions;
     let permissions = crate::config::resolve::intersect_permissions(
         &effective.permissions,
         session_paths.as_deref(),

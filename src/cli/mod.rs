@@ -14,7 +14,7 @@ pub enum Command {
         working_dir: Option<String>,
         policy: Option<String>,
         prompt: Option<String>,
-        scope_exceptions: Option<Vec<String>>,
+        restrictions: Option<Vec<String>>,
     },
     Send {
         id: Option<String>,
@@ -29,7 +29,7 @@ pub enum Command {
         id: String,
         label: Option<String>,
         working_dir: Option<String>,
-        scope_exceptions: Option<Vec<String>>,
+        restrictions: Option<Vec<String>>,
     },
     Delete(String),
     Stop(String),
@@ -105,7 +105,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         "max-steps",
         "timeout",
         "await",
-        "scope-exception",
+        "restriction",
         "config",
         "prompt",
     ];
@@ -185,8 +185,8 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             let policy = flags.remove("policy").flatten();
             let prompt = flags.remove("prompt").flatten();
             let working_dir = flags.remove("working-dir").flatten();
-            let scope_exceptions = flags
-                .remove("scope-exception")
+            let restrictions = flags
+                .remove("restriction")
                 .map(|v| v.map(|s| vec![s]))
                 .unwrap_or_default();
             Command::Create {
@@ -194,7 +194,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 working_dir,
                 policy,
                 prompt,
-                scope_exceptions,
+                restrictions,
             }
         }
         "config" => {
@@ -273,15 +273,15 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .ok_or_else(|| "set requires --id".to_string())?;
             let label = flags.remove("label").flatten();
             let working_dir = flags.remove("working-dir").flatten();
-            let scope_exceptions = flags
-                .remove("scope-exception")
+            let restrictions = flags
+                .remove("restriction")
                 .map(|v| v.map(|s| vec![s]))
                 .unwrap_or_default();
             Command::Set {
                 id,
                 label,
                 working_dir,
-                scope_exceptions,
+                restrictions,
             }
         }
         "delete" => {
