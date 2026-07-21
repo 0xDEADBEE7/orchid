@@ -48,9 +48,11 @@ impl AnthropicClient {
     pub fn from_connection(connection: &Connection) -> Result<Self, ProviderError> {
         let resolved = crate::client::resolve::resolve_connection(connection)
             .map_err(|e| ProviderError::AuthError(e.to_string()))?;
-        let raw_key = match resolved.api_key {
-            Some(key) => key,
-            None => env::var("ANTHROPIC_API_KEY").map_err(|_| {
+        let raw_key = match (&connection.auth_profile, resolved.api_key) {
+            (Some(profile), _) => crate::client::resolve::resolve_auth(profile)
+                .map_err(|e| ProviderError::AuthError(e.to_string()))?,
+            (_, Some(key)) => key,
+            (_, None) => env::var("ANTHROPIC_API_KEY").map_err(|_| {
                 ProviderError::AuthError(
                     "ANTHROPIC_API_KEY environment variable not set".to_string(),
                 )

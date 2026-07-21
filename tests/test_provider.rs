@@ -7,6 +7,8 @@ fn connection(interface: &str) -> Connection {
         interface: interface.to_string(),
         base_url: "http://127.0.0.1:1".to_string(),
         api_key: None,
+        auth: None,
+        auth_profile: None,
         model: "test-model".to_string(),
         params: Default::default(),
         headers: Default::default(),
