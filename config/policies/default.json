@@ -1,4 +1,6 @@
 {
   "connections": ["local"],
-  "prompt": "default"
+  "prompt": "default",
+  "permissions": {},
+  "limits": {}
 }
