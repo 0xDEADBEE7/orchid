@@ -149,11 +149,6 @@ fn test_parse_config_legacy_commands_rejected() {
     for args in [
         vec!["config".to_string(), "current".to_string()],
         vec!["config".to_string(), "path".to_string()],
-        vec![
-            "config".to_string(),
-            "use".to_string(),
-            "default".to_string(),
-        ],
     ] {
         assert!(parse_args(&args).is_err());
     }

@@ -8,6 +8,25 @@ pub fn config_validate(config_dir: &Path) -> Result<serde_json::Value, String> {
     Ok(json!({"status": "ok", "config": config_dir.display().to_string()}))
 }
 
+pub fn config_use(config_dir: &Path, policy: &str) -> Result<serde_json::Value, String> {
+    let dir = crate::ConfigDir::new(config_dir);
+    // Validate the complete target policy graph before touching config.json.
+    dir.load_policy(policy).map_err(|e| e.to_string())?;
+    let root = dir.root_path();
+    let temporary = root.with_extension("json.tmp");
+    let contents = serde_json::to_vec_pretty(&crate::RootConfig {
+        policy: policy.to_string(),
+    })
+    .map_err(|e| format!("failed to serialize root config: {}", e))?;
+    std::fs::write(&temporary, contents)
+        .map_err(|e| format!("failed to write temporary root config: {}", e))?;
+    if let Err(error) = std::fs::rename(&temporary, &root) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(format!("failed to replace root config: {}", error));
+    }
+    Ok(json!({"status": "ok", "policy": policy}))
+}
+
 pub fn config_list(config_dir: &Path) -> Result<serde_json::Value, String> {
     Ok(json!({
         "connections": crate::cmd::list::list(config_dir, Some("connections"))?,

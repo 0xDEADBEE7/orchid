@@ -44,6 +44,7 @@ pub enum ConfigSubcommand {
     Validate,
     List,
     Show(String),
+    Use(String),
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthSubcommand {
@@ -211,6 +212,12 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                         .ok_or_else(|| "config show requires <resource>".to_string())?;
                     Command::Config(ConfigSubcommand::Show(resource))
                 }
+                "use" => Command::Config(ConfigSubcommand::Use(
+                    positional
+                        .get(1)
+                        .cloned()
+                        .ok_or_else(|| "config use requires <policy>".to_string())?,
+                )),
                 other => return Err(format!("unknown config subcommand: {}", other)),
             }
         }

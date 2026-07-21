@@ -33,7 +33,7 @@ fn test_fs_edit_rejects_empty_edits() {
     assert!(result.unwrap_err().contains("must not be empty"));
 }
 
-use orchid::cmd::{config_list, config_show};
+use orchid::cmd::{config_list, config_show, config_use};
 use std::fs;
 
 #[test]
@@ -81,4 +81,27 @@ fn test_config_show_root() {
     fs::write(dir.path().join("config.json"), r#"{"policy":"default"}"#).unwrap();
     let result = config_show(dir.path(), "root").unwrap();
     assert_eq!(result["policy"], "default");
+}
+
+#[test]
+fn test_config_use_validates_then_atomically_updates_root() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("policies")).unwrap();
+    fs::write(dir.path().join("config.json"), r#"{"policy":"old"}"#).unwrap();
+    fs::write(
+        dir.path().join("policies/new.json"),
+        r#"{"connections":["local"]}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("connections")).unwrap();
+    fs::write(
+        dir.path().join("connections/local.json"),
+        r#"{"interface":"openai","base_url":"http://localhost","model":"local"}"#,
+    )
+    .unwrap();
+
+    config_use(dir.path(), "new").unwrap();
+    assert_eq!(fs::read_to_string(dir.path().join("config.json")).unwrap(), "{\n  \"policy\": \"new\"\n}");
+    assert!(config_use(dir.path(), "missing").is_err());
+    assert!(fs::read_to_string(dir.path().join("config.json")).unwrap().contains("new"));
 }
