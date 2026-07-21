@@ -5,6 +5,7 @@ pub mod resolve;
 pub mod directory;
 pub mod connection;
 pub mod policy;
+pub mod prompt;
 pub mod root;
 pub use directory::ConfigDir;
 pub use connection::{AuthProfile, Connection};
@@ -49,7 +50,7 @@ impl std::fmt::Display for ResourceLoadError {
 }
 impl std::error::Error for ResourceLoadError {}
 
-fn read_json<T: serde::de::DeserializeOwned>(
+pub(crate) fn read_json<T: serde::de::DeserializeOwned>(
     path: PathBuf,
     kind: &'static str,
 ) -> Result<T, ResourceLoadError> {
@@ -63,7 +64,7 @@ fn read_json<T: serde::de::DeserializeOwned>(
     serde_json::from_str(&contents).map_err(|source| ResourceLoadError::Parse { path, source })
 }
 
-fn resource_name(name: &str) -> Result<(), String> {
+pub(crate) fn resource_name(name: &str) -> Result<(), String> {
     let valid = !name.is_empty()
         && name != "."
         && name != ".."
@@ -194,18 +195,7 @@ impl ConfigDir {
         Ok(value)
     }
     pub fn load_prompt(&self, name: &str) -> Result<String, ResourceLoadError> {
-        let path = self.prompts_path().join(format!("{}.md", name));
-        resource_name(name).map_err(|message| ResourceLoadError::Invalid {
-            path: path.clone(),
-            message,
-        })?;
-        if !path.is_file() {
-            return Err(ResourceLoadError::Missing {
-                kind: "prompt",
-                path,
-            });
-        }
-        fs::read_to_string(&path).map_err(|source| ResourceLoadError::Read { path, source })
+        prompt::load(self, name)
     }
     pub fn validate(&self) -> Result<(), ResourceLoadError> {
         let root = self.load_root()?;
