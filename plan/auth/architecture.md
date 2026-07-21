@@ -26,7 +26,7 @@ The resolver returns an ephemeral `ResolvedCredential { kind, value }` during pr
 
 ## Types and boundaries
 
-Introduce `AuthProfile`, `AuthKind` (`ApiKey`, `BearerToken`), and a resolver supporting:
+Introduce `AuthProfile`, `AuthKind` (`ApiKey`, `BearerToken`, `OpenAiCodexOAuth`), and a resolver supporting:
 
 - `env.NAME`: resolve from the process environment at validation/runtime time.
 - `file./absolute/path`: read a user-managed file and remove only its final newline.
@@ -35,7 +35,7 @@ Literal secret values are invalid. Unknown authentication kinds and malformed re
 
 ## Provider behavior
 
-OpenAI accepts API-key credentials from either supported reference source. Unsupported subscription-style authentication returns a structured `unsupported_auth` error explaining that direct ChatGPT subscription authentication is not supported by the official OpenAI API. No inference is made from a web login or subscription plan.
+OpenAI API-key authentication talks to the OpenAI Platform API. ChatGPT-account access is a separate Codex adapter using Sign in with ChatGPT/Codex OAuth, PKCE, refresh tokens, localhost callback, account claims, and the Codex backend endpoint. It is not ordinary OpenAI API authentication.
 
 ## Compatibility
 

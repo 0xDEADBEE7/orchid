@@ -13,6 +13,8 @@ Cover the following with unit and integration tests:
 - Authentication failure before session or transcript creation.
 - OpenAI requests using the resolved credential.
 - Structured unsupported ChatGPT-subscription authentication errors.
+- Codex OAuth PKCE state/callback validation, token refresh, secure storage, and account-ID extraction.
+- Codex requests use the Codex endpoint and never the standard API endpoint.
 - Isolation between two config directories.
 
 Verification commands:

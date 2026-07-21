@@ -2,13 +2,13 @@
 
 ## Objective
 
-Add a provider-neutral authentication layer to Orchid, initially supporting OpenAI API keys while leaving a clean boundary for future officially supported OAuth or subscription providers.
+Add a provider-neutral authentication layer to Orchid, supporting OpenAI API keys and a separate OpenAI Codex OAuth backend for ChatGPT-account access.
 
 ## Non-goals
 
-- Do not treat ChatGPT Plus or Pro subscriptions as API credentials.
+- Do not treat ChatGPT Plus or Pro subscriptions as OpenAI Platform API credentials.
 - Do not copy browser cookies, automate ChatGPT, or call private ChatGPT endpoints.
-- Do not add a generic `auth login` command before a provider publishes an official flow.
+- Do not expose Codex OAuth tokens as normal API keys or send them to `api.openai.com/v1`.
 - Defer OS keychain storage, MCP authentication, and ChatGPT-side integrations.
 
 ## Security principles
@@ -17,4 +17,4 @@ Credentials are user-managed references (environment variables or files), resolv
 
 ## Initial deliverable
 
-Support named authentication profiles, shared by connections, with API-key references using `env.NAME` or `file./absolute/path`. Add `auth list` and `auth validate <name>`; validation checks presence and non-emptiness without making a provider request.
+Support named authentication profiles, shared by connections, with API-key references using `env.NAME` or `file./absolute/path`, plus an explicit `openai_codex` OAuth profile. Add `auth list`, `auth validate <name>`, and `auth login <name>` for Codex only.
