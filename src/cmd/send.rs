@@ -67,6 +67,7 @@ pub fn send(
             crate::SessionUpdate {
                 policy: Some(Some(effective.policy_name.clone())),
                 policy_hash: Some(Some(effective.policy_hash.clone())),
+                prompt: Some(effective.prompt_name.clone()),
                 ..Default::default()
             },
         )?;

@@ -82,6 +82,7 @@ impl SessionStore {
                     id: id.clone(),
                     policy: None,
                     policy_hash: None,
+                    prompt: None,
                     label,
                     working_dir,
                     env: None,
@@ -203,6 +204,9 @@ impl SessionStore {
         if let Some(policy_hash) = updates.policy_hash {
             meta.policy_hash = policy_hash;
         }
+        if let Some(prompt) = updates.prompt {
+            meta.prompt = prompt;
+        }
         if let Some(label) = updates.label {
             meta.label = label;
         }
@@ -243,6 +247,7 @@ impl SessionStore {
 pub struct SessionUpdate {
     pub policy: Option<Option<String>>,
     pub policy_hash: Option<Option<String>>,
+    pub prompt: Option<Option<String>>,
     pub label: Option<Option<String>>,
     pub working_dir: Option<Option<String>>,
     pub status: Option<Status>,

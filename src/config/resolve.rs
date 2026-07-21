@@ -10,6 +10,7 @@ use std::sync::Arc;
 pub struct EffectiveSessionConfig {
     pub policy_name: String,
     pub policy_hash: String,
+    pub prompt_name: Option<String>,
     pub connection_candidates: Vec<super::Connection>,
     pub prompt: String,
     pub working_dir: PathBuf,
@@ -69,6 +70,7 @@ pub fn resolve(
     Ok(EffectiveSessionConfig {
         policy_name,
         policy_hash,
+        prompt_name: policy.prompt,
         connection_candidates,
         prompt,
         working_dir,

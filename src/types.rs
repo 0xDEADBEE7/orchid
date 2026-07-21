@@ -177,6 +177,8 @@ pub struct Metadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,

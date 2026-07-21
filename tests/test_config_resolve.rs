@@ -192,6 +192,7 @@ fn test_resolve_with_prompt() {
     assert!(result.is_ok());
     let cfg = result.unwrap();
     assert_eq!(cfg.prompt, "You are a helpful assistant.");
+    assert_eq!(cfg.prompt_name.as_deref(), Some("default"));
 }
 
 #[test]
@@ -217,6 +218,7 @@ fn test_resolve_no_prompt_defaults_empty() {
     assert!(result.is_ok());
     let cfg = result.unwrap();
     assert!(cfg.prompt.is_empty());
+    assert_eq!(cfg.prompt_name, None);
 }
 
 #[test]

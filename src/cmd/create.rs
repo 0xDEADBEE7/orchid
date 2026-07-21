@@ -20,6 +20,7 @@ pub fn create(
         crate::SessionUpdate {
             policy: Some(Some(effective.policy_name)),
             policy_hash: Some(Some(effective.policy_hash)),
+            prompt: Some(effective.prompt_name),
             ..Default::default()
         },
     )?;
