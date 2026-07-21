@@ -1,12 +1,11 @@
 # orchid — User Guide
 
-orchid is a headless CLI for running LLM conversations. Every command writes JSON to stdout, the conversation is an append-only log file, and execution is a background process you observe with standard tooling.
+orchid is a headless CLI for running LLM sessions. Every command writes JSON to stdout, the session transcript is append-only, and execution is a background process you observe with standard tooling. Select a self-contained resource tree with `--config <DIR>`.
 
 | Doc | Topic |
 |-----|-------|
 | [installation.md](installation.md) | Build and install |
-| [configuration.md](configuration.md) | Profiles, API keys, config file |
-| [personas.md](personas.md) | System prompt composition |
+| [../architecture/NEW_CONFIG.md](../architecture/NEW_CONFIG.md) | Connections, policies, prompts, and sessions |
 | [sending.md](sending.md) | `orchid send` flags and workflow |
 | [conversations.md](conversations.md) | IDs, labels, files, run lifecycle |
 | [hooks.md](hooks.md) | Lifecycle hooks for automation and notification |

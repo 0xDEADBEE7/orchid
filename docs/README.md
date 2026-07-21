@@ -13,8 +13,9 @@ make build    # compiles to ./bin/orchid
 ## Usage
 
 ```bash
-# configure a profile
-orchid config use anthropic-default
+# validate and select the repository-local resource tree
+orchid --config ./config config validate
+orchid --config ./config config use default
 
 # send a message (non-blocking — returns id immediately)
 ID=$(orchid send "fix the failing test" | jq -r .id)
@@ -26,10 +27,10 @@ orchid send --id $ID --await "fix the failing test"
 orchid send --id <id> "follow up message"
 
 # stream events in real time
-tail -f ~/.config/orchid/conversations/<id>/conversation.jsonl | jq .
+tail -f ./config/sessions/<id>/conversation.jsonl | jq .
 
 # check run state
-jq .status ~/.config/orchid/conversations/<id>/metadata.json
+jq .status ./config/sessions/<id>/state.json
 ```
 
 ## Design
