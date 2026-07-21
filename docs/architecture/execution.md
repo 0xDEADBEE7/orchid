@@ -5,8 +5,8 @@
 `orchid send` appends the user message, forks the tool loop as a background process, and exits. The loop runs to completion independently:
 
 1. Read `conversation.jsonl` to build message history. See [conversation.md](conversation.md).
-2. Resolve the active profile and API key. See [config.md](config.md).
-3. Resolve the active persona into a system prompt. See [persona.md](persona.md).
+2. Resolve the selected policy and Connection resources. See [NEW_CONFIG.md](NEW_CONFIG.md).
+3. Resolve the selected Prompt resource into a system prompt. See [NEW_CONFIG.md](NEW_CONFIG.md).
 4. Send system prompt + message history + tool definitions to the model.
 5. Model responds with either a `message` or a `tool_call`.
 6. Append the response event to `conversation.jsonl`.
@@ -105,13 +105,13 @@ The subprocess is launched with its working directory set to `working_dir` so re
 Events are written to `conversation.jsonl` as they occur. Observe in real time with standard tooling:
 
 ```bash
-tail -f ~/.config/orchid/conversations/<id>/conversation.jsonl | jq .
+tail -f ./config/sessions/<id>/conversation.jsonl | jq .
 ```
 
 Observe run state without log parsing:
 
 ```bash
-cat ~/.config/orchid/conversations/<id>/metadata.json | jq .status
+cat ./config/sessions/<id>/state.json | jq .status
 ```
 
 See [storage.md](storage.md) for path layout and [conversation.md](conversation.md) for file schemas.

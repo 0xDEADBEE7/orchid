@@ -93,10 +93,10 @@ Each provider client lives in its own package and has one responsibility: transl
 
 ## Client selection
 
-At run time, orchid reads the `provider` field from the active profile in `config.json` and instantiates the corresponding client:
+At run time, orchid resolves the selected policy's ordered Connection resources and instantiates the first usable client:
 
 | `provider` value | Client instantiated |
 |-----------------|-------------------|
 | `anthropic` | `internal/client/anthropic` |
 
-The instantiated client is passed to `internal/loop` as a `Provider`. The loop has no knowledge of which provider is in use. See [config.md](config.md) for profile configuration and [execution.md](execution.md) for how the loop consumes the provider.
+The instantiated client is passed to the run loop as a `Provider`. The loop has no knowledge of which provider is in use. See [NEW_CONFIG.md](NEW_CONFIG.md) for resource configuration and [execution.md](execution.md) for how the loop consumes the provider.
