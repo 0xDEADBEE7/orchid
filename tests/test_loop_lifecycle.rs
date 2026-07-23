@@ -161,7 +161,23 @@ fn test_on_run_start() {
 
 #[test]
 #[serial_test::serial]
-fn test_on_run_end() {
+fn test_on_run_failed_marks_session_failed() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+
+    on_run_start(&meta.id, &config_dir).unwrap();
+    orchid::r#loop::lifecycle::on_run_failed(&meta.id, &config_dir).unwrap();
+
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Failed);
+    assert!(state.pid.is_none());
+    assert!(state.last_run_at.is_some());
+    assert!(state.run_started_at.is_none());
+}
+
+
     let env = TestEnv::new();
     let orchid_dir = env.dir();
     let sessions_dir = orchid_dir.join("sessions");
