@@ -39,6 +39,11 @@ orchid send --id <id> "follow up message"
 # stream events in real time
 tail -f ./config/sessions/<id>/conversation.jsonl | jq .
 
+# inspect a completed session through the CLI
+orchid --config ./config get <id> --last-message
+orchid --config ./config get <id> --conversation \\
+  | jq --argjson n 10 '.conversation | .[-$n:]'
+
 # check run state
 jq .status ./config/sessions/<id>/state.json
 ```

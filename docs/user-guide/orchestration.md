@@ -40,9 +40,18 @@ orchid --config ./config get "$ID" --last-message
 
 `get` can read a running session too; it reports a point-in-time observation and
 never waits or changes session state. Use `--conversation` when the complete
-ordered transcript is needed. `--last-message` selects the latest assistant
-`message` event, rather than the final JSONL line (which may be a tool result).
-All reads stay within the selected `--config` session store.
+ordered transcript is needed. To inspect only the final `N` events:
+
+```bash
+N=10
+orchid --config ./config get "$ID" --conversation \\
+  | jq --argjson n "$N" '.conversation | .[-$n:]'
+```
+
+Add `[]` to the jq expression to emit one event per line. `--last-message`
+selects the latest assistant `message` event, rather than the final JSONL line
+(which may be a tool result). All reads stay within the selected `--config`
+session store.
 
 
 Use sequential delegation when a later task depends on an earlier result:
@@ -87,6 +96,16 @@ orchestrator remains responsible for reviewing the diff and validation results.
 
 ### Read the last assistant message
 
+For orchestration, prefer the CLI shortcut:
+
+```bash
+orchid --config ./config get "$ID" --last-message \\
+  | jq -r '.last_message.message.content'
+```
+
+This returns the complete latest assistant message. Use the transcript recipe
+below when you need event context or multiple messages.
+
 The transcript is stored at
 `./config/sessions/<SESSION_ID>/conversation.jsonl`. To print the complete last
 assistant message, use `jq` to select assistant messages, take the last object,
@@ -112,6 +131,20 @@ The shorter `tail -1` form returns only the final line of a multiline response,
 not the complete message. Prefer the first form for orchestration. The session's
 `state.json` also contains a `last_message` summary, but the transcript is the
 source for the complete response.
+## Inspecting results
+
+For config-scoped, read-only inspection, prefer `orchid get`:
+
+```bash
+orchid --config ./config get <id> --last-message
+orchid --config ./config get <id> --conversation \\
+  | jq --argjson n 10 '.conversation | .[-$n:]'
+```
+
+The `get` command parses JSONL, preserves event order, and can read running
+sessions without waiting or mutating them. Direct transcript reads remain
+useful for local diagnostics and live streaming.
+
 ## Parallel workflow
 
 Run independent tasks at the same time, then await their IDs together:
