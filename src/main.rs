@@ -100,6 +100,12 @@ fn main() {
             }
             Err(error) => Err(error),
         },
+        Command::Get {
+            id,
+            conversation,
+            metadata,
+            state,
+        } => cmd::get(&id, conversation, metadata, state, &config_dir),
         Command::Set {
             id,
             label,

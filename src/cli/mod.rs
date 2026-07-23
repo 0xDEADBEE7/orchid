@@ -30,6 +30,12 @@ pub enum Command {
         timeout: f64,
         interval: f64,
     },
+    Get {
+        id: String,
+        conversation: bool,
+        metadata: bool,
+        state: bool,
+    },
     Set {
         id: String,
         label: Option<String>,
@@ -80,7 +86,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         } else {
             // Check if the first positional is a known command.
             let known_commands = [
-                "help", "list", "create", "config", "send", "await", "set", "delete", "stop",
+                "help", "list", "create", "config", "send", "await", "get", "set", "delete", "stop",
                 "kill", "__run", "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
@@ -278,6 +284,25 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 policy,
                 prompt,
             }
+        }
+        "get" => {
+            let id = positional
+                .first()
+                .cloned()
+                .ok_or_else(|| "get requires <session ID>".to_string())?;
+            let conversation = flags.remove("conversation").is_some();
+            let metadata = flags.remove("metadata").is_some();
+            let state = flags.remove("state").is_some();
+            if !conversation && !metadata && !state {
+                return Err("get requires at least one selector: --conversation, --metadata, or --state".to_string());
+            }
+            if let Some(unknown) = flags.keys().next() {
+                return Err(format!("unknown flag: --{}", unknown));
+            }
+            if positional.len() > 1 {
+                return Err("get accepts exactly one session ID".to_string());
+            }
+            Command::Get { id, conversation, metadata, state }
         }
         "await" => {
             if positional.is_empty() {
