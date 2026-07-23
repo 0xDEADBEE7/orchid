@@ -57,7 +57,14 @@ fn main() {
             policy,
             prompt,
             restrictions,
-        } => cmd::create(label, working_dir, restrictions, policy, prompt, &config_dir),
+        } => cmd::create(
+            label,
+            working_dir,
+            restrictions,
+            policy,
+            prompt,
+            &config_dir,
+        ),
         Command::Send {
             id,
             message,
@@ -76,6 +83,23 @@ fn main() {
             policy,
             prompt,
         ),
+        Command::Await {
+            ids,
+            timeout,
+            interval,
+        } => match cmd::await_sessions(ids, timeout, interval, &config_dir) {
+            Ok((json, code)) => {
+                if code != 0 {
+                    if let Err(error) = output::print_json(&json) {
+                        let err = JsonError::new("output_error", &error);
+                        let _ = output::print_error(&err);
+                    }
+                    process::exit(code);
+                }
+                Ok(json)
+            }
+            Err(error) => Err(error),
+        },
         Command::Set {
             id,
             label,

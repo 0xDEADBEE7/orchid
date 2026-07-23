@@ -59,7 +59,7 @@ fn failed_state_write_does_not_change_existing_state() {
 
 #[test]
 #[cfg(unix)]
-fn test_stop_marks_running_session_idle() {
+fn test_stop_marks_running_session_cancelled() {
     use std::process::{Command, Stdio};
 
     let env = TestEnv::new();
@@ -85,7 +85,7 @@ fn test_stop_marks_running_session_idle() {
     let result = stop(meta.id.clone(), &config_dir).unwrap();
     assert_eq!(result["status"], "stopped");
     let state = store.state(&meta.id).unwrap();
-    assert_eq!(state.status, Status::Idle);
+    assert_eq!(state.status, Status::Cancelled);
     assert!(state.pid.is_none());
     let mut child = child;
     let exit = child.try_wait().unwrap();
@@ -97,7 +97,7 @@ fn test_stop_marks_running_session_idle() {
 
 #[test]
 #[cfg(unix)]
-fn test_kill_marks_session_idle_and_terminates_process() {
+fn test_kill_marks_session_cancelled_and_terminates_process() {
     use orchid::cmd::kill;
     use std::process::{Command, Stdio};
 
@@ -124,7 +124,7 @@ fn test_kill_marks_session_idle_and_terminates_process() {
     let result = kill(meta.id.clone(), &config_dir).unwrap();
     assert_eq!(result["status"], "stopped");
     let state = store.state(&meta.id).unwrap();
-    assert_eq!(state.status, Status::Idle);
+    assert_eq!(state.status, Status::Cancelled);
     assert!(state.pid.is_none());
     let mut child = child;
     if child.try_wait().unwrap().is_none() {
@@ -161,6 +161,23 @@ fn test_on_run_start() {
 
 #[test]
 #[serial_test::serial]
+fn test_on_run_failed_marks_session_failed() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+
+    on_run_start(&meta.id, &config_dir).unwrap();
+    orchid::r#loop::lifecycle::on_run_failed(&meta.id, &config_dir).unwrap();
+
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Failed);
+    assert!(state.pid.is_none());
+    assert!(state.last_run_at.is_some());
+    assert!(state.run_started_at.is_none());
+}
+#[test]
+#[serial_test::serial]
 fn test_on_run_end() {
     let env = TestEnv::new();
     let orchid_dir = env.dir();
@@ -168,18 +185,15 @@ fn test_on_run_end() {
     std::fs::create_dir_all(&sessions_dir).unwrap();
     let store = Store::with_base(sessions_dir);
     let meta = store.create(None, None, None).unwrap();
-    on_run_start(&meta.id, &orchid_dir).ok();
-    on_run_end(&meta.id, &orchid_dir).ok();
-    let _updated = store.get(&meta.id).unwrap();
+    on_run_start(&meta.id, &orchid_dir).unwrap();
+    on_run_end(&meta.id, &orchid_dir).unwrap();
     let state = store.state(&meta.id).unwrap();
     assert_eq!(state.status, Status::Idle);
     assert!(state.pid.is_none());
     assert!(state.last_run_at.is_some());
-    assert!(
-        state.run_started_at.is_none(),
-        "run_started_at must be cleared on run end"
-    );
+    assert!(state.run_started_at.is_none());
 }
+
 
 #[test]
 #[serial_test::serial]
@@ -228,4 +242,33 @@ fn test_invalid_pid_is_crashed() {
         .unwrap();
 
     assert!(orchid::r#loop::lifecycle::detect_crashed(&meta.id, &config_dir).unwrap());
+}
+
+#[test]
+#[serial_test::serial]
+fn unexpected_run_exit_is_failed_and_reported_by_await() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+
+    on_run_start(&meta.id, &config_dir).unwrap();
+    {
+        let _guard = orchid::r#loop::guard::RunGuard::new(&meta.id, &config_dir);
+    }
+
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Failed);
+    assert!(state.pid.is_none());
+
+    let (result, code) = orchid::cmd::await_sessions(
+        vec![meta.id.clone()],
+        0.1,
+        0.01,
+        &config_dir,
+    )
+    .unwrap();
+    assert_eq!(code, 0);
+    assert_eq!(result["completed"][0]["id"], meta.id);
+    assert_eq!(result["completed"][0]["status"], "failed");
 }

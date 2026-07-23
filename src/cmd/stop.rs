@@ -57,7 +57,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
     store.update(
         &session_id,
         crate::session::SessionUpdate {
-            status: Some(Status::Idle),
+            status: Some(Status::Cancelled),
             pid: Some(None),
             run_started_at: Some(None),
             ..Default::default()

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod r#await;
 pub mod config;
 pub mod create;
 pub mod delete;
@@ -16,6 +17,7 @@ pub use delete::delete;
 pub use help::{help, help_command};
 pub use internal_run::internal_run;
 pub use list::list;
+pub use r#await::await_sessions;
 pub use send::send;
 pub use set::set;
 pub use stop::{kill, stop};

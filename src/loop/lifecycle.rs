@@ -19,10 +19,22 @@ pub fn on_run_start(session_id: &str, config_dir: &Path) -> Result<(), String> {
 }
 
 pub fn on_run_end(session_id: &str, config_dir: &Path) -> Result<(), String> {
+    on_run_end_with_status(session_id, Status::Idle, config_dir)
+}
+
+pub fn on_run_failed(session_id: &str, config_dir: &Path) -> Result<(), String> {
+    on_run_end_with_status(session_id, Status::Failed, config_dir)
+}
+
+fn on_run_end_with_status(
+    session_id: &str,
+    status: Status,
+    config_dir: &Path,
+) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
 
     let updates = SessionUpdate {
-        status: Some(Status::Idle),
+        status: Some(status),
         pid: Some(None),
         run_started_at: Some(None),
         last_run_at: Some(Some(Utc::now())),

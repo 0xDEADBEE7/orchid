@@ -1,6 +1,57 @@
 # Scripting
 
-## Error handling
+## Await orchestration
+
+`await` observes sessions without changing their state. It treats `idle`, `failed`, and `cancelled` as terminal.
+
+### Launch and collect IDs
+
+```bash
+IDS=()
+for task in "run tests" "review the diff" "update the docs"; do
+  IDS+=("$(orchid send "$task" | jq -r .id)")
+done
+```
+
+### Await in batches
+
+```bash
+orchid await "${IDS[@]}" --timeout 300 --interval 2
+```
+
+The result contains every terminal session found in a poll:
+
+```json
+{"completed":[{"id":"...","status":"idle"}]}
+```
+
+A timeout returns `{"completed":[],"timed_out":true}` and exits with code `2`. Errors are JSON on stderr and exit with code `1`.
+
+### Process results and repeat
+
+Remove completed IDs before awaiting the remaining sessions:
+
+```bash
+result=$(orchid await "${IDS[@]}" --timeout 30) || {
+  code=$?
+  [ "$code" -eq 2 ] || exit "$code"
+  result=$(cat /dev/null)
+}
+
+mapfile -t done < <(jq -r '.completed[].id' <<<"$result")
+for id in "${done[@]}"; do
+  jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content' \
+    "./config/sessions/$id/conversation.jsonl" | tail -1
+done
+
+remaining=()
+for id in "${IDS[@]}"; do
+  [[ " ${done[*]} " == *" $id "* ]] || remaining+=("$id")
+done
+[ "${#remaining[@]}" -eq 0 ] || orchid await "${remaining[@]}" --timeout 300
+```
+
+`await` only reads `state.json`; it does not stop, kill, or otherwise control sessions. See [sending.md](sending.md) for session setup and [conversations.md](conversations.md) for stored results.
 
 All errors are written as JSON to stderr. Exit code is `0` on success, `1` on any error.
 

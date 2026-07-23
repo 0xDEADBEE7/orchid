@@ -9,6 +9,7 @@ COMMANDS:
   config              Validate/list/show resources
   create              Create a new session without sending a message
   send                Send message to session (requires --id or stores in current)
+  await               Wait for one or more sessions to reach a terminal state
   set                 Update session settings
   delete              Delete session by ID
   stop                Stop a running session (alias for kill)
@@ -48,6 +49,7 @@ pub fn help_command(cmd: &str) -> Result<serde_json::Value, String> {
         "auth" => "orchid auth - Inspect authentication profiles\n\nUsage: orchid auth list|validate <name> [--config <DIR>]",
         "create" => "orchid create - Create a new session\n\nUsage: orchid create [OPTIONS]\n\nOptions:\n  --label <TEXT>       Set display name\n  --working-dir <PATH> Set working directory",
         "send" => "orchid send - Send message to session\n\nUsage: orchid send <MESSAGE> [OPTIONS]\n\nOptions:\n  --config <DIR>     Use config directory (required)\n  --id <ID>          Target session (required if no current)\n  --await            Wait for response\n  --label <TEXT>     Set session label",
+        "await" => "orchid await - Wait for sessions to finish\n\nUsage: orchid await <SESSION_ID>... [OPTIONS]\n\nOptions:\n  --timeout <SECONDS>  Overall deadline (default: 60)\n  --interval <SECONDS> Poll interval (default: 2)\n\nReports idle, failed, and cancelled sessions as completed. A timeout exits with code 2. The command observes sessions; it does not control or cancel them.",
         "set" => "orchid set - Update session settings\n\nUsage: orchid set --id <ID> [OPTIONS]\n\nOptions:\n  --label <TEXT>       Set display name\n  --working-dir <PATH> Set working directory",
 
         "delete" => "orchid delete - Archive session\n\nUsage: orchid delete <ID>\n\nMoves the session to ~/.config/orchid/sessions/.archive/<id>.\nRemoved from orchid list. Reversible: move the directory back to restore.",

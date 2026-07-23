@@ -28,7 +28,7 @@ impl<'a> RunGuard<'a> {
 impl Drop for RunGuard<'_> {
     fn drop(&mut self) {
         if !self.disarmed {
-            let _ = lifecycle::on_run_end(self.session_id, self.config_dir);
+            let _ = lifecycle::on_run_failed(self.session_id, self.config_dir);
         }
     }
 }
