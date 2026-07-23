@@ -21,6 +21,24 @@ fn parses_selectors_in_any_order_and_rejects_empty_selection() {
 }
 
 #[test]
+fn get_binary_accepts_config_before_and_after_command() {
+    let temp = TempDir::new().unwrap();
+    let store = SessionStore::with_config_dir(temp.path()).unwrap();
+    let session = store.create(Some("task".into()), None, None).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+
+    for args in [
+        vec!["--config", temp.path().to_str().unwrap(), "get", &session.id, "--state"],
+        vec!["get", &session.id, "--state", "--config", temp.path().to_str().unwrap()],
+    ] {
+        let output = std::process::Command::new(binary).args(&args).output().unwrap();
+        assert!(output.status.success(), "args={args:?}, stderr={:?}", output.stderr);
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["state"]["status"], "idle");
+    }
+}
+
+#[test]
 fn get_reads_selected_resources_in_stable_shape() {
     let temp = TempDir::new().unwrap();
     let store = SessionStore::with_config_dir(temp.path()).unwrap();
