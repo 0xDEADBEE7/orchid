@@ -11,3 +11,4 @@ orchid is a headless CLI for running LLM sessions. Every command writes JSON to 
 | [conversations.md](conversations.md) | IDs, labels, files, run lifecycle |
 | [hooks.md](hooks.md) | Lifecycle hooks for automation and notification |
 | [scripting.md](scripting.md) | Integration patterns, error handling, jq recipes |
+| [orchestration.md](orchestration.md) | Delegating tasks and coordinating agents with `await` |

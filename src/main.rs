@@ -103,9 +103,10 @@ fn main() {
         Command::Get {
             id,
             conversation,
+            last_message,
             metadata,
             state,
-        } => cmd::get(&id, conversation, metadata, state, &config_dir),
+        } => cmd::get(&id, conversation, last_message, metadata, state, &config_dir),
         Command::Set {
             id,
             label,

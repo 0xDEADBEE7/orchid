@@ -3,14 +3,27 @@ use serde_json::{Map, Value};
 use std::fs;
 use std::path::Path;
 
-pub fn get(id: &str, conversation: bool, metadata: bool, state: bool, config_dir: &Path) -> Result<Value, String> {
+pub fn get(
+    id: &str,
+    conversation: bool,
+    last_message: bool,
+    metadata: bool,
+    state: bool,
+    config_dir: &Path,
+) -> Result<Value, String> {
     if !is_id_format(id) {
         return Err(format!("invalid session ID: '{}'", id));
     }
     let store = SessionStore::with_base(config_dir.join("sessions"));
     let mut result = Map::new();
-    if conversation {
-        result.insert("conversation".to_string(), read_jsonl(&store.transcript_path(id), "conversation")?);
+    if conversation || last_message {
+        let events = read_jsonl(&store.transcript_path(id), "conversation")?;
+        if conversation {
+            result.insert("conversation".to_string(), events.clone());
+        }
+        if last_message {
+            result.insert("last_message".to_string(), latest_assistant(&events));
+        }
     }
     if metadata {
         result.insert("metadata".to_string(), read_json(&store.metadata_path(id), "metadata")?);
@@ -19,6 +32,16 @@ pub fn get(id: &str, conversation: bool, metadata: bool, state: bool, config_dir
         result.insert("state".to_string(), read_json(&store.state_path(id), "state")?);
     }
     Ok(Value::Object(result))
+}
+
+fn latest_assistant(events: &Value) -> Value {
+    events
+        .as_array()
+        .and_then(|events| events.iter().rev().find(|event| {
+            event["type"] == "message" && event["message"]["role"] == "assistant"
+        }))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn read_json(path: &Path, resource: &str) -> Result<Value, String> {

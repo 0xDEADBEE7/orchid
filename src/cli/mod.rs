@@ -33,6 +33,7 @@ pub enum Command {
     Get {
         id: String,
         conversation: bool,
+        last_message: bool,
         metadata: bool,
         state: bool,
     },
@@ -291,10 +292,11 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
                 .cloned()
                 .ok_or_else(|| "get requires <session ID>".to_string())?;
             let conversation = flags.remove("conversation").is_some();
+            let last_message = flags.remove("last-message").is_some();
             let metadata = flags.remove("metadata").is_some();
             let state = flags.remove("state").is_some();
-            if !conversation && !metadata && !state {
-                return Err("get requires at least one selector: --conversation, --metadata, or --state".to_string());
+            if !conversation && !last_message && !metadata && !state {
+                return Err("get requires at least one selector: --conversation, --last-message, --metadata, or --state".to_string());
             }
             if let Some(unknown) = flags.keys().next() {
                 return Err(format!("unknown flag: --{}", unknown));
@@ -302,7 +304,7 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             if positional.len() > 1 {
                 return Err("get accepts exactly one session ID".to_string());
             }
-            Command::Get { id, conversation, metadata, state }
+            Command::Get { id, conversation, last_message, metadata, state }
         }
         "await" => {
             if positional.is_empty() {
