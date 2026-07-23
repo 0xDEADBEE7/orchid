@@ -91,3 +91,44 @@ fn await_parses_options() {
         interval: 0.25,
     });
 }
+
+#[test]
+#[serial_test::serial]
+fn await_reports_session_that_finishes_between_polls() {
+    let env = TestEnv::new();
+    let store = SessionStore::with_config_dir(&env.dir()).unwrap();
+    let session = store.create(None, None, None).unwrap();
+    store.update(&session.id, SessionUpdate { status: Some(Status::Running), ..Default::default() }).unwrap();
+    let config_dir = env.dir();
+    let id = session.id.clone();
+    let updater = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        let store = SessionStore::with_config_dir(&config_dir).unwrap();
+        store.update(&id, SessionUpdate { status: Some(Status::Idle), ..Default::default() }).unwrap();
+    });
+
+    let (result, code) = await_sessions(vec![session.id.clone()], 0.2, 0.01, &env.dir()).unwrap();
+    updater.join().unwrap();
+
+    assert_eq!(code, 0);
+    assert_eq!(result["completed"][0]["id"], session.id);
+    assert_eq!(result["completed"][0]["status"], "idle");
+}
+
+#[test]
+#[serial_test::serial]
+fn await_uses_one_overall_deadline() {
+    let env = TestEnv::new();
+    let store = SessionStore::with_config_dir(&env.dir()).unwrap();
+    let session = store.create(None, None, None).unwrap();
+    store.update(&session.id, SessionUpdate { status: Some(Status::Running), ..Default::default() }).unwrap();
+    let started = std::time::Instant::now();
+
+    let (result, code) = await_sessions(vec![session.id], 0.06, 0.05, &env.dir()).unwrap();
+    let elapsed = started.elapsed();
+
+    assert_eq!(code, 2);
+    assert_eq!(result["timed_out"], true);
+    assert!(elapsed >= std::time::Duration::from_millis(50));
+    assert!(elapsed < std::time::Duration::from_millis(150));
+}
