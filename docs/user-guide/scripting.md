@@ -51,9 +51,9 @@ done
 [ "${#remaining[@]}" -eq 0 ] || orchid await "${remaining[@]}" --timeout 300
 ```
 
-`await` only reads `state.json`; it does not stop, kill, or otherwise control sessions. See [sending.md](sending.md) for session setup and [conversations.md](conversations.md) for stored results.
+`await` only observes session state; it does not stop, kill, or otherwise control sessions. Use [`orchid get`](get.md) to retrieve session data through the selected config boundary. See [sending.md](sending.md) for session setup and [conversations.md](conversations.md) for storage details.
 
-All errors are written as JSON to stderr. Exit code is `0` on success, `1` on any error.
+All errors are written as JSON to stderr. Exit code is `0` on success, `1` on an error, and `2` when `await` reaches its timeout.
 
 ```json
 {"error":"conversation not found: fix-auth-bug"}
@@ -65,6 +65,30 @@ if ! orchid send --await "message" 2>/tmp/orchid-err; then
   exit 1
 fi
 ```
+
+## Inspecting session results
+
+Use `get` rather than reading session files directly in scripts:
+
+```bash
+ID=$(orchid --config ./config send "run the tests" | jq -r .id)
+orchid --config ./config await "$ID" --timeout 600
+orchid --config ./config get "$ID" --state --metadata
+orchid --config ./config get "$ID" --last-message \\
+  | jq -r '.last_message.message.content'
+```
+
+Retrieve the final `N` transcript events as a JSON array:
+
+```bash
+N=10
+orchid --config ./config get "$ID" --conversation \\
+  | jq --argjson n "$N" '.conversation | .[-$n:]'
+```
+
+Add `[]` to the jq expression to emit one event per line. `get --conversation`
+parses JSONL and preserves event order. Reads are point-in-time and read-only,
+including for running sessions. See [get.md](get.md) for selectors and errors.
 
 ## Patterns
 
@@ -116,11 +140,25 @@ Labels are for human reference only — always use the hex ID in scripts.
 
 ## jq recipes
 
+Prefer `orchid get` for orchestration scripts. Direct file reads are useful for
+local diagnostics and live streaming, but bypass the CLI's config and resource
+validation.
+
+```bash
+ID=<session-id>
+orchid --config ./config get "$ID" --conversation \\
+  | jq '.conversation | .[-10:]'                                      # last 10 events
+orchid --config ./config get "$ID" --conversation \\
+  | jq '.conversation | .[-10:][]'                                   # one event per line
+orchid --config ./config get "$ID" --last-message \\
+  | jq -r '.last_message.message.content'                             # latest assistant text
+```
+
+For direct local inspection:
+
 ```bash
 FILE=./config/sessions/<id>/conversation.jsonl
-
-jq 'select(.type == "message")'                                                          $FILE  # messages only
-jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content'  $FILE  # assistant text
-jq 'select(.type == "tool_call") | .tool_call.calls[] | {name, input}'                  $FILE  # all tool calls
-jq -s '.'                                                                                $FILE  # full history as array
+jq 'select(.type == "message")' $FILE                                # messages only
+jq 'select(.type == "tool_call") | .tool_call.calls[] | {name, input}' $FILE
+jq -s '.' $FILE                                                       # full history as array
 ```

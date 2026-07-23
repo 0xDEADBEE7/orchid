@@ -10,6 +10,7 @@ COMMANDS:
   create              Create a new session without sending a message
   send                Send message to session (requires --id or stores in current)
   await               Wait for one or more sessions to reach a terminal state
+  get                 Read conversation, metadata, or state (`--logs` deferred)
   set                 Update session settings
   delete              Delete session by ID
   stop                Stop a running session (alias for kill)
@@ -19,6 +20,10 @@ COMMANDS:
 
 OPTIONS:
   --config <DIR>      Use a config directory (required for new config model)
+  --conversation      Read the session conversation
+  --last-message      Read the latest assistant message
+  --metadata          Read session metadata
+  --state             Read session state
   --help              Show help for a command
   --id <ID>           Session ID
   --await             Wait for completion after send
@@ -45,6 +50,7 @@ For command-specific help: orchid <COMMAND> --help"#;
 pub fn help_command(cmd: &str) -> Result<serde_json::Value, String> {
     let text = match cmd {
         "list" => "orchid list - List all sessions\n\nUsage: orchid list\n\nShows all stored sessions.",
+        "get" => "orchid get - Read session resources\n\nUsage: orchid get <SESSION_ID> [--conversation] [--last-message] [--metadata] [--state]\n\nReads only the selected session resources. --logs is not implemented.",
         "config" => "orchid config - Inspect configuration resources\n\nUsage: orchid config <SUBCOMMAND> [--config <DIR>]\n\nSubcommands:\n  validate         Validate the selected resource directory\n  list             List connections, policies, prompts, and auth\n  show <RESOURCE>  Inspect root, connection/name, policy/name, prompt/name, or auth/name",
         "auth" => "orchid auth - Inspect authentication profiles\n\nUsage: orchid auth list|validate <name> [--config <DIR>]",
         "create" => "orchid create - Create a new session\n\nUsage: orchid create [OPTIONS]\n\nOptions:\n  --label <TEXT>       Set display name\n  --working-dir <PATH> Set working directory",

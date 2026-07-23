@@ -17,7 +17,18 @@ All commands write JSON to stdout. This applies universally — including errors
 
 No human-readable formatting is ever the default. Pipe through `jq` for filtering and display.
 
-Streaming conversation output is intentionally not provided by the CLI — use standard tooling directly:
+Use `get` for config-scoped, read-only session inspection. Retrieve the full
+conversation, or slice the final events with `jq`:
+
+```bash
+orchid --config ./config get <id> --conversation
+orchid --config ./config get <id> --conversation \\
+  | jq --argjson n 10 '.conversation | .[-$n:]'
+orchid --config ./config get <id> --last-message
+```
+
+Streaming conversation output is intentionally not provided by the CLI — use
+standard tooling directly for live local observation:
 
 ```bash
 tail -f ./config/sessions/<id>/conversation.jsonl | jq .
