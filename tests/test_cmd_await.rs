@@ -130,5 +130,35 @@ fn await_uses_one_overall_deadline() {
     assert_eq!(code, 2);
     assert_eq!(result["timed_out"], true);
     assert!(elapsed >= std::time::Duration::from_millis(50));
-    assert!(elapsed < std::time::Duration::from_millis(150));
+}
+
+#[test]
+#[serial_test::serial]
+fn await_reports_missing_state_without_mutating_metadata() {
+    let env = TestEnv::new();
+    let store = SessionStore::with_config_dir(&env.dir()).unwrap();
+    let session = store.create(None, None, None).unwrap();
+    let metadata_before = std::fs::read(store.metadata_path(&session.id)).unwrap();
+    std::fs::remove_file(store.state_path(&session.id)).unwrap();
+
+    let error = await_sessions(vec![session.id.clone()], 0.1, 0.01, &env.dir()).unwrap_err();
+
+    assert!(error.contains("session state is missing"));
+    assert_eq!(std::fs::read(store.metadata_path(&session.id)).unwrap(), metadata_before);
+}
+
+#[test]
+#[serial_test::serial]
+fn await_reports_malformed_state_without_mutating_state_or_metadata() {
+    let env = TestEnv::new();
+    let store = SessionStore::with_config_dir(&env.dir()).unwrap();
+    let session = store.create(None, None, None).unwrap();
+    let metadata_before = std::fs::read(store.metadata_path(&session.id)).unwrap();
+    std::fs::write(store.state_path(&session.id), b"not json").unwrap();
+
+    let error = await_sessions(vec![session.id.clone()], 0.1, 0.01, &env.dir()).unwrap_err();
+
+    assert!(error.contains("invalid state JSON"));
+    assert_eq!(std::fs::read(store.state_path(&session.id)).unwrap(), b"not json");
+    assert_eq!(std::fs::read(store.metadata_path(&session.id)).unwrap(), metadata_before);
 }

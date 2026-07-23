@@ -243,3 +243,32 @@ fn test_invalid_pid_is_crashed() {
 
     assert!(orchid::r#loop::lifecycle::detect_crashed(&meta.id, &config_dir).unwrap());
 }
+
+#[test]
+#[serial_test::serial]
+fn unexpected_run_exit_is_failed_and_reported_by_await() {
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+
+    on_run_start(&meta.id, &config_dir).unwrap();
+    {
+        let _guard = orchid::r#loop::guard::RunGuard::new(&meta.id, &config_dir);
+    }
+
+    let state = store.state(&meta.id).unwrap();
+    assert_eq!(state.status, Status::Failed);
+    assert!(state.pid.is_none());
+
+    let (result, code) = orchid::cmd::await_sessions(
+        vec![meta.id.clone()],
+        0.1,
+        0.01,
+        &config_dir,
+    )
+    .unwrap();
+    assert_eq!(code, 0);
+    assert_eq!(result["completed"][0]["id"], meta.id);
+    assert_eq!(result["completed"][0]["status"], "failed");
+}
