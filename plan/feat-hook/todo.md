@@ -10,7 +10,7 @@ of progress; implementation details belong in the linked phase documents.
 ## Delivery checklist
 
 - [x] **Phase 1 — contract and configuration**: define hook types, schema, and effective configuration resolution. See [phases.md](phases.md) and [schema.md](schema.md).
-- [ ] **Phase 2 — hook runner**: execute scripts with JSON stdin, working-directory support, limits, and diagnostics. See [execution.md](execution.md).
+- [x] **Phase 2 — hook runner**: execute scripts with JSON stdin, working-directory support, limits, and diagnostics. See [execution.md](execution.md).
 - [ ] **Phase 3 — lifecycle integration**: wire `turn-start` and exactly-once `turn-stop` into all terminal paths. See [execution.md](execution.md).
 - [ ] **Phase 4 — CLI and documentation**: validate, display, and document hook configuration and behavior. See [cli.md](cli.md).
 - [ ] **Phase 5 — testing and hardening**: complete automated coverage, security review, and regression verification. See [testing.md](testing.md) and [phases.md](phases.md).
@@ -28,17 +28,17 @@ of progress; implementation details belong in the linked phase documents.
 
 ## Phase 2 — hook runner
 
-- [ ] Add a dedicated `src/hooks/` module.
-- [ ] Invoke executables directly without shell interpretation.
-- [ ] Set the child process current directory to the session working directory.
-- [ ] Serialize the event payload to stdin.
-- [ ] Set documented `ORCHID_*` environment variables.
-- [ ] Execute scripts sequentially in registration order.
-- [ ] Add per-script timeout handling.
-- [ ] Bound captured stdout and stderr.
-- [ ] Return per-script results without stopping the remaining hook sequence.
-- [ ] Log spawn failures, non-zero exits, timeouts, and output details safely.
-- [ ] Add runner unit and process-level tests.
+- [x] Add a dedicated `src/hooks/` module.
+- [x] Invoke executables directly without shell interpretation.
+- [x] Set the child process current directory to the session working directory.
+- [x] Serialize the event payload to stdin.
+- [x] Set documented `ORCHID_*` environment variables.
+- [x] Execute scripts sequentially in registration order.
+- [x] Add per-script timeout handling.
+- [x] Bound captured stdout and stderr.
+- [x] Return per-script results without stopping the remaining hook sequence.
+- [x] Log spawn failures, non-zero exits, timeouts, and output details safely.
+- [x] Add runner unit and process-level tests.
 
 ## Phase 3 — lifecycle integration
 

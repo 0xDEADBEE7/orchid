@@ -3,6 +3,7 @@ pub mod client;
 pub mod cmd;
 pub mod config;
 pub mod jsonerr;
+pub mod hooks;
 pub mod log;
 pub mod r#loop;
 pub mod provider;
@@ -28,6 +29,7 @@ pub use config::{
     AuthProfile, ConfigDir, Connection, HookConfiguration, HookEvent, HookPayload, HookStatus,
     Permissions, Policy, PolicyLimits, ResourceLoadError, RootConfig,
 };
+pub use hooks::{HookResult, HookResultStatus, HookRunResult, HookRunner};
 pub use jsonerr::JsonError;
 pub use log::{DiagLogger, LogReader, LogWriter};
 pub use provider::{Provider, ProviderError, Response, StreamEvent};
