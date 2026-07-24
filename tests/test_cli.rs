@@ -284,6 +284,31 @@ fn test_parse_delete() {
 }
 
 #[test]
+fn test_parse_delete_preserves_global_flags() {
+    let args = ["delete", "abc123", "--config", "/tmp/orchid-config"]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    let (cmd, flags) = parse_args(&args).unwrap();
+    assert_eq!(cmd, Command::Delete("abc123".to_string()));
+    assert_eq!(
+        flags.get("config"),
+        Some(&Some("/tmp/orchid-config".to_string()))
+    );
+}
+
+#[test]
+fn test_parse_delete_keeps_first_id_when_extra_positionals_are_given() {
+    let args = vec![
+        "delete".to_string(),
+        "abc123".to_string(),
+        "extra".to_string(),
+    ];
+    let (cmd, _) = parse_args(&args).unwrap();
+    assert_eq!(cmd, Command::Delete("abc123".to_string()));
+}
+
+#[test]
 fn test_unknown_flag_is_error() {
     let args = vec![
         "send".to_string(),
