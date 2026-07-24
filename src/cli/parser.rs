@@ -94,13 +94,28 @@ fn detect_command(args: &[String]) -> ParsedInput<'_> {
     }
     let rest = &args[1..];
     if rest.is_empty() || rest[0].starts_with("--") {
-        return ParsedInput { name: "send".to_string(), rest, top_level_help: true };
+        return ParsedInput {
+            name: "send".to_string(),
+            rest,
+            top_level_help: true,
+        };
     }
-    let known = ["help", "list", "create", "config", "send", "await", "get", "set", "delete", "stop", "kill", "__run", "validate"];
+    let known = [
+        "help", "list", "create", "config", "send", "await", "get", "set", "delete", "stop",
+        "kill", "__run", "validate",
+    ];
     if known.contains(&rest[0].as_str()) {
-        ParsedInput { name: rest[0].clone(), rest: &rest[1..], top_level_help: false }
+        ParsedInput {
+            name: rest[0].clone(),
+            rest: &rest[1..],
+            top_level_help: false,
+        }
     } else {
-        ParsedInput { name: "send".to_string(), rest, top_level_help: false }
+        ParsedInput {
+            name: "send".to_string(),
+            rest,
+            top_level_help: false,
+        }
     }
 }
 
@@ -111,7 +126,9 @@ fn tokenize_flags(rest: &[String]) -> (BTreeMap<String, Option<String>>, Vec<Str
     while index < rest.len() {
         let arg = &rest[index];
         if let Some(suffix) = arg.strip_prefix("--") {
-            let (key, inline) = suffix.split_once('=').map_or((suffix, None), |(key, value)| (key, Some(value)));
+            let (key, inline) = suffix
+                .split_once('=')
+                .map_or((suffix, None), |(key, value)| (key, Some(value)));
             if let Some(value) = inline {
                 flags.insert(key.to_string(), Some(value.to_string()));
             } else {
