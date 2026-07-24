@@ -53,7 +53,7 @@ only after the relevant tests and quality gates have run.
 - [x] Add characterization tests for current terminal loop outcomes (6 focused tests pass: completion, provider failure, stream failure, tool continuation, budget stop, and cancellation/lifecycle cleanup). `make test`, `make check`, and `make metrics` pass; `run_loop` remains CC 41.
 - [x] Define typed loop outcomes/transitions: `provider_turn` now maps provider/stream responses to private `ContinueWithTools`, `Complete`, `Empty`, and `Failed` outcomes; six characterization tests, `make check`, and `make metrics` pass. `run_loop` complexity decreased from CC 41 to CC 38, while `run.rs` is 435 LOC and remains red.
 - [ ] Extract stream response reduction.
-- [ ] Extract tool-turn execution.
+- [x] Extract tool-turn execution into private `execute_tool_turn`; tool permissions/context, event ordering, continuation, tool errors, persisted state, budget checks, and `RunGuard` ownership remain in the existing loop flow. Focused loop tests pass; `run_loop` CC decreased from 38 to 31 and `run.rs` is 447 LOC.
 - [ ] Centralize terminal lifecycle finalization.
 - [ ] Reduce `run_loop` below CC 15.
 - [x] Re-run `make check` and `make metrics` (formatting passes; six metrics red files remain).

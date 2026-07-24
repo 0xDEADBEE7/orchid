@@ -319,55 +319,8 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             }
         }
 
-        if let Some(tool_calls) = response.tool_calls {
-            if let Some(ref msg) = response.message {
-                if !msg.trim().is_empty() {
-                    events::append_message(&ctx.meta.id, &ctx.config_dir, msg)?;
-                }
-            }
-
-            for tool_call in tool_calls {
-                ctx.log.info(
-                    "tool_call",
-                    &format!("tool={} id={}", tool_call.name, tool_call.id),
-                );
-                events::append_tool_call(
-                    &ctx.meta.id,
-                    &ctx.config_dir,
-                    std::slice::from_ref(&tool_call),
-                )?;
-
-                let content = match tools::execute_tool_with_permissions(
-                    &tool_call.name,
-                    tool_call.input.clone(),
-                    &tools::ToolContext {
-                        working_dir: &ctx.working_dir,
-                        env_vars: &ctx.env_vars,
-                        global_scope_set: &ctx.global_scope_set,
-                        session_scope_set: &ctx.session_scope_set,
-                        allowed_tools: &ctx.permissions.tools,
-                        allowed_paths: &ctx.permissions.paths,
-                    },
-                ) {
-                    Ok(raw) => {
-                        ctx.log
-                            .info("tool_result", &format!("tool={}", tool_call.name));
-                        raw
-                    }
-                    Err(e) => {
-                        ctx.log
-                            .error("tool_error", &format!("tool={} err={}", tool_call.name, e));
-                        serde_json::Value::String(format!("Error: {}", e))
-                    }
-                };
-
-                let tool_result = ToolResult {
-                    call_id: tool_call.id,
-                    content,
-                };
-
-                events::append_tool_result(&ctx.meta.id, &ctx.config_dir, &tool_result)?;
-            }
+        if response.tool_calls.is_some() {
+            execute_tool_turn(ctx, response)?;
         } else if let Some(message) = response.message {
             if message.trim().is_empty() {
                 ctx.log.warn("empty_response", "");
@@ -398,6 +351,65 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
 
     guard.finish(Status::Idle, None, None)?;
     ctx.log.info("run_end", &ctx.meta.id);
+    Ok(())
+}
+
+fn execute_tool_turn(ctx: &LoopContext, response: crate::provider::Response) -> Result<(), String> {
+    let Some(tool_calls) = response.tool_calls else {
+        return Ok(());
+    };
+
+    if let Some(ref message) = response.message {
+        if !message.trim().is_empty() {
+            events::append_message(&ctx.meta.id, &ctx.config_dir, message)?;
+        }
+    }
+
+    for tool_call in tool_calls {
+        ctx.log.info(
+            "tool_call",
+            &format!("tool={} id={}", tool_call.name, tool_call.id),
+        );
+        events::append_tool_call(
+            &ctx.meta.id,
+            &ctx.config_dir,
+            std::slice::from_ref(&tool_call),
+        )?;
+
+        let content = match tools::execute_tool_with_permissions(
+            &tool_call.name,
+            tool_call.input.clone(),
+            &tools::ToolContext {
+                working_dir: &ctx.working_dir,
+                env_vars: &ctx.env_vars,
+                global_scope_set: &ctx.global_scope_set,
+                session_scope_set: &ctx.session_scope_set,
+                allowed_tools: &ctx.permissions.tools,
+                allowed_paths: &ctx.permissions.paths,
+            },
+        ) {
+            Ok(raw) => {
+                ctx.log
+                    .info("tool_result", &format!("tool={}", tool_call.name));
+                raw
+            }
+            Err(e) => {
+                ctx.log
+                    .error("tool_error", &format!("tool={} err={}", tool_call.name, e));
+                serde_json::Value::String(format!("Error: {}", e))
+            }
+        };
+
+        events::append_tool_result(
+            &ctx.meta.id,
+            &ctx.config_dir,
+            &ToolResult {
+                call_id: tool_call.id,
+                content,
+            },
+        )?;
+    }
+
     Ok(())
 }
 
