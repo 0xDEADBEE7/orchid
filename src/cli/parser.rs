@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{auth, await_command, config, create, delete, get, internal_run, lifecycle, set};
+use super::{auth, await_command, config, create, delete, get, internal_run, lifecycle, list, set};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -175,18 +175,7 @@ pub(crate) fn parse(
 
     let cmd = match cmd_name.as_str() {
         "help" => Command::Help(positional.into_iter().next()),
-        "list" => {
-            let resource = positional.first().cloned();
-            if let Some(name) = &resource {
-                if !matches!(
-                    name.as_str(),
-                    "sessions" | "connections" | "policies" | "prompts" | "auth"
-                ) {
-                    return Err(format!("unknown list resource: {}", name));
-                }
-            }
-            Command::List(resource)
-        }
+        "list" => list::parse(&positional)?,
         "create" => create::parse(&mut flags),
         "config" => config::parse(&positional)?,
         "auth" => auth::parse(&positional, rest)?,

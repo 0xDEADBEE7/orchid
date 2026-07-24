@@ -8,6 +8,7 @@ mod delete;
 mod get;
 mod internal_run;
 mod lifecycle;
+mod list;
 mod options;
 mod parser;
 mod set;

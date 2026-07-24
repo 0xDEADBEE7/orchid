@@ -78,6 +78,24 @@ fn test_parse_list() {
 }
 
 #[test]
+fn test_parse_list_accepts_known_resources() {
+    for resource in ["sessions", "connections", "policies", "prompts", "auth"] {
+        let args = vec!["list".to_string(), resource.to_string()];
+        let (cmd, flags) = parse_args(&args).unwrap();
+        assert_eq!(cmd, Command::List(Some(resource.to_string())));
+        assert!(flags.is_empty());
+    }
+}
+
+#[test]
+fn test_parse_list_rejects_unknown_resource_with_stable_message() {
+    let args = vec!["list".to_string(), "unknown".to_string()];
+    assert_eq!(
+        parse_args(&args).unwrap_err(),
+        "unknown list resource: unknown"
+    );
+}
+#[test]
 fn test_parse_config_validate() {
     let args = vec!["config".to_string(), "validate".to_string()];
     let (cmd, _) = parse_args(&args).unwrap();
