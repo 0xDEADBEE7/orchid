@@ -196,32 +196,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         let warn_threshold = ctx.limits.token_warn_threshold.unwrap_or(80_000);
 
         if estimated_tokens >= hard_limit {
-            ctx.log.info(
-                "pre_send_budget_exceeded",
-                &format!("estimated={} hard_limit={}", estimated_tokens, hard_limit),
-            );
-            let termination_msg = format!(
-                "[SESSION TERMINATED] Estimated token count ({}) would exceed hard limit ({}) before sending. \
-                Start a new session to continue.",
-                estimated_tokens, hard_limit
-            );
-            events::append_system(&ctx.meta.id, &ctx.config_dir, &termination_msg)?;
-            let updates = crate::session::SessionUpdate {
-                last_message: Some(termination_msg.clone()),
-                token_estimate: Some(estimated_tokens),
-                ..Default::default()
-            };
-            ctx.store.update(&ctx.meta.id, updates)?;
-            guard.finish(
-                Status::Failed,
-                Some("token budget termination".into()),
-                Some("budget termination".into()),
-            )?;
-            ctx.log.info("run_end", "pre_send_budget_exceeded");
-            return Err(format!(
-                "token hard limit would be exceeded before sending: {} estimated tokens",
-                estimated_tokens
-            ));
+            return terminate_for_budget(ctx, &mut guard, estimated_tokens, hard_limit, true);
         }
 
         let response = match provider_turn(ctx, provider, messages) {
@@ -252,31 +227,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         }
 
         if estimated_tokens >= hard_limit {
-            ctx.log.warn(
-                "token_budget_exceeded",
-                &format!("total={} hard_limit={}", estimated_tokens, hard_limit),
-            );
-            let termination_msg = format!(
-                "[SESSION TERMINATED] Token hard limit reached ({} / {} tokens). \
-                The run has been stopped. Start a new session to continue.",
-                estimated_tokens, hard_limit
-            );
-            events::append_system(&ctx.meta.id, &ctx.config_dir, &termination_msg)?;
-            let updates = crate::session::SessionUpdate {
-                last_message: Some(termination_msg),
-                ..Default::default()
-            };
-            ctx.store.update(&ctx.meta.id, updates)?;
-            guard.finish(
-                Status::Failed,
-                Some("token budget termination".into()),
-                Some("budget termination".into()),
-            )?;
-            ctx.log.info("run_end", "budget_exceeded");
-            return Err(format!(
-                "token hard limit exceeded: {} tokens",
-                estimated_tokens
-            ));
+            return terminate_for_budget(ctx, &mut guard, estimated_tokens, hard_limit, false);
         } else if estimated_tokens >= warn_threshold {
             let should_warn = match last_warn_tokens {
                 None => true,
@@ -333,9 +284,82 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         }
     }
 
-    guard.finish(Status::Idle, None, None)?;
-    ctx.log.info("run_end", &ctx.meta.id);
+    finish_loop(ctx, &mut guard, Status::Idle, None, None, &ctx.meta.id)?;
     Ok(())
+}
+
+fn finish_loop(
+    ctx: &LoopContext,
+    guard: &mut RunGuard<'_>,
+    status: Status,
+    error: Option<String>,
+    reason: Option<String>,
+    log_message: &str,
+) -> Result<(), String> {
+    guard.finish(status, error, reason)?;
+    ctx.log.info("run_end", log_message);
+    Ok(())
+}
+
+fn terminate_for_budget(
+    ctx: &LoopContext,
+    guard: &mut RunGuard<'_>,
+    estimated_tokens: u32,
+    hard_limit: u32,
+    before_send: bool,
+) -> Result<(), String> {
+    let (termination_msg, error) = if before_send {
+        ctx.log.info(
+            "pre_send_budget_exceeded",
+            &format!("estimated={} hard_limit={}", estimated_tokens, hard_limit),
+        );
+        (
+            format!(
+                "[SESSION TERMINATED] Estimated token count ({}) would exceed hard limit ({}) before sending. \\
+                Start a new session to continue.",
+                estimated_tokens, hard_limit
+            ),
+            format!(
+                "token hard limit would be exceeded before sending: {} estimated tokens",
+                estimated_tokens
+            ),
+        )
+    } else {
+        ctx.log.warn(
+            "token_budget_exceeded",
+            &format!("total={} hard_limit={}", estimated_tokens, hard_limit),
+        );
+        (
+            format!(
+                "[SESSION TERMINATED] Token hard limit reached ({} / {} tokens). \\
+                The run has been stopped. Start a new session to continue.",
+                estimated_tokens, hard_limit
+            ),
+            format!("token hard limit exceeded: {} tokens", estimated_tokens),
+        )
+    };
+    events::append_system(&ctx.meta.id, &ctx.config_dir, &termination_msg)?;
+    ctx.store.update(
+        &ctx.meta.id,
+        crate::session::SessionUpdate {
+            last_message: Some(termination_msg),
+            token_estimate: before_send.then_some(estimated_tokens),
+            ..Default::default()
+        },
+    )?;
+    finish_loop(
+        ctx,
+        guard,
+        Status::Failed,
+        Some("token budget termination".into()),
+        Some("budget termination".into()),
+        if before_send {
+            "pre_send_budget_exceeded"
+        } else {
+            "budget_exceeded"
+        },
+    )?;
+    Err(error)
 }
 
 fn execute_tool_turn(ctx: &LoopContext, response: crate::provider::Response) -> Result<(), String> {
