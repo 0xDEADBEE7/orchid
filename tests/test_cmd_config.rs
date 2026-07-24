@@ -107,6 +107,19 @@ fn test_config_use_validates_then_atomically_updates_root() {
 }
 
 #[test]
+fn test_config_show_hooks_returns_empty_defaults_and_configured_events() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("config.json"),
+        r#"{"policy":"default","hooks":{"turn-start":["./start.sh"]}}"#,
+    )
+    .unwrap();
+    let shown = config_show(dir.path(), "hooks").unwrap();
+    assert_eq!(shown["turn-start"], serde_json::json!(["./start.sh"]));
+    assert_eq!(shown["turn-stop"], serde_json::json!([]));
+}
+
+#[test]
 fn test_config_show_redacts_connection_api_key() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir_all(dir.path().join("connections")).unwrap();

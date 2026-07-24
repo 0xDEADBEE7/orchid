@@ -10,4 +10,5 @@ orchid --config ./config config use default
 ```
 
 Connections may use `env.NAME` references. Inspection output redacts literal
-API keys.
+API keys. See [Hooks](hooks.md) for the optional `hooks` configuration and
+`config show hooks` inspection command.

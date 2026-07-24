@@ -62,9 +62,16 @@ Example:
 
 ```json
 {
-    "policy": "default"
+    "policy": "default",
+    "hooks": {
+        "turn-start": ["./scripts/prepare.sh"],
+        "turn-stop": ["./scripts/notify.sh"]
+    }
 }
 ```
+
+`hooks` is optional and supports the `turn-start` and `turn-stop` lifecycle
+events. See [hooks.md](hooks.md) for its execution and payload contract.
 
 Future versions may also contain:
 
