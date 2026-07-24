@@ -6,6 +6,7 @@ mod config;
 mod create;
 mod delete;
 mod get;
+mod help;
 mod internal_run;
 mod lifecycle;
 mod list;

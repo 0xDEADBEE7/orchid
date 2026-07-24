@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    auth, await_command, config, create, delete, get, internal_run, lifecycle, list, send, set,
+    auth, await_command, config, create, delete, get, help, internal_run, lifecycle, list, send,
+    set,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,10 +81,10 @@ pub(super) const VALUE_FLAGS: &[&str] = &[
     "prompt",
 ];
 
-struct ParsedInput<'a> {
-    name: String,
-    rest: &'a [String],
-    top_level_help: bool,
+pub(super) struct ParsedInput<'a> {
+    pub(super) name: String,
+    pub(super) rest: &'a [String],
+    pub(super) top_level_help: bool,
 }
 
 fn detect_command(args: &[String]) -> ParsedInput<'_> {
@@ -160,23 +161,15 @@ pub(crate) fn parse(
         return Ok((Command::Help(None), BTreeMap::new()));
     }
     let input = detect_command(args);
-    let cmd_name = input.name;
+    let cmd_name = input.name.clone();
     let rest = input.rest;
-    if cmd_name == "--help" {
-        return Ok((Command::Help(None), BTreeMap::new()));
-    }
-
     let (mut flags, positional) = tokenize_flags(rest);
 
-    if flags.contains_key("help") {
-        if input.top_level_help {
-            return Ok((Command::Help(None), flags));
-        }
-        return Ok((Command::Help(Some(cmd_name.clone())), flags));
+    if let Some(command) = help::parse(&input, &flags, &positional) {
+        return Ok((command, flags));
     }
 
     let cmd = match cmd_name.as_str() {
-        "help" => Command::Help(positional.into_iter().next()),
         "list" => list::parse(&positional)?,
         "create" => create::parse(&mut flags),
         "config" => config::parse(&positional)?,
