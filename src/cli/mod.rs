@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 mod auth;
+mod await_command;
 mod config;
 mod create;
 mod delete;

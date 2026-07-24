@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{auth, config, create, delete, get, internal_run, lifecycle, set};
+use super::{auth, await_command, config, create, delete, get, internal_run, lifecycle, set};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -223,24 +223,7 @@ pub(crate) fn parse(
             }
         }
         "get" => get::parse(&mut flags, &positional)?,
-        "await" => {
-            if positional.is_empty() {
-                return Err("await requires at least one session ID".to_string());
-            }
-            let timeout = parse_nonnegative_float(flags.remove("timeout").flatten(), "timeout")?;
-            let interval = parse_nonnegative_float(flags.remove("interval").flatten(), "interval")?;
-            if let Some(unknown) = flags
-                .keys()
-                .find(|key| !matches!(key.as_str(), "timeout" | "interval"))
-            {
-                return Err(format!("unknown flag: --{}", unknown));
-            }
-            Command::Await {
-                ids: positional,
-                timeout,
-                interval,
-            }
-        }
+        "await" => await_command::parse(&mut flags, positional)?,
         "set" => set::parse(&mut flags)?,
         "delete" => delete::parse(&positional)?,
         "stop" | "kill" => lifecycle::parse(&positional, &cmd_name)?,
@@ -253,15 +236,4 @@ pub(crate) fn parse(
         flags.insert(key, value);
     }
     Ok((cmd, flags))
-}
-
-fn parse_nonnegative_float(value: Option<String>, name: &str) -> Result<f64, String> {
-    let value = value.unwrap_or_else(|| if name == "timeout" { "60" } else { "2" }.to_string());
-    let parsed = value
-        .parse::<f64>()
-        .map_err(|_| format!("invalid {} value: {}", name, value))?;
-    if !parsed.is_finite() || parsed < 0.0 {
-        return Err(format!("invalid {} value: {}", name, value));
-    }
-    Ok(parsed)
 }
