@@ -112,8 +112,8 @@ impl OpenAiEventMapper {
                     }
                 }
 
-                if let Some(ref func) = call.get("function").and_then(|f| f.as_object()) {
-                    if let Some(ref args) = func.get("arguments").and_then(|v| v.as_str()) {
+                if let Some(func) = call.get("function").and_then(|f| f.as_object()) {
+                    if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
                         if idx < tool_calls.len() {
                             tool_calls[idx].input_json.push_str(args);
                         }
