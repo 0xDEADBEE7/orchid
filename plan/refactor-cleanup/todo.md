@@ -7,6 +7,7 @@ only after the relevant tests and quality gates have run.
 
 - **Phase 0 — baseline and hygiene:** complete; implementation commits `b424b9c`, `2781606`, `7b2538e`, `7a1bb93`; formatting commits `2279f43` and `307cf2f`. `make check` and `make metrics` pass. Six metrics red zones remain for later phases.
 - **Phase 1 — CLI parser:** active; parser helper extraction `481cc22` reduced `parse` CC from 58 to 41. This recovery run restored the partial visibility/module changes, applied rustfmt, and confirmed `make check` passes; no dispatch extraction was retained because the partial module was not viable. `make metrics` still reports parser `parse` CC 41 and six red files.
+- **Phase 1 follow-up — dispatch/validation extraction:** blocked for this run; an attempted dispatch module extraction was reverted after it introduced parser syntax errors and could not be validated safely. Existing routing, unknown-flag, and obsolete-command characterization coverage remains intact; `make test`, `make check`, and `make metrics` were rerun successfully (parser `parse` CC 41; six red files remain).
 - **Delegation protocol:** each agent receives the relevant plan links and prior findings, works only in the assigned scope, runs repository-prescribed `make` targets, commits all work even when unsuccessful, and reports commit, tests, failures, and follow-up recommendations. The orchestrator reviews the diff before marking items complete.
 - **Phase 1 — CLI parser:** not started.
 - **Phase 2 — execution loop:** not started.
