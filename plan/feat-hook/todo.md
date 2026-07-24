@@ -9,6 +9,7 @@ of progress; implementation details belong in the linked phase documents.
 - **Phase 2 — hook runner:** completed; direct sequential execution, JSON/environment context, timeout/output limits, diagnostics, continuation, and process tests committed.
 - **Phase 3 — lifecycle integration:** completed with known gaps; lifecycle start/stop integration, crash reconciliation hooks, exactly-once guard cleanup, and failure-preserving behavior committed. Dedicated new lifecycle tests and lint cleanup remain.
 - **Phase 4 — CLI and documentation:** completed; config validation and resolved hook display added, user and architecture contracts documented.
+- **Phase 5 — testing and hardening:** completed; malformed-config, runner, lifecycle, security, timeout, and regression coverage added; timeout process-group cleanup hardened.
 
 ## Delivery checklist
 
