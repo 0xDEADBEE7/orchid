@@ -64,121 +64,94 @@ pub enum AuthSubcommand {
     Login(String),
 }
 
+const VALUE_FLAGS: &[&str] = &[
+    "id",
+    "label",
+    "policy",
+    "working-dir",
+    "max-steps",
+    "timeout",
+    "interval",
+    "await",
+    "restriction",
+    "config",
+    "prompt",
+];
+
+struct ParsedInput<'a> {
+    name: String,
+    rest: &'a [String],
+    top_level_help: bool,
+}
+
+fn detect_command(args: &[String]) -> ParsedInput<'_> {
+    if args.first().map(String::as_str) != Some("send") {
+        return ParsedInput {
+            name: args[0].clone(),
+            rest: &args[1..],
+            top_level_help: false,
+        };
+    }
+    let rest = &args[1..];
+    if rest.is_empty() || rest[0].starts_with("--") {
+        return ParsedInput { name: "send".to_string(), rest, top_level_help: true };
+    }
+    let known = ["help", "list", "create", "config", "send", "await", "get", "set", "delete", "stop", "kill", "__run", "validate"];
+    if known.contains(&rest[0].as_str()) {
+        ParsedInput { name: rest[0].clone(), rest: &rest[1..], top_level_help: false }
+    } else {
+        ParsedInput { name: "send".to_string(), rest, top_level_help: false }
+    }
+}
+
+fn tokenize_flags(rest: &[String]) -> (BTreeMap<String, Option<String>>, Vec<String>) {
+    let mut flags = BTreeMap::new();
+    let mut positional = Vec::new();
+    let mut index = 0;
+    while index < rest.len() {
+        let arg = &rest[index];
+        if let Some(suffix) = arg.strip_prefix("--") {
+            let (key, inline) = suffix.split_once('=').map_or((suffix, None), |(key, value)| (key, Some(value)));
+            if let Some(value) = inline {
+                flags.insert(key.to_string(), Some(value.to_string()));
+            } else {
+                let takes_value = VALUE_FLAGS.contains(&key) && key != "await";
+                let has_value = index + 1 < rest.len() && !rest[index + 1].starts_with("--");
+                if (takes_value || !VALUE_FLAGS.contains(&key)) && has_value {
+                    index += 1;
+                    flags.insert(key.to_string(), Some(rest[index].clone()));
+                } else {
+                    flags.insert(key.to_string(), None);
+                }
+            }
+        } else if !arg.starts_with('-') {
+            positional.push(arg.clone());
+        }
+        index += 1;
+    }
+    (flags, positional)
+}
+
 pub(crate) fn parse(
     filtered_args: &[String],
     global_flags: BTreeMap<String, Option<String>>,
 ) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
     let args = filtered_args;
-    // Handle empty args: default to help
     if args.is_empty() {
         return Ok((Command::Help(None), BTreeMap::new()));
     }
-
-    // Strip "send" prefix (for CLI usage like `orchid send list`).
-    // If the first positional after "send" is not a known command,
-    // default to the "send" command (so `orchid send "hi"` sends "hi").
-    let (cmd_name, rest) = if args.first().map(|s| s.as_str()) == Some("send") {
-        let rest = &args[1..];
-        if rest.is_empty()
-            || rest
-                .first()
-                .map(|s| s.as_str())
-                .is_some_and(|s| s.starts_with("--"))
-        {
-            // No args or flags only: default to "send" command.
-            ("send", rest)
-        } else {
-            // Check if the first positional is a known command.
-            let known_commands = [
-                "help", "list", "create", "config", "send", "await", "get", "set", "delete",
-                "stop", "kill", "__run", "validate",
-            ];
-            if known_commands.contains(&rest[0].as_str()) {
-                // Known command: treat it as such.
-                (rest[0].as_str(), &rest[1..])
-            } else {
-                // Unknown: default to "send" with this as the message.
-                ("send", rest)
-            }
-        }
-    } else {
-        (args[0].as_str(), &args[1..])
-    };
-
+    let input = detect_command(args);
+    let cmd_name = input.name;
+    let rest = input.rest;
     if cmd_name == "--help" {
         return Ok((Command::Help(None), BTreeMap::new()));
     }
 
-    let cmd_name = cmd_name.to_string();
-
-    // Flags that take a value argument. All others are boolean.
-    // Unknown flags are rejected after command dispatch.
-    const VALUE_FLAGS: &[&str] = &[
-        "id",
-        "label",
-        "policy",
-        "working-dir",
-        "max-steps",
-        "timeout",
-        "interval",
-        "await",
-        "restriction",
-        "config",
-        "prompt",
-    ];
-
-    // `flags` collects all flags; for server-action, remaining flags become body params.
-    let mut flags = BTreeMap::new();
-    let mut positional = Vec::new();
-    let mut i = 0;
-
-    while i < rest.len() {
-        let arg = &rest[i];
-        if let Some(flag_suffix) = arg.strip_prefix("--") {
-            if let Some(eq_pos) = flag_suffix.find('=') {
-                let key = flag_suffix[..eq_pos].to_string();
-                let value = flag_suffix[eq_pos + 1..].to_string();
-                flags.insert(key, Some(value));
-            } else {
-                let key = flag_suffix.to_string();
-                let takes_value = VALUE_FLAGS.contains(&key.as_str());
-                if takes_value && i + 1 < rest.len() && !rest[i + 1].starts_with("--") {
-                    // Boolean flags that take a value flag but should NOT consume next token.
-                    if key == "await" {
-                        flags.insert(key, None);
-                    } else {
-                        i += 1;
-                        flags.insert(key, Some(rest[i].clone()));
-                    }
-                } else if !takes_value && i + 1 < rest.len() && !rest[i + 1].starts_with("--") {
-                    // Unknown flags that have a following token are treated as value-taking
-                    // (for server-action body params). For other commands, the fail-fast
-                    // check catches them.
-                    i += 1;
-                    flags.insert(key, Some(rest[i].clone()));
-                } else {
-                    flags.insert(key, None);
-                }
-            }
-        } else if !arg.starts_with("-") {
-            positional.push(arg.clone());
-        }
-        i += 1;
-    }
+    let (mut flags, positional) = tokenize_flags(rest);
 
     if flags.contains_key("help") {
-        // If cmd_name was defaulted to "send" (no explicit command given),
-        // this is a top-level --help, not a subcommand --help.
-        if args.first().map(|s| s.as_str()) == Some("send") {
-            let rest = &args[1..];
-            if rest.is_empty()
-                || rest
-                    .first()
-                    .map(|s| s.as_str())
-                    .is_some_and(|s| s.starts_with("--"))
-            {
-                return Ok((Command::Help(None), flags));
-            }
+        if input.top_level_help {
+            return Ok((Command::Help(None), flags));
         }
         return Ok((Command::Help(Some(cmd_name.clone())), flags));
     }
