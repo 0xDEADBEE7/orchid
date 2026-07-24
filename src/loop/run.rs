@@ -228,10 +228,12 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         if estimated_tokens >= hard_limit {
             return terminate_for_budget(ctx, &mut guard, estimated_tokens, hard_limit, false);
         } else if estimated_tokens >= warn_threshold {
-            let should_warn = match last_warn_tokens {
-                None => true,
-                Some(last) => estimated_tokens >= last.saturating_add(ctx.warn_interval),
-            };
+            let should_warn = should_warn_for_budget(
+                estimated_tokens,
+                warn_threshold,
+                last_warn_tokens,
+                ctx.warn_interval,
+            );
             if should_warn {
                 last_warn_tokens = Some(estimated_tokens);
                 ctx.log.warn(
@@ -260,6 +262,17 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
 
     finish_loop(ctx, &mut guard, Status::Idle, None, None, &ctx.meta.id)?;
     Ok(())
+}
+
+fn should_warn_for_budget(
+    estimated_tokens: u32,
+    warn_threshold: u32,
+    last_warn_tokens: Option<u32>,
+    warn_interval: u32,
+) -> bool {
+    estimated_tokens >= warn_threshold
+        && last_warn_tokens
+            .is_none_or(|last| estimated_tokens >= last.saturating_add(warn_interval))
 }
 
 fn empty_response() -> crate::provider::Response {
