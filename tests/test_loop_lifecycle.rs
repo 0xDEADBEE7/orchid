@@ -144,6 +144,34 @@ fn test_stop_idle_session_is_noop() {
     assert_eq!(store.state(&meta.id).unwrap().status, Status::Idle);
 }
 #[test]
+#[cfg(unix)]
+fn run_guard_fires_stop_once_and_preserves_state_result() {
+    use orchid::config::HookConfiguration;
+    use orchid::r#loop::guard::RunGuard;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    let env = TestEnv::new();
+    let config_dir = env.dir();
+    let store = Store::with_config_dir(&config_dir).unwrap();
+    let meta = store.create(None, None, None).unwrap();
+    on_run_start(&meta.id, &config_dir).unwrap();
+
+    let script = config_dir.join("stop-hook");
+    let calls = config_dir.join("stop-calls");
+    std::fs::write(&script, format!("#!/bin/sh\ncat >/dev/null\nprintf x >> {}\n", calls.display())).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let hooks = HookConfiguration { turn_start: vec![], turn_stop: vec![script.to_string_lossy().into()] };
+    let logger = orchid::DiagLogger::noop();
+    let mut guard = RunGuard::with_hooks(&meta.id, Path::new(&config_dir), Path::new(&config_dir), Path::new(&config_dir), hooks, &logger);
+    guard.finish(Status::Failed, Some("original error".into()), Some("provider".into())).unwrap();
+    guard.finish(Status::Idle, None, None).unwrap();
+
+    assert_eq!(std::fs::read_to_string(calls).unwrap(), "x");
+    assert_eq!(store.state(&meta.id).unwrap().status, Status::Failed);
+}
+
+#[test]
 #[serial_test::serial]
 fn test_on_run_start() {
     let env = TestEnv::new();

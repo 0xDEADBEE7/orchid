@@ -3,6 +3,8 @@ use crate::log::DiagLogger;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -57,6 +59,15 @@ impl HookRunner {
             .env("ORCHID_EVENT", payload.event.to_string()).env("ORCHID_SESSION_ID", &payload.session_id)
             .env("ORCHID_CONFIG_DIR", &payload.config_dir).env("ORCHID_SESSION_DIR", &payload.session_dir)
             .env("ORCHID_WORKING_DIR", &payload.working_dir);
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                if nix::libc::setpgid(0, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
         let child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
@@ -69,15 +80,19 @@ impl HookRunner {
     }
 
     fn finish_child(&self, mut child: std::process::Child, path: PathBuf, input: &[u8], started: Instant, logger: &DiagLogger) -> HookResult {
-        if let Some(mut stdin) = child.stdin.take() { let _ = stdin.write_all(input); }
         let output_limit = self.output_limit;
         let stdout = child.stdout.take().map(|pipe| thread::spawn(move || read_bounded(pipe, output_limit)));
         let stderr = child.stderr.take().map(|pipe| thread::spawn(move || read_bounded(pipe, output_limit)));
+        if let Some(mut stdin) = child.stdin.take() { let _ = stdin.write_all(input); }
         let mut timed_out = false;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break Some(status),
-                Ok(None) if started.elapsed() >= self.timeout => { timed_out = true; let _ = child.kill(); break child.wait().ok(); }
+                Ok(None) if started.elapsed() >= self.timeout => {
+                    timed_out = true;
+                    kill_child_tree(&mut child);
+                    break child.wait().ok();
+                }
                 Ok(None) => thread::sleep(Duration::from_millis(5)),
                 Err(_) => break None,
             }
@@ -91,6 +106,20 @@ impl HookRunner {
         if let Some(ref failure) = failure { logger.error("hook.failure", &format!("{}: {}; stderr={}", path.display(), failure, safe_detail(&stderr))); }
         HookResult { path, status: result_status, duration: started.elapsed(), exit_code: status.and_then(|s| s.code()), stdout, stderr, failure }
     }
+}
+
+#[cfg(unix)]
+fn kill_child_tree(child: &mut std::process::Child) {
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(-(child.id() as i32)),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+    let _ = child.kill();
+}
+
+#[cfg(not(unix))]
+fn kill_child_tree(child: &mut std::process::Child) {
+    let _ = child.kill();
 }
 
 fn read_bounded<R: std::io::Read>(mut reader: R, limit: usize) -> String {
@@ -136,9 +165,49 @@ mod tests {
         assert!(output.find("two:turn-start:s1").unwrap() < output.find("three:turn-start:s1").unwrap());
     }
 
+    #[test]
+    fn missing_executable_is_recorded_without_stopping_sequence() {
+        let dir = tempdir().unwrap();
+        let hooks = HookConfiguration { turn_start: vec!["missing".into()], turn_stop: vec![] };
+        let result = HookRunner::default().run(&hooks, HookEvent::TurnStart, &payload(dir.path()), &DiagLogger::noop());
+        assert_eq!(result.scripts[0].status, HookResultStatus::Failed);
+        assert!(result.scripts[0].failure.as_deref().unwrap().contains("spawn failed"));
+    }
+
     #[cfg(unix)]
     #[test]
-    fn direct_spawn_and_timeout_are_safe() {
+    fn payload_environment_and_working_directory_match() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("inspect");
+        fs::write(&script, "#!/bin/sh\npwd >&2\nenv | grep '^ORCHID_' >&2\ncat\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let hooks = HookConfiguration { turn_start: vec!["inspect".into()], turn_stop: vec![] };
+        let result = HookRunner::new(Duration::from_secs(2), 4096).run(&hooks, HookEvent::TurnStart, &payload(dir.path()), &DiagLogger::noop());
+        assert_eq!(result.scripts[0].status, HookResultStatus::Succeeded);
+        let value: serde_json::Value = serde_json::from_slice(result.scripts[0].stdout.as_bytes()).unwrap();
+        assert_eq!(value["event"], "turn-start");
+        assert_eq!(value["working_dir"], dir.path().to_string_lossy().as_ref());
+        assert!(result.scripts[0].stderr.contains(&dir.path().display().to_string()));
+        assert!(result.scripts[0].stderr.contains("ORCHID_EVENT=turn-start"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_stderr_does_not_block_or_exceed_limit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("noisy");
+        fs::write(&script, "#!/bin/sh\nhead -c 200000 /dev/zero >&2\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let hooks = HookConfiguration { turn_start: vec![script.file_name().unwrap().to_string_lossy().into()], turn_stop: vec![] };
+        let result = HookRunner::new(Duration::from_secs(2), 128).run(&hooks, HookEvent::TurnStart, &payload(dir.path()), &DiagLogger::noop());
+        assert!(result.scripts[0].stderr.len() <= 128);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn direct_spawn_does_not_interpret_shell_metacharacters_and_times_out() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
         let path = dir.path().join("hook;touch injected");

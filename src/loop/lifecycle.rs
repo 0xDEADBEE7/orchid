@@ -7,6 +7,7 @@ use chrono::Utc;
 use std::path::Path;
 use std::process;
 
+#[allow(clippy::too_many_arguments)]
 pub fn hook_payload(
     event: HookEvent,
     session_id: &str,

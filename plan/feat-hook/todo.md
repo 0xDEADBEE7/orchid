@@ -16,7 +16,7 @@ of progress; implementation details belong in the linked phase documents.
 - [x] **Phase 2 — hook runner**: execute scripts with JSON stdin, working-directory support, limits, and diagnostics. See [execution.md](execution.md).
 - [x] **Phase 3 — lifecycle integration**: wire `turn-start` and exactly-once `turn-stop` into all terminal paths. See [execution.md](execution.md).
 - [x] **Phase 4 — CLI and documentation**: validate, display, and document hook configuration and behavior. See [cli.md](cli.md).
-- [ ] **Phase 5 — testing and hardening**: complete automated coverage, security review, and regression verification. See [testing.md](testing.md) and [phases.md](phases.md).
+- [x] **Phase 5 — testing and hardening**: focused configuration, runner, lifecycle, security, crash-reconciliation, and regression coverage added; hook-specific correctness hardened for process-group timeout cleanup. `make test` passes. `make check` remains blocked by unrelated pre-existing clippy failures in `src/client/openai/sse.rs`, `src/cmd/send.rs`, and `src/tools/mod.rs`.
 
 ## Phase 1 — contract and configuration
 
@@ -69,17 +69,17 @@ of progress; implementation details belong in the linked phase documents.
 
 ## Phase 5 — testing and hardening
 
-- [ ] Test missing hooks and empty hook lists.
-- [ ] Test malformed configuration and unknown events.
-- [ ] Test payload validity and required fields.
-- [ ] Test working-directory behavior and relative paths.
-- [ ] Test ordering and continuation after a failed hook.
-- [ ] Test missing executables, non-zero exits, timeouts, and bounded output.
-- [ ] Test that shell metacharacters are not interpreted.
-- [ ] Test every terminal lifecycle path and duplicate prevention.
-- [ ] Test best-effort crash reconciliation behavior.
-- [ ] Run the repository-prescribed `make check` target.
-- [ ] Review the final implementation against [overview.md](overview.md).
+- [x] Test missing hooks and empty hook lists.
+- [x] Test malformed configuration and unknown events.
+- [x] Test payload validity and required fields.
+- [x] Test working-directory behavior and relative paths.
+- [x] Test ordering and continuation after a failed hook.
+- [x] Test missing executables, non-zero exits, timeouts, and bounded output.
+- [x] Test that shell metacharacters are not interpreted.
+- [x] Test every terminal lifecycle path and duplicate prevention.
+- [x] Test best-effort crash reconciliation behavior.
+- [ ] Run the repository-prescribed `make check` target (test passes; lint is blocked by unrelated pre-existing failures listed above).
+- [x] Review the final implementation against [overview.md](overview.md).
 
 ## Deferred work
 

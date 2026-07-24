@@ -133,4 +133,22 @@ mod tests {
         };
         assert!(hooks.validate().is_err());
     }
+
+    #[test]
+    fn rejects_unknown_event_and_malformed_entries_during_deserialization() {
+        let unknown = serde_json::from_str::<HookConfiguration>(r#"{"turn-middle":[]}"#);
+        assert!(unknown.is_err());
+        let non_string = serde_json::from_str::<HookConfiguration>(r#"{"turn-start":[7]}"#);
+        assert!(non_string.is_err());
+        let malformed = serde_json::from_str::<HookConfiguration>(r#"{"turn-stop":"script"}"#);
+        assert!(malformed.is_err());
+    }
+
+    #[test]
+    fn missing_and_empty_hook_lists_are_valid() {
+        let missing = serde_json::from_str::<HookConfiguration>("{}").unwrap();
+        assert!(missing.turn_start.is_empty() && missing.turn_stop.is_empty());
+        let empty = serde_json::from_str::<HookConfiguration>(r#"{"turn-start":[],"turn-stop":[]}"#).unwrap();
+        assert_eq!(missing, empty);
+    }
 }
