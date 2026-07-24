@@ -172,7 +172,7 @@ pub(crate) fn parse(
     let cmd = match cmd_name.as_str() {
         "list" => list::parse(&positional)?,
         "create" => create::parse(&mut flags),
-        "config" => config::parse(&positional)?,
+        "config" => config::parse_command(&cmd_name, &positional)?,
         "auth" => auth::parse(&positional, rest)?,
         "send" => send::parse(&mut flags, &positional)?,
         "get" => get::parse(&mut flags, &positional)?,
@@ -181,7 +181,7 @@ pub(crate) fn parse(
         "delete" => delete::parse(&positional)?,
         "stop" | "kill" => lifecycle::parse(&positional, &cmd_name)?,
         "__run" => internal_run::parse(&positional)?,
-        "validate" => Command::Config(ConfigSubcommand::Validate),
+        "validate" => config::parse_command(&cmd_name, &positional)?,
         _ => return Err(format!("unknown command: {}", cmd_name)),
     };
 

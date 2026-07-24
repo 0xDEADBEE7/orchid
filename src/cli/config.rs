@@ -1,6 +1,9 @@
 use super::{Command, ConfigSubcommand};
 
-pub(super) fn parse(positional: &[String]) -> Result<Command, String> {
+pub(super) fn parse_command(command_name: &str, positional: &[String]) -> Result<Command, String> {
+    if command_name == "validate" {
+        return Ok(Command::Config(ConfigSubcommand::Validate));
+    }
     if positional.is_empty() {
         return Err("config requires subcommand: validate, list, or show".to_string());
     }
