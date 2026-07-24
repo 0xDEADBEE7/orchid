@@ -214,8 +214,8 @@ pub(crate) fn parse(
                 restrictions,
             }
         }
-        "config" => config::parse(&positional),
-        "auth" => auth::parse(&positional, rest),
+        "config" => config::parse(&positional)?,
+        "auth" => auth::parse(&positional, rest)?,
         "send" => {
             if positional.is_empty() {
                 return Err("send requires a message".to_string());
