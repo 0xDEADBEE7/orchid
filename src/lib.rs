@@ -16,13 +16,17 @@ pub mod loop_module {
 pub use cli::{parse_args, Command, ConfigSubcommand};
 pub use client::base::{is_retryable, BaseClient};
 pub use client::{create_provider_from_connection_with_log, resolve_env_inline_strict};
-pub use cmd::{config_list, config_show, config_use, config_validate, delete, get, internal_run, list, send, set};
+pub use cmd::{
+    config_list, config_show, config_use, config_validate, delete, get, internal_run, list, send,
+    set,
+};
 pub use config::resolve::{
     create_provider_from_connection, create_provider_from_connections_with_log,
     resolve as resolve_effective_config, EffectiveSessionConfig,
 };
 pub use config::{
-    ConfigDir, Connection, Permissions, Policy, PolicyLimits, ResourceLoadError, RootConfig,
+    AuthProfile, ConfigDir, Connection, HookConfiguration, HookEvent, HookPayload, HookStatus,
+    Permissions, Policy, PolicyLimits, ResourceLoadError, RootConfig,
 };
 pub use jsonerr::JsonError;
 pub use log::{DiagLogger, LogReader, LogWriter};

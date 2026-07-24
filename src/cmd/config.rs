@@ -16,6 +16,7 @@ pub fn config_use(config_dir: &Path, policy: &str) -> Result<serde_json::Value, 
     let temporary = root.with_extension("json.tmp");
     let contents = serde_json::to_vec_pretty(&crate::RootConfig {
         policy: policy.to_string(),
+        hooks: None,
     })
     .map_err(|e| format!("failed to serialize root config: {}", e))?;
     std::fs::write(&temporary, contents)
