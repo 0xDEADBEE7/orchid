@@ -154,6 +154,11 @@ enum LoopOutcome {
     Failed(String),
 }
 
+enum ResponseDecision {
+    Continue,
+    Complete,
+}
+
 fn provider_turn(
     ctx: &LoopContext,
     provider: &dyn Provider,
@@ -201,13 +206,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
 
         let response = match provider_turn(ctx, provider, messages) {
             LoopOutcome::ContinueWithTools(response) | LoopOutcome::Complete(response) => response,
-            LoopOutcome::Empty => crate::provider::Response {
-                message: None,
-                reasoning: None,
-                tool_calls: None,
-                usage: None,
-                model: None,
-            },
+            LoopOutcome::Empty => empty_response(),
             LoopOutcome::Failed(error) => return Err(error),
         };
 
@@ -254,38 +253,56 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             }
         }
 
-        if response.tool_calls.is_some() {
-            execute_tool_turn(ctx, response)?;
-        } else if let Some(message) = response.message {
-            if message.trim().is_empty() {
-                ctx.log.warn("empty_response", "");
-                let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.".to_string();
-                events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
-            } else {
-                ctx.log.info("run_complete", "");
-                events::append_message(&ctx.meta.id, &ctx.config_dir, &message)?;
-
-                if let Some(ref reasoning) = response.reasoning {
-                    events::append_reasoning(&ctx.meta.id, &ctx.config_dir, reasoning)?;
-                }
-
-                let updates = crate::session::SessionUpdate {
-                    last_message: Some(message),
-                    ..Default::default()
-                };
-                ctx.store.update(&ctx.meta.id, updates)?;
-
-                break;
-            }
-        } else {
-            ctx.log.warn("empty_response", "");
-            let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.".to_string();
-            events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
+        if matches!(handle_response(ctx, response)?, ResponseDecision::Complete) {
+            break;
         }
     }
 
     finish_loop(ctx, &mut guard, Status::Idle, None, None, &ctx.meta.id)?;
     Ok(())
+}
+
+fn empty_response() -> crate::provider::Response {
+    crate::provider::Response {
+        message: None,
+        reasoning: None,
+        tool_calls: None,
+        usage: None,
+        model: None,
+    }
+}
+
+fn handle_response(
+    ctx: &LoopContext,
+    response: crate::provider::Response,
+) -> Result<ResponseDecision, String> {
+    if response.tool_calls.is_some() {
+        execute_tool_turn(ctx, response)?;
+        return Ok(ResponseDecision::Continue);
+    }
+
+    if let Some(message) = response.message {
+        if !message.trim().is_empty() {
+            ctx.log.info("run_complete", "");
+            events::append_message(&ctx.meta.id, &ctx.config_dir, &message)?;
+            if let Some(ref reasoning) = response.reasoning {
+                events::append_reasoning(&ctx.meta.id, &ctx.config_dir, reasoning)?;
+            }
+            ctx.store.update(
+                &ctx.meta.id,
+                crate::session::SessionUpdate {
+                    last_message: Some(message),
+                    ..Default::default()
+                },
+            )?;
+            return Ok(ResponseDecision::Complete);
+        }
+    }
+
+    ctx.log.warn("empty_response", "");
+    let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.";
+    events::append_system(&ctx.meta.id, &ctx.config_dir, empty_msg)?;
+    Ok(ResponseDecision::Continue)
 }
 
 fn finish_loop(
