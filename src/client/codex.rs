@@ -38,18 +38,24 @@ fn responses_content_type(role: &str) -> &'static str {
     }
 }
 
-fn codex_tool_definitions() -> Vec<serde_json::Value> {
-    crate::tools::tool_definitions()
-        .into_iter()
-        .map(|tool| {
-            serde_json::json!({
-                "type": "function",
-                "name": tool["name"],
-                "description": tool["description"],
-                "parameters": tool["input_schema"]
+mod codex_wire {
+    pub(super) fn tool_definitions() -> Vec<serde_json::Value> {
+        crate::tools::tool_definitions()
+            .into_iter()
+            .map(|tool| {
+                serde_json::json!({
+                    "type": "function",
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"]
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
+}
+
+fn codex_tool_definitions() -> Vec<serde_json::Value> {
+    codex_wire::tool_definitions()
 }
 
 fn codex_input_items(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
