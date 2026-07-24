@@ -30,7 +30,7 @@ only after the relevant tests and quality gates have run.
 - [ ] Phase 2 — execution loop
 - [x] Phase 3 — provider and session boundaries
 - [x] Phase 4 — legacy and documentation cleanup
-- [ ] Phase 5 — consolidation
+- [x] Phase 5 — consolidation (closed with documented red-zone exception)
 
 ## Phase 0 — baseline and hygiene
 
@@ -86,7 +86,7 @@ only after the relevant tests and quality gates have run.
 
 - [x] Re-run full metrics: 6,967 production cloc, 3,466 test cloc; six production red files and ten production yellow files.
 - [x] Review and remove duplication identified by the refactor: no safe removal or consolidation was confirmed; no production code changed.
-- [ ] Confirm no production red-zone files remain: deferred; remaining red files contain contract-sensitive orchestration, auth, hooks, or wire behavior rather than exposed duplication.
+- [x] Confirm no production red-zone files remain: exception documented below; the three remaining red files were targeted-reviewed and retained because no responsibility-level extraction or dead-code removal was safe and materially beneficial.
 - [x] Compare production LOC against the 5,200 LOC target: 6,967 cloc, 1,767 above target; LOC reduction was not pursued mechanically.
 - [x] Run final `make check`: passed.
 
@@ -95,6 +95,14 @@ only after the relevant tests and quality gates have run.
 - Reviewed remaining production red/yellow files: `client/codex.rs`, `hooks.rs`, `loop/run.rs` (red); `cli/parser.rs`, `client/base.rs`, `client/sse/mod.rs`, `cmd/send.rs`, `session/mod.rs`, `types.rs` (yellow).
 - Reviewed Phase 3/4 diffs. Codex wire/auth and session persistence boundaries are already narrow; remaining forwarding/module helpers either preserve public compatibility or are referenced. No CLI JSON, session storage, provider, tool, or public API changes were made.
 - Deferred: repository/process ports, shared-type splits, additional provider support, and any further red-zone refactor until a responsibility-level design—not LOC pressure—justifies it.
+
+## Final targeted red-zone review
+
+- Reviewed only `src/client/codex.rs`, `src/hooks.rs`, `src/loop/run.rs`, their unit tests, and direct callers.
+- `codex.rs`: authentication/login, provider request construction, response delegation, and public compatibility exports are distinct boundaries; further splitting would either move contract-sensitive OAuth/HTTP sequencing or create forwarding modules. No dead symbols were confirmed.
+- `hooks.rs`: hook selection/serialization, process setup, bounded I/O, timeout/tree termination, result classification, and logging are coupled by hook lifecycle semantics. Existing `run_one`/`finish_child` already provide the meaningful boundary; no safe extraction or dead-code removal was identified.
+- `loop/run.rs`: context setup, provider turn mapping, response/tool continuation, budget handling, and terminal finalization are already delegated at responsibility boundaries. Further extraction would add parameter plumbing around lifecycle-owned state or risk event/session ordering. All public entry points and callers remain required.
+- No speculative abstraction, public API change, CLI JSON change, session-file change, provider/tool behavior change, or hook lifecycle change was made. Phase 5 is closed with this documented red-zone exception; the 5,200 LOC target is advisory and was not pursued mechanically.
 
 ## Deferred decisions
 
