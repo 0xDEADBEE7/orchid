@@ -1,4 +1,4 @@
-use orchid::cli::{parse_args, Command, ConfigSubcommand};
+use orchid::cli::{parse_args, AuthSubcommand, Command, ConfigSubcommand};
 
 mod support;
 
@@ -290,7 +290,113 @@ fn test_unknown_flag_does_not_consume_message() {
 }
 
 #[test]
-fn test_parse_server_action_is_removed() {
-    let args = vec!["server-action".to_string(), "list_models".to_string()];
-    assert!(parse_args(&args).is_err());
+fn test_parse_global_options_are_preserved_separately_from_dispatch() {
+    let args = [
+        "send",
+        "hello",
+        "--config",
+        "/tmp/orchid-config",
+        "--max-steps",
+        "7",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect::<Vec<_>>();
+    let (command, flags) = parse_args(&args).unwrap();
+    assert_eq!(
+        command,
+        Command::Send {
+            id: None,
+            message: "hello".to_string(),
+            await_completion: false,
+            label: None,
+            working_dir: None,
+            policy: None,
+            prompt: None,
+        }
+    );
+    assert_eq!(
+        flags.get("config"),
+        Some(&Some("/tmp/orchid-config".to_string()))
+    );
+    assert_eq!(flags.get("max-steps"), Some(&Some("7".to_string())));
+}
+
+#[test]
+fn test_parse_command_dispatch_covers_auth_and_runtime_commands() {
+    let cases = [
+        (vec!["auth", "list"], Command::Auth(AuthSubcommand::List)),
+        (
+            vec!["stop", "session-1"],
+            Command::Stop("session-1".to_string()),
+        ),
+        (
+            vec!["kill", "session-1"],
+            Command::Kill("session-1".to_string()),
+        ),
+        (
+            vec!["__run", "session-1"],
+            Command::InternalRun {
+                id: "session-1".to_string(),
+            },
+        ),
+    ];
+    for (raw_args, expected) in cases {
+        let args = raw_args.into_iter().map(String::from).collect::<Vec<_>>();
+        assert_eq!(parse_args(&args).unwrap().0, expected);
+    }
+}
+
+#[test]
+fn test_parse_invalid_syntax_has_stable_messages() {
+    let cases = [
+        (vec!["send"], "send requires a message"),
+        (
+            vec!["config"],
+            "config requires subcommand: validate, list, or show",
+        ),
+        (
+            vec!["await", "session-1", "--timeout", "-1"],
+            "invalid timeout value: -1",
+        ),
+    ];
+    for (raw_args, expected) in cases {
+        let args = raw_args.into_iter().map(String::from).collect::<Vec<_>>();
+        assert_eq!(parse_args(&args).unwrap_err(), expected);
+    }
+}
+
+#[test]
+fn test_parse_obsolete_commands_are_rejected_with_stable_messages() {
+    let cases = [
+        (
+            vec!["server-action", "list_models"],
+            "unknown command: server-action",
+        ),
+        (
+            vec!["config", "current"],
+            "unknown config subcommand: current",
+        ),
+        (vec!["config", "path"], "unknown config subcommand: path"),
+    ];
+    for (raw_args, expected) in cases {
+        let args = raw_args.into_iter().map(String::from).collect::<Vec<_>>();
+        assert_eq!(parse_args(&args).unwrap_err(), expected);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_invalid_cli_output_is_exact_json_contract() {
+    use std::process::Command as ProcessCommand;
+    let output = ProcessCommand::new(env!("CARGO_BIN_EXE_orchid"))
+        .args(["not-a-command"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        output.stderr,
+        b"{\"error\":\"invalid_args\",\"message\":\"unknown command: not-a-command\"}\n"
+    );
 }
