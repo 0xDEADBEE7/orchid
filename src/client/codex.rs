@@ -32,129 +32,6 @@ fn random_hex(n: usize) -> String {
     hex::encode(b)
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-fn responses_content_type(role: &str) -> &'static str {
-    codex_wire::responses_content_type(role)
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod codex_wire_legacy {
-    pub(super) fn tool_definitions() -> Vec<serde_json::Value> {
-        crate::tools::tool_definitions()
-            .into_iter()
-            .map(|tool| {
-                serde_json::json!({
-                    "type": "function",
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["input_schema"]
-                })
-            })
-            .collect()
-    }
-}
-
-fn codex_tool_definitions() -> Vec<serde_json::Value> {
-    codex_wire::tool_definitions()
-}
-
-fn codex_input_items(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
-    codex_wire::input_items(messages)
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn parse_codex_output_legacy(
-    raw: &str,
-    model: &str,
-) -> Result<crate::provider::Response, crate::provider::ProviderError> {
-    let values = if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
-        vec![v]
-    } else {
-        raw.lines()
-            .filter_map(|line| line.strip_prefix("data: "))
-            .filter(|data| *data != "[DONE]")
-            .filter_map(|data| serde_json::from_str::<serde_json::Value>(data).ok())
-            .collect()
-    };
-    let mut delta_text = String::new();
-    let mut completed_text = String::new();
-    let mut tool_calls = Vec::new();
-    for value in values {
-        let mut items = value["output"].as_array().cloned().unwrap_or_default();
-        if let Some(item) = value.get("item") {
-            items.push(item.clone());
-        }
-        for item in items {
-            if item["type"] == "function_call" {
-                let Some(arguments) = item["arguments"].as_str() else {
-                    continue;
-                };
-                let Ok(input) = serde_json::from_str(arguments) else {
-                    continue;
-                };
-                tool_calls.push(crate::types::ToolCall {
-                    id: item["call_id"]
-                        .as_str()
-                        .or_else(|| item["id"].as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    name: item["name"].as_str().unwrap_or_default().to_string(),
-                    input,
-                });
-            }
-            if let Some(t) = item["content"][0]["text"].as_str() {
-                completed_text.push_str(t);
-            }
-        }
-        if value["type"]
-            .as_str()
-            .is_some_and(|kind| kind == "response.output_text.delta" || kind == "output_text.delta")
-        {
-            if let Some(t) = value["delta"].as_str() {
-                delta_text.push_str(t);
-            }
-        }
-        if value["type"].as_str().is_none()
-            || value["type"].as_str().is_some_and(|kind| {
-                kind == "response.completed" || kind == "response.output_text.done"
-            })
-        {
-            if let Some(t) = value["output_text"].as_str() {
-                completed_text.push_str(t);
-            }
-        }
-    }
-    let text = if !delta_text.is_empty() {
-        delta_text
-    } else {
-        completed_text
-    };
-    if text.is_empty() && tool_calls.is_empty() {
-        return Err(crate::provider::ProviderError::InvalidResponse(
-            "Codex response contained no text output or tool call".into(),
-        ));
-    }
-    Ok(crate::provider::Response {
-        message: (!text.is_empty()).then_some(text),
-        reasoning: None,
-        tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
-        usage: None,
-        model: Some(model.to_string()),
-    })
-}
-
-#[cfg(test)]
-#[cfg(test)]
-#[allow(dead_code)]
-fn parse_codex_output(
-    raw: &str,
-    model: &str,
-) -> Result<crate::provider::Response, crate::provider::ProviderError> {
-    codex_wire::parse_output(raw, model)
-}
 pub fn model_allowed(model: &str) -> bool {
     matches!(
         model,
@@ -305,8 +182,8 @@ impl CodexClient {
         if !system.is_empty() {
             input.push(serde_json::json!({"role":"developer","content":[{"type":"input_text","text":system}]}));
         }
-        input.extend(codex_input_items(&messages));
-        let body = serde_json::json!({"model":self.connection.model,"instructions":"You are Orchid, a helpful coding assistant.","input":input,"tools":codex_tool_definitions(),"store":false,"stream":true});
+        input.extend(codex_wire::input_items(&messages));
+        let body = serde_json::json!({"model":self.connection.model,"instructions":"You are Orchid, a helpful coding assistant.","input":input,"tools":codex_wire::tool_definitions(),"store":false,"stream":true});
         let session_id = uuid::Uuid::new_v4().to_string();
         let client = reqwest::blocking::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
