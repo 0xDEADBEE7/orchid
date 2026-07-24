@@ -18,16 +18,16 @@ only after the relevant tests and quality gates have run.
 - **Delegation result — Phase 3 provider boundary:** session `1bff77fc51b71684e6595b9af1704844` reached idle twice without producing an assistant report or commit; no provider changes landed. The pre-existing `src/client/codex.rs` model-list change remains uncommitted. Requires a fresh delegation or manual review before marking complete.
 - **Delegation result — Phase 3 provider boundary:** session `4d9cf9241a99e099dc44d5310c3532f8` completed successfully with commit `983caf5`. Extracted Codex tool-schema mapping to `src/client/codex_wire.rs`; public provider/auth APIs and behavior were preserved, and the pre-existing `gpt-5.4-mini` hunk remained outside the commit. `make test`, `make check`, and `make metrics` passed; six pre-existing red files remain. Recommended next extraction: Codex response parsing.
 - **Next delegation — Phase 3 completion:** assign one agent to review the current provider/session boundary state and complete several tightly related remaining subtasks: verify and integrate the Codex wire module without duplicate/dead mappings, extract Codex response parsing if safe, inspect session resolution/model/update boundaries for any clear low-risk completion, add focused characterization tests where needed, and run `make check` plus `make metrics`. Preserve public APIs, on-disk contracts, and the unrelated `gpt-5.4-mini` worktree change; commit all work and report results.
-- **Delegation result — Phase 3 Codex wire boundary:** session `9a358c880bc910c0402615d91c360dcf` completed with commit `46928a7`. Codex input-item construction and response parsing now route through `src/client/codex_wire.rs`; provider/auth APIs, request behavior, session formats, and the unrelated `gpt-5.4-mini` worktree change were preserved. Full tests, `make check`, and `make metrics` passed. Six red files remain, including Codex wire parser complexity. No session extraction or new tests were added. Remaining review: remove redundant legacy wrappers if safe and reassess further Codex/session extraction.
-
-- **Delegated sessions:** `39446ba8419cda8e456c841728fc8b96` — Phase 0 OpenAI SSE cleanup; completed idle; commit `b424b9c`.
+- **Next delegation — Phase 4 audit/docs:** assign one agent to complete the legacy/reference audit and reconcile the highest-confidence documentation drift. Read `audit.md`, current Rust modules, and architecture/user docs. Remove only confirmed dead implementation or obsolete references/tests; update contradictory provider and execution docs; preserve contracts. Run `make check` and `make metrics`, commit all work, and report results.
+- **Delegation result — Phase 4 audit/docs:** reviewed the pending documentation changes against current Rust configuration, provider, session, lifecycle, logging, SSE, and CLI/user-guide docs. Kept high-confidence reconciliation, corrected the Codex auth wording, removed an accidental storage-doc fragment, and corrected the missing/invalid-state crash claim. `audit.md` records completed searches and deferred compatibility/history/dead-code decisions. No production code or contracts changed; `make check` and `make metrics` are required for this commit.
+- `39446ba8419cda8e456c841728fc8b96` — Phase 0 OpenAI SSE cleanup; completed idle; commit `b424b9c`.
 - `d61c564b24b321b574f6b7dbcf661f81` — Phase 1 parser helper extraction; completed idle; commit `481cc22`; `make metrics` passed; `make check` failed only formatting; parser `parse` CC 41.
 - **Pending:** no Phase 1 follow-up is pending from this run; the next step is a separate small parser extraction after review.
 
 - [x] Phase 0 — baseline and hygiene
 - [ ] Phase 1 — CLI parser
 - [ ] Phase 2 — execution loop
-- [ ] Phase 3 — provider and session boundaries
+- [x] Phase 3 — provider and session boundaries
 - [ ] Phase 4 — legacy and documentation cleanup
 - [ ] Phase 5 — consolidation
 

@@ -2,77 +2,44 @@
 
 ## Tool loop
 
-`orchid send` appends the user message, forks the tool loop as a background process, and exits. The loop runs to completion independently:
+`orchid send` appends the user message, starts the tool loop as a background process, and exits. The loop runs to completion independently:
 
-1. Read `conversation.jsonl` to build message history. See [conversation.md](conversation.md).
-2. Resolve the selected policy and Connection resources. See [NEW_CONFIG.md](NEW_CONFIG.md).
-3. Resolve the selected Prompt resource into a system prompt. See [NEW_CONFIG.md](NEW_CONFIG.md).
-4. Send system prompt + message history + tool definitions to the model.
-5. Model responds with either a `message` or a `tool_call`.
-6. Append the response event to `conversation.jsonl`.
-7. If `tool_call`: execute the tool, append `tool_result`, go to step 4.
-8. If `message`: loop ends.
+1. Read `conversation.jsonl` to build message history.
+2. Resolve the selected Policy, Connection candidates, and Prompt.
+3. Send the prompt and message history to a provider through the `Provider` trait.
+4. Stream and reduce the response; append message, reasoning, tool-call, and tool-result events to `conversation.jsonl`.
+5. Execute tool calls and repeat, or finish on a final assistant message.
 
-With `--await`, the calling process blocks until the loop completes instead of returning immediately. See [cli.md](cli.md).
+With `--await`, the calling process blocks until the loop completes. See [cli.md](cli.md).
 
 ---
 
 ## Run lifecycle
 
-On every run transition, orchid performs two writes atomically: one to `logs.jsonl` (permanent record) and one to `metadata.json` (live state interface). These always happen together.
+Run diagnostics are best-effort newline-delimited JSON records in
+`orchid.log`. They are separate from the authoritative `conversation.jsonl`.
+Run status and timestamps are persisted in `state.json`; metadata identity and
+resource references remain in `metadata.json`. State and metadata updates use
+atomic temporary-file writes and renames, but the diagnostic log and state/
+metadata updates are not one atomic transaction.
 
-### On run start
+At run start, `state.json` is updated to `status: "running"`, the process PID,
+and `run_started_at`. On normal completion, failure, cancellation, or budget
+termination, the lifecycle guard clears the PID and start time, sets the
+terminal status, and records `last_run_at`.
 
-1. Append `run_start` to `logs.jsonl`
-2. Update `metadata.json`:
-   - `status` → `running`
-   - `pid` → current process PID
-   - `run_started_at` → current timestamp
+A subsequent invocation checks a running session's stored PID. If the PID is
+not alive, Orchid logs `run_crashed` to `orchid.log`, reconciles the state to
+idle, and continues startup. Missing or invalid state is reported as a session
+error rather than silently reconstructed. There is no `logs.jsonl` run-boundary
+file or structured `run_id` event contract.
 
-### On run end
+## Diagnostic records
 
-1. Append `run_end` to `logs.jsonl`
-2. Update `metadata.json`:
-   - `status` → `idle`
-   - `pid` → `null`
-   - `run_started_at` → `null`
-   - `last_run_at` → current timestamp
-
-### On crash
-
-If the process exits without completing step 2 of run end, `metadata.json` is left stale with `status: running`. Any reader — including orchid on next invocation — detects this by checking whether the stored `pid` is still alive (POSIX signal 0). On detecting a stale run:
-
-1. Append `run_crashed` to `logs.jsonl`
-2. Reconcile `metadata.json` to `status: idle`
-
----
-
-## logs.jsonl event types
-
-`logs.jsonl` is the permanent audit trail of run boundaries. It is not used for state observation — use `metadata.json` for that.
-
-| `type` | Written by | Description |
-|--------|------------|-------------|
-| `run_start` | orchid on run begin | Run boundary open |
-| `run_end` | orchid on run complete | Run boundary close, with status |
-| `run_crashed` | orchid on next invocation | Retroactive record of a crashed run |
-| `run_stopped` | orchid stop command | Record of an externally stopped run |
-
-```jsonl
-{"event_id":"e5f6a7b8c9d0e1f2","ts":"2026-04-28T10:00:00.000Z","type":"run_start","run_id":1,"pid":12345}
-{"event_id":"f6a7b8c9d0e1f2a3","ts":"2026-04-28T10:00:02.001Z","type":"run_end","run_id":1,"status":"success","duration_ms":2001}
-{"event_id":"a7b8c9d0e1f2a3b4","ts":"2026-04-28T10:01:00.000Z","type":"run_start","run_id":2,"pid":12346}
-{"event_id":"b8c9d0e1f2a3b4c5","ts":"2026-04-28T10:01:05.000Z","type":"run_end","run_id":2,"status":"error","error":"model returned empty response"}
-{"event_id":"c9d0e1f2a3b4c5d6","ts":"2026-04-28T10:05:00.000Z","type":"run_crashed","pid":12347}
-{"event_id":"d0e1f2a3b4c5d6e7","ts":"2026-04-28T10:06:00.000Z","type":"run_stopped","pid":12348}
-```
-
-`run_id` is a monotonically incrementing integer scoped to the conversation. `run_end` status values:
-
-| Status | Meaning |
-|--------|---------|
-| `success` | Loop completed with a final assistant message |
-| `error` | Loop stopped due to a handled error |
+`orchid.log` records fields such as `ts`, `level`, `event`, and `detail`. Events
+include `run_start`, `run_end`, `run_crashed`, provider/tool diagnostics, and
+budget or hook messages. The exact diagnostic stream is best-effort and is not
+used to reconstruct conversation history or state.
 
 ---
 

@@ -1,102 +1,42 @@
 # Providers
 
-## Structure
+## Rust modules
 
-```
-internal/provider/          # interface definition and shared types
-internal/client/
-  base/                     # base client: shared implementation of the provider interface
-  utils/                    # shared utilities (request building, error parsing, retries, etc.)
-  anthropic/                # Anthropic-specific implementation
-```
+The provider contract is defined in `src/provider/mod.rs`:
 
----
-
-## internal/provider
-
-Defines the `Provider` interface and all shared data types. This is the contract between the tool loop (`internal/loop`) and any provider client. Neither the loop nor the clients depend on each other — only on this package.
-
-```go
-type Provider interface {
-    Send(ctx context.Context, req Request) (Response, error)
-}
-
-type Request struct {
-    SystemPrompt string
-    Messages     []Message
-    Tools        []ToolDefinition
-}
-
-type Response struct {
-    Message   *Message    // set if model returned a text turn
-    ToolCalls []ToolCall  // set if model requested tool execution; may be multiple
-}
-
-type Message struct {
-    Role    string // "user" | "assistant"
-    Content string
-}
-
-type ToolDefinition struct {
-    Name        string
-    Description string
-    Parameters  any // JSON schema
-}
-
-type ToolCall struct {
-    CallID string
-    Name   string
-    Args   map[string]any
+```rust
+pub trait Provider: Send + Sync {
+    fn send(&self, system: String, messages: Vec<Message>)
+        -> Result<Response, ProviderError>;
+    fn send_streaming(&self, system: String, messages: Vec<Message>)
+        -> Result<Box<dyn Iterator<Item = Result<StreamEvent, ProviderError>>>, ProviderError>;
 }
 ```
 
-All types are provider-agnostic. Provider clients map to and from these types internally.
+`Response` contains optional message, reasoning, tool calls, token usage, and
+model fields. `StreamEvent` represents text, reasoning, tool-call deltas, and
+stream completion. The execution loop depends on this trait, not on a concrete
+provider client.
 
----
+## Client modules
 
-## internal/client/base
+- `src/client/base.rs` — shared HTTP client, response handling, and retry policy.
+- `src/client/resolve.rs` — connection and credential/environment resolution.
+- `src/client/anthropic/` — Anthropic request mapping and SSE handling.
+- `src/client/openai/` — OpenAI-compatible request mapping and SSE handling.
+- `src/client/codex.rs` and `src/client/codex_auth.rs` — OpenAI Codex OAuth
+  transport and token handling.
+- `src/client/sse/` — shared streaming parser and tool-call accumulation.
 
-Implements `Provider` against a normalised HTTP interface. Provider-specific clients embed `base.Client` and override only what differs — request serialisation, response parsing, auth.
-
-Responsibilities:
-- HTTP request lifecycle (send, read response, close body)
-- Context cancellation and timeout propagation
-- Calling into `internal/client/utils` for retries and error classification
-
-`base.Client` is not used directly — it is always embedded in a provider-specific client.
-
----
-
-## internal/client/utils
-
-Shared utilities used across provider clients. Contains no provider-specific logic.
-
-- Retry logic with exponential backoff
-- HTTP error classification (rate limit, auth failure, transient)
-- Request/response logging hooks
-- `env.` key resolution (reads API key from environment)
-
----
-
-## Provider clients
-
-Each provider client lives in its own package and has one responsibility: translate between the orchid-internal types from `internal/provider` and the wire format of that specific provider's API.
-
-### internal/client/anthropic
-
-- Embeds `base.Client`
-- Maps `Request` → Anthropic Messages API request shape
-- Maps Anthropic response → `Response`
-- Handles Anthropic-specific fields: `anthropic-version` header, `input_schema` tool format, `stop_reason` classification
-
----
+Provider-specific wire types and mapping stay in each provider module. The
+shared `BaseClient` handles common HTTP concerns; clients implement the
+`Provider` trait directly.
 
 ## Client selection
 
-At run time, orchid resolves the selected policy's ordered Connection resources and instantiates the first usable client:
-
-| `provider` value | Client instantiated |
-|-----------------|-------------------|
-| `anthropic` | `internal/client/anthropic` |
-
-The instantiated client is passed to the run loop as a `Provider`. The loop has no knowledge of which provider is in use. See [NEW_CONFIG.md](NEW_CONFIG.md) for resource configuration and [execution.md](execution.md) for how the loop consumes the provider.
+`src/client/mod.rs` creates an `Arc<dyn Provider>` from the ordered Connection
+resources resolved from a Policy. Supported interfaces are `anthropic` and
+`openai`; an `openai` connection using `openai_codex_oauth` selects the Codex
+client. Candidates are tried in order until one can be created. See
+[NEW_CONFIG.md](NEW_CONFIG.md) for resource configuration and
+[execution.md](execution.md) for loop behavior.

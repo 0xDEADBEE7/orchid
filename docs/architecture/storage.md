@@ -27,19 +27,28 @@ conversation paths.
 
 - `config.json` — default policy selection. See [config.md](config.md).
 - `connections/` — callable inference endpoints.
-- `policies/` — routing, prompts, permissions, and limits.
+- `policies/` — ordered connection candidates, prompts, permissions, and limits.
 - `prompts/` — reusable Markdown documents.
 - `sessions/` — durable work and execution state.
 
 ## Session files
 
-- `conversation.jsonl` — append-only chronological events.
-- `metadata.json` — identity and resource references.
-- `state.json` — mutable status and execution state.
-- `orchid.log` — diagnostics separate from conversation history.
+The persisted session consists of three JSON files plus a diagnostic log:
 
-A local configuration directory allows development without interrupting another
-installation:
+- `conversation.jsonl` is the append-only transcript of typed message,
+  tool-call, tool-result, and reasoning events. It is read to reconstruct
+  provider history.
+- `metadata.json` contains session identity and configuration references such
+  as policy, prompt, label, and working directory.
+- `state.json` contains mutable execution state: status, PID, run timestamps,
+  last message, token estimate, and restrictions.
+- `orchid.log` is best-effort newline-delimited JSON diagnostics; it is not the
+  conversation transcript or a state store.
+
+Metadata and state writes use temporary files followed by rename. The
+transcript is appended directly, and diagnostic logging is best-effort.
+
+To validate the selected resource tree:
 
 ```bash
 orchid --config ./config validate

@@ -96,14 +96,14 @@ A Connection represents a complete inference endpoint.
 
 It encapsulates everything required for Orchid to communicate with a language model regardless of provider.
 
-Examples include:
+Supported connection interfaces currently include:
 
-* OpenAI
-* Anthropic
-* LM Studio
-* Ollama
-* MLX
-* Azure OpenAI
+* OpenAI-compatible APIs (`openai`)
+* Anthropic Messages API (`anthropic`)
+
+An `openai` connection referencing an authentication profile whose
+`type` is `"openai_codex_oauth"` selects the Codex OAuth client. Other
+interfaces are rejected during provider creation.
 
 A connection contains:
 
@@ -148,72 +148,27 @@ Directory:
 policies/
 ```
 
-Policies define how Orchid executes a session.
-
-This includes:
-
-* available model connections
-* model routing behaviour
-* permission model
-* execution limits
-* lifecycle rules
-
-Example:
+A policy contains an ordered list of connection resource names, an optional
+prompt, permissions, token limits, and environment values. The first usable
+connection in that ordered list is selected; there is no separate `routing`
+object in the current policy schema.
 
 ```json
 {
-    "name": "default",
-
-    "connections": [
-        "local-fast",
-        "cloud-smart",
-        "cloud-premium"
-    ],
-
+    "connections": ["local-fast", "cloud-smart"],
+    "prompt": "engineering",
     "permissions": {
-
-        "filesystem": true,
-
-        "paths": [
-            "/tmp/**"
-        ],
-
-        "tools": [
-            "bash",
-            "fs_read",
-            "fs_edit"
-        ]
+        "tools": ["bash", "fs_read", "fs_edit"],
+        "paths": ["/tmp/**"]
     },
-
-    "routing": {
-        ...
-    },
-
     "limits": {
-        ...
+        "token_warn_threshold": 80000,
+        "token_hard_limit": 120000
     }
 }
 ```
 
-Policies intentionally describe behaviour rather than implementation.
-
-Initially routing behaviour may consist of a simple ordered list of preferred connections.
-
-Future revisions may support richer execution behaviour including:
-
-* model escalation
-* de-escalation
-* latency-aware routing
-* cost-aware routing
-* capability-aware routing
-* verification models
-* execution limits
-* automatic session termination
-* specialised execution strategies
-
-Policies are immutable definitions.
-
-They are never modified by sessions.
+Policies are immutable definitions. They are not modified by sessions.
 
 ---
 
@@ -400,31 +355,9 @@ Changing the global default policy does not affect existing sessions.
 
 # Routing Resolution
 
-Connections are **not persisted** as part of session state.
-
-Instead, the active connection is always derived.
-
-For every inference request, Orchid evaluates the current session against the active policy to determine which connection should service the request.
-
-Conceptually:
-
-```text
-Session
-      +
-Policy
-      │
-      ▼
-Policy Evaluation
-      │
-      ▼
-Active Connection
-```
-
-This ensures routing decisions remain deterministic and reproducible.
-
-Rather than storing routing decisions, Orchid stores only the facts required to derive them.
-
-This eliminates duplicate sources of truth and allows routing behaviour to evolve without requiring session migration.
+For each run, Orchid resolves the policy's ordered connection candidates and
+creates the first usable provider. The selected provider is used for that run;
+connection candidates are not copied into session state.
 
 ---
 
