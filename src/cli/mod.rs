@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+mod options;
+
 pub mod output;
 pub use output::{print_error, print_json};
 
@@ -66,6 +68,8 @@ pub enum AuthSubcommand {
 }
 
 pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<String>>), String> {
+    let (filtered_args, global_flags) = options::extract(args);
+    let args = filtered_args.as_slice();
     // Handle empty args: default to help
     if args.is_empty() {
         return Ok((Command::Help(None), BTreeMap::new()));
@@ -377,6 +381,9 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         _ => return Err(format!("unknown command: {}", cmd_name)),
     };
 
+    for (key, value) in global_flags {
+        flags.insert(key, value);
+    }
     Ok((cmd, flags))
 }
 
