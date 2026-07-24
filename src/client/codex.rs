@@ -2,7 +2,10 @@
 //! This is deliberately separate from the public OpenAI API client.
 use crate::config::ConfigDir;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use serde::{Deserialize, Serialize};
+
+#[path = "codex_auth.rs"]
+mod codex_auth;
+pub use codex_auth::{access_token, load, save, validate_token, CodexTokens};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -14,19 +17,6 @@ const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const CODEX_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
 const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexTokens {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_at: i64,
-    pub account_id: String,
-}
-
-fn token_path(dir: &ConfigDir, name: &str) -> std::path::PathBuf {
-    dir.auth_path()
-        .join("tokens")
-        .join(format!("{}.json", name))
-}
 fn b64url(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
@@ -176,74 +166,11 @@ fn parse_codex_output(
         model: Some(model.to_string()),
     })
 }
-fn save(dir: &ConfigDir, name: &str, tokens: &CodexTokens) -> Result<(), String> {
-    let p = token_path(dir, name);
-    std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&p, serde_json::to_vec(tokens).unwrap()).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-fn load(dir: &ConfigDir, name: &str) -> Result<CodexTokens, String> {
-    let p = token_path(dir, name);
-    serde_json::from_slice(
-        &std::fs::read(&p).map_err(|_| format!("Codex OAuth login required for {}", name))?,
-    )
-    .map_err(|_| "invalid Codex OAuth token file".into())
-}
-
-pub fn access_token(dir: &ConfigDir, name: &str) -> Result<CodexTokens, String> {
-    let mut tokens = load(dir, name)?;
-    if tokens.expires_at > chrono::Utc::now().timestamp() + 60 {
-        return Ok(tokens);
-    }
-    let client_id =
-        std::env::var("ORCHID_CODEX_CLIENT_ID").unwrap_or_else(|_| DEFAULT_CLIENT_ID.into());
-    let response = reqwest::blocking::Client::new()
-        .post(TOKEN_URL)
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", tokens.refresh_token.as_str()),
-            ("client_id", client_id.as_str()),
-        ])
-        .send()
-        .map_err(|e| format!("Codex OAuth refresh failed: {}", e))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Codex OAuth refresh failed (HTTP {})",
-            response.status()
-        ));
-    }
-    let v: serde_json::Value = response
-        .json()
-        .map_err(|_| "invalid OAuth refresh response")?;
-    tokens.access_token = v["access_token"]
-        .as_str()
-        .ok_or("OAuth refresh response missing access token")?
-        .into();
-    if let Some(r) = v["refresh_token"].as_str() {
-        tokens.refresh_token = r.into();
-    }
-    tokens.expires_at = chrono::Utc::now().timestamp() + v["expires_in"].as_i64().unwrap_or(3600);
-    save(dir, name, &tokens)?;
-    Ok(tokens)
-}
 
 pub fn model_allowed(model: &str) -> bool {
     matches!(
         model,
         "gpt-5" | "gpt-5-codex" | "codex-mini-latest" | "gpt-5.6-luna"
-    )
-}
-
-pub fn validate_token(dir: &ConfigDir, name: &str) -> Result<serde_json::Value, String> {
-    let t = load(dir, name)?;
-    Ok(
-        serde_json::json!({"status":"ok","type":"openai_codex_oauth","credential_present":!t.access_token.is_empty()}),
     )
 }
 
@@ -443,9 +370,48 @@ impl CodexClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{codex_input_items, parse_codex_output, responses_content_type};
+    use super::{
+        codex_input_items, load, parse_codex_output, responses_content_type, save, validate_token,
+        CodexTokens,
+    };
+    use crate::config::ConfigDir;
     use crate::types::{Message, ToolCall, ToolResult};
     use serde_json::json;
+
+    #[test]
+    fn codex_auth_preserves_token_file_round_trip_and_validation() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = ConfigDir::new(temp.path());
+        let tokens = CodexTokens {
+            access_token: "access".into(),
+            refresh_token: "refresh".into(),
+            expires_at: chrono::Utc::now().timestamp() + 3600,
+            account_id: "account".into(),
+        };
+        save(&dir, "profile", &tokens).unwrap();
+        assert_eq!(load(&dir, "profile").unwrap().access_token, "access");
+        assert_eq!(
+            validate_token(&dir, "profile").unwrap()["credential_present"],
+            true
+        );
+    }
+
+    #[test]
+    fn codex_auth_reports_missing_and_malformed_token_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = ConfigDir::new(temp.path());
+        assert_eq!(
+            load(&dir, "missing").unwrap_err(),
+            "Codex OAuth login required for missing"
+        );
+        let path = temp.path().join("auth/tokens/bad.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"not-json").unwrap();
+        assert_eq!(
+            load(&dir, "bad").unwrap_err(),
+            "invalid Codex OAuth token file"
+        );
+    }
 
     #[test]
     fn codex_responses_use_role_appropriate_content_types() {
