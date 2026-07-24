@@ -5,6 +5,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
 #[path = "codex_auth.rs"]
 mod codex_auth;
+#[path = "codex_wire.rs"]
+mod codex_wire;
 pub use codex_auth::{access_token, load, save, validate_token, CodexTokens};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -30,15 +32,15 @@ fn random_hex(n: usize) -> String {
     hex::encode(b)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn responses_content_type(role: &str) -> &'static str {
-    if role == "assistant" {
-        "output_text"
-    } else {
-        "input_text"
-    }
+    codex_wire::responses_content_type(role)
 }
 
-mod codex_wire {
+#[cfg(test)]
+#[allow(dead_code)]
+mod codex_wire_legacy {
     pub(super) fn tool_definitions() -> Vec<serde_json::Value> {
         crate::tools::tool_definitions()
             .into_iter()
@@ -59,41 +61,12 @@ fn codex_tool_definitions() -> Vec<serde_json::Value> {
 }
 
 fn codex_input_items(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
-    messages
-        .iter()
-        .flat_map(|message| {
-            if let Some(calls) = &message.tool_calls {
-                return calls
-                    .iter()
-                    .map(|call| {
-                        serde_json::json!({
-                            "type": "function_call",
-                            "call_id": call.id,
-                            "name": call.name,
-                            "arguments": call.input.to_string()
-                        })
-                    })
-                    .collect::<Vec<_>>();
-            }
-            if let Some(result) = &message.tool_result {
-                return vec![serde_json::json!({
-                    "type": "function_call_output",
-                    "call_id": result.call_id,
-                    "output": result.content.to_string()
-                })];
-            }
-            vec![serde_json::json!({
-                "role": message.role,
-                "content": [{
-                    "type": responses_content_type(&message.role),
-                    "text": message.content
-                }]
-            })]
-        })
-        .collect()
+    codex_wire::input_items(messages)
 }
 
-fn parse_codex_output(
+#[cfg(test)]
+#[allow(dead_code)]
+fn parse_codex_output_legacy(
     raw: &str,
     model: &str,
 ) -> Result<crate::provider::Response, crate::provider::ProviderError> {
@@ -173,6 +146,15 @@ fn parse_codex_output(
     })
 }
 
+#[cfg(test)]
+#[cfg(test)]
+#[allow(dead_code)]
+fn parse_codex_output(
+    raw: &str,
+    model: &str,
+) -> Result<crate::provider::Response, crate::provider::ProviderError> {
+    codex_wire::parse_output(raw, model)
+}
 pub fn model_allowed(model: &str) -> bool {
     matches!(
         model,
@@ -370,16 +352,17 @@ impl CodexClient {
         let raw = response.text().map_err(|e| {
             crate::provider::ProviderError::Network(format!("Codex response read failed: {}", e))
         })?;
-        parse_codex_output(&raw, &self.connection.model)
+        codex_wire::parse_output(&raw, &self.connection.model)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        codex_input_items, load, parse_codex_output, responses_content_type, save, validate_token,
-        CodexTokens,
+    use super::codex_wire::{
+        input_items as codex_input_items, parse_output as parse_codex_output,
+        responses_content_type,
     };
+    use super::{load, save, validate_token, CodexTokens};
     use crate::config::ConfigDir;
     use crate::types::{Message, ToolCall, ToolResult};
     use serde_json::json;
