@@ -1,8 +1,42 @@
+use crate::config::{HookConfiguration, HookEvent, HookPayload, HookStatus};
+use crate::hooks::HookRunner;
+use crate::log::DiagLogger;
 use crate::session::{SessionStore, SessionUpdate};
 use crate::types::Status;
 use chrono::Utc;
 use std::path::Path;
 use std::process;
+
+pub fn hook_payload(
+    event: HookEvent,
+    session_id: &str,
+    status: HookStatus,
+    working_dir: &Path,
+    config_dir: &Path,
+    session_dir: &Path,
+    error: Option<String>,
+    reason: Option<String>,
+) -> HookPayload {
+    HookPayload {
+        event,
+        session_id: session_id.to_string(),
+        timestamp: Utc::now(),
+        status,
+        working_dir: absolute_path(working_dir),
+        config_dir: absolute_path(config_dir),
+        session_dir: absolute_path(session_dir),
+        error,
+        reason,
+    }
+}
+
+pub fn run_hook(hooks: &HookConfiguration, event: HookEvent, payload: HookPayload, logger: &DiagLogger) {
+    let _ = HookRunner::default().run(hooks, event, &payload, logger);
+}
+
+fn absolute_path(path: &Path) -> std::path::PathBuf {
+    if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) }
+}
 
 pub fn on_run_start(session_id: &str, config_dir: &Path) -> Result<(), String> {
     let store = SessionStore::with_config_dir(config_dir)?;
@@ -26,7 +60,7 @@ pub fn on_run_failed(session_id: &str, config_dir: &Path) -> Result<(), String> 
     on_run_end_with_status(session_id, Status::Failed, config_dir)
 }
 
-fn on_run_end_with_status(
+pub fn on_run_end_with_status(
     session_id: &str,
     status: Status,
     config_dir: &Path,

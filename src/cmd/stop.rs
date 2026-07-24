@@ -33,18 +33,13 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
             use nix::unistd::Pid;
 
             let pid = Pid::from_raw(pid as i32);
-            let sig = if force {
-                Signal::SIGKILL
-            } else {
-                Signal::SIGTERM
-            };
+            let sig = if force { Signal::SIGKILL } else { Signal::SIGTERM };
             match signal::kill(pid, Some(sig)) {
                 Ok(()) => {}
                 Err(nix::Error::ESRCH) => {}
                 Err(e) => return Err(format!("failed to send signal: {}", e)),
             }
         }
-
         #[cfg(not(unix))]
         let _ = pid;
     }
@@ -56,7 +51,7 @@ fn stop_impl(id: &str, force: bool, config_dir: &Path) -> Result<serde_json::Val
 
     store.update(
         &session_id,
-        crate::session::SessionUpdate {
+        crate::SessionUpdate {
             status: Some(Status::Cancelled),
             pid: Some(None),
             run_started_at: Some(None),

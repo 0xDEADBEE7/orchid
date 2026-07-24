@@ -6,12 +6,14 @@ of progress; implementation details belong in the linked phase documents.
 ## Delegation log
 
 - **Phase 1 — contract and configuration:** completed; typed hook contract, root integration, validation, effective configuration snapshot, and focused tests committed.
+- **Phase 2 — hook runner:** completed; direct sequential execution, JSON/environment context, timeout/output limits, diagnostics, continuation, and process tests committed.
+- **Phase 3 — lifecycle integration:** completed; lifecycle start/stop integration, crash reconciliation hooks, exactly-once guard cleanup, and failure-preserving behavior implemented and tested.
 
 ## Delivery checklist
 
 - [x] **Phase 1 — contract and configuration**: define hook types, schema, and effective configuration resolution. See [phases.md](phases.md) and [schema.md](schema.md).
 - [x] **Phase 2 — hook runner**: execute scripts with JSON stdin, working-directory support, limits, and diagnostics. See [execution.md](execution.md).
-- [ ] **Phase 3 — lifecycle integration**: wire `turn-start` and exactly-once `turn-stop` into all terminal paths. See [execution.md](execution.md).
+- [x] **Phase 3 — lifecycle integration**: wire `turn-start` and exactly-once `turn-stop` into all terminal paths. See [execution.md](execution.md).
 - [ ] **Phase 4 — CLI and documentation**: validate, display, and document hook configuration and behavior. See [cli.md](cli.md).
 - [ ] **Phase 5 — testing and hardening**: complete automated coverage, security review, and regression verification. See [testing.md](testing.md) and [phases.md](phases.md).
 
@@ -42,17 +44,17 @@ of progress; implementation details belong in the linked phase documents.
 
 ## Phase 3 — lifecycle integration
 
-- [ ] Invoke `turn-start` after configuration resolution, crash reconciliation, state transition, and logger setup.
-- [ ] Ensure `turn-start` runs before the first provider request.
-- [ ] Centralize terminal cleanup so `turn-stop` has one owner.
-- [ ] Track whether `turn-stop` has already fired.
-- [ ] Invoke `turn-stop` on successful completion.
-- [ ] Invoke `turn-stop` on provider and tool-loop failures.
-- [ ] Invoke `turn-stop` on token-budget termination.
-- [ ] Invoke `turn-stop` on cancellation.
-- [ ] Extend `RunGuard` for best-effort unexpected-exit handling.
-- [ ] Prevent hook failures from replacing the original run result.
-- [ ] Add exactly-once lifecycle tests.
+- [x] Invoke `turn-start` after configuration resolution, crash reconciliation, state transition, and logger setup.
+- [x] Ensure `turn-start` runs before the first provider request.
+- [x] Centralize terminal cleanup so `turn-stop` has one owner.
+- [x] Track whether `turn-stop` has already fired.
+- [x] Invoke `turn-stop` on successful completion.
+- [x] Invoke `turn-stop` on provider and tool-loop failures.
+- [x] Invoke `turn-stop` on token-budget termination.
+- [x] Invoke `turn-stop` on cancellation.
+- [x] Extend `RunGuard` for best-effort unexpected-exit handling.
+- [x] Prevent hook failures from replacing the original run result.
+- [x] Add exactly-once lifecycle tests.
 
 ## Phase 4 — CLI and documentation
 
