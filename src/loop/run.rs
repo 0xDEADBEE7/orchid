@@ -147,6 +147,51 @@ pub fn build_context(
     })
 }
 
+enum LoopOutcome {
+    ContinueWithTools(crate::provider::Response),
+    Complete(crate::provider::Response),
+    Empty,
+    Failed(String),
+}
+
+fn provider_turn(
+    ctx: &LoopContext,
+    provider: &dyn Provider,
+    messages: Vec<crate::types::Message>,
+) -> LoopOutcome {
+    ctx.log
+        .info("provider_send", &format!("messages={}", messages.len()));
+    let mut stream_state = StreamState::create(&ctx.session_dir);
+    let event_iter = match provider.send_streaming(ctx.prompt.clone(), messages) {
+        Ok(events) => events,
+        Err(e) => {
+            ctx.log.error("provider_error", &e.to_string());
+            return LoopOutcome::Failed(format!("provider error: {}", e));
+        }
+    };
+    for event in event_iter {
+        match event {
+            Err(e) => {
+                ctx.log.error("stream_error", &e.to_string());
+                return LoopOutcome::Failed(format!("provider error: {}", e));
+            }
+            Ok(StreamEvent::TextDelta(_))
+            | Ok(StreamEvent::ToolCallDelta { .. })
+            | Ok(StreamEvent::ReasoningDelta(_)) => stream_state.tick(),
+            Ok(StreamEvent::Complete(response)) => {
+                return if response.tool_calls.is_some() {
+                    LoopOutcome::ContinueWithTools(response)
+                } else if response.message.is_some() {
+                    LoopOutcome::Complete(response)
+                } else {
+                    LoopOutcome::Empty
+                };
+            }
+        }
+    }
+    LoopOutcome::Failed("stream ended without a Complete event".to_string())
+}
+
 /// Execute the main session loop.
 pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), String> {
     let mut guard = RunGuard::with_hooks(
@@ -195,37 +240,16 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
             ));
         }
 
-        ctx.log
-            .info("provider_send", &format!("messages={}", messages.len()));
-
-        let mut stream_state = StreamState::create(&ctx.session_dir);
-        let response = {
-            let event_iter = provider
-                .send_streaming(ctx.prompt.clone(), messages)
-                .map_err(|e| {
-                    ctx.log.error("provider_error", &e.to_string());
-                    format!("provider error: {}", e)
-                })?;
-
-            let mut result = None;
-            for event in event_iter {
-                match event {
-                    Err(e) => {
-                        ctx.log.error("stream_error", &e.to_string());
-                        return Err(format!("provider error: {}", e));
-                    }
-                    Ok(StreamEvent::TextDelta(_))
-                    | Ok(StreamEvent::ToolCallDelta { .. })
-                    | Ok(StreamEvent::ReasoningDelta(_)) => {
-                        stream_state.tick();
-                    }
-                    Ok(StreamEvent::Complete(resp)) => {
-                        result = Some(resp);
-                        break;
-                    }
-                }
-            }
-            result.ok_or_else(|| "stream ended without a Complete event".to_string())?
+        let response = match provider_turn(ctx, provider, messages) {
+            LoopOutcome::ContinueWithTools(response) | LoopOutcome::Complete(response) => response,
+            LoopOutcome::Empty => crate::provider::Response {
+                message: None,
+                reasoning: None,
+                tool_calls: None,
+                usage: None,
+                model: None,
+            },
+            LoopOutcome::Failed(error) => return Err(error),
         };
 
         if let Some(ref u) = response.usage {
