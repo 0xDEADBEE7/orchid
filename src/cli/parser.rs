@@ -152,6 +152,29 @@ fn tokenize_flags(rest: &[String]) -> (BTreeMap<String, Option<String>>, Vec<Str
     (flags, positional)
 }
 
+fn dispatch_command(
+    cmd_name: &str,
+    flags: &mut BTreeMap<String, Option<String>>,
+    positional: Vec<String>,
+    rest: &[String],
+) -> Result<Command, String> {
+    match cmd_name {
+        "list" => list::parse(&positional),
+        "create" => Ok(create::parse(flags)),
+        "config" => config::parse_command(cmd_name, &positional),
+        "auth" => auth::parse(&positional, rest),
+        "send" => send::parse(flags, &positional),
+        "get" => get::parse(flags, &positional),
+        "await" => await_command::parse(flags, positional),
+        "set" => set::parse(flags),
+        "delete" => delete::parse(&positional),
+        "stop" | "kill" => lifecycle::parse(&positional, cmd_name),
+        "__run" => internal_run::parse(&positional),
+        "validate" => config::parse_command(cmd_name, &positional),
+        _ => Err(format!("unknown command: {}", cmd_name)),
+    }
+}
+
 pub(crate) fn parse(
     filtered_args: &[String],
     global_flags: BTreeMap<String, Option<String>>,
@@ -169,21 +192,7 @@ pub(crate) fn parse(
         return Ok((command, flags));
     }
 
-    let cmd = match cmd_name.as_str() {
-        "list" => list::parse(&positional)?,
-        "create" => create::parse(&mut flags),
-        "config" => config::parse_command(&cmd_name, &positional)?,
-        "auth" => auth::parse(&positional, rest)?,
-        "send" => send::parse(&mut flags, &positional)?,
-        "get" => get::parse(&mut flags, &positional)?,
-        "await" => await_command::parse(&mut flags, positional)?,
-        "set" => set::parse(&mut flags)?,
-        "delete" => delete::parse(&positional)?,
-        "stop" | "kill" => lifecycle::parse(&positional, &cmd_name)?,
-        "__run" => internal_run::parse(&positional)?,
-        "validate" => config::parse_command(&cmd_name, &positional)?,
-        _ => return Err(format!("unknown command: {}", cmd_name)),
-    };
+    let cmd = dispatch_command(&cmd_name, &mut flags, positional, rest)?;
 
     for (key, value) in global_flags {
         flags.insert(key, value);
