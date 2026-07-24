@@ -17,6 +17,7 @@ pub struct EffectiveSessionConfig {
     pub permissions: super::Permissions,
     pub limits: super::PolicyLimits,
     pub env_vars: HashMap<String, String>,
+    pub hooks: super::HookConfiguration,
 }
 
 pub fn resolve(
@@ -53,7 +54,9 @@ pub fn resolve_with_prompt(
         connection_candidates.push(conn);
     }
 
-    let prompt_name = prompt_override.or(policy.prompt.as_deref()).map(str::to_string);
+    let prompt_name = prompt_override
+        .or(policy.prompt.as_deref())
+        .map(str::to_string);
     let prompt = if let Some(prompt_name) = &prompt_name {
         config_dir
             .load_prompt(prompt_name)
@@ -77,6 +80,15 @@ pub fn resolve_with_prompt(
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
 
+    let hooks = root
+        .hooks
+        .clone()
+        .unwrap_or_else(|| super::HookConfiguration {
+            turn_start: Vec::new(),
+            turn_stop: Vec::new(),
+        });
+    hooks.validate()?;
+
     Ok(EffectiveSessionConfig {
         policy_name,
         policy_hash,
@@ -87,6 +99,7 @@ pub fn resolve_with_prompt(
         permissions: policy.permissions,
         limits: policy.limits,
         env_vars,
+        hooks,
     })
 }
 

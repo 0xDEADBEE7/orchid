@@ -16,6 +16,7 @@ pub fn config_use(config_dir: &Path, policy: &str) -> Result<serde_json::Value, 
     let temporary = root.with_extension("json.tmp");
     let contents = serde_json::to_vec_pretty(&crate::RootConfig {
         policy: policy.to_string(),
+        hooks: None,
     })
     .map_err(|e| format!("failed to serialize root config: {}", e))?;
     std::fs::write(&temporary, contents)
@@ -43,6 +44,14 @@ pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Valu
             &std::fs::read_to_string(root.root_path()).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string()),
+        "hooks" => {
+            let value = root.load_root().map_err(|e| e.to_string())?;
+            let hooks = value.hooks.unwrap_or(crate::HookConfiguration {
+                turn_start: Vec::new(),
+                turn_stop: Vec::new(),
+            });
+            serde_json::to_value(hooks).map_err(|e| e.to_string())
+        }
         name if name.starts_with("connection/") => {
             let value = root
                 .load_connection(&name[11..])
@@ -66,7 +75,7 @@ pub fn config_show(config_dir: &Path, resource: &str) -> Result<serde_json::Valu
             Ok(json!({"name": &name[5..], "type": value.kind, "value": value.value}))
         }
         _ => Err(
-            "resource must be root, connection/<name>, policy/<name>, prompt/<name>, or auth/<name>".to_string(),
+            "resource must be root, hooks, connection/<name>, policy/<name>, prompt/<name>, or auth/<name>".to_string(),
         ),
     }
 }

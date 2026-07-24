@@ -7,7 +7,7 @@ use crate::r#loop::stream::StreamState;
 use crate::r#loop::{events, history};
 use crate::session::get_session_dir_from_config;
 use crate::tools;
-use crate::types::{TokenBudget, ToolResult};
+use crate::types::{Status, TokenBudget, ToolResult};
 use globset::GlobSet;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,7 @@ pub struct LoopContext {
     pub log: DiagLogger,
     pub config_dir: PathBuf,
     pub working_dir: String,
+    pub hooks: crate::config::HookConfiguration,
     pub permissions: crate::config::Permissions,
     pub limits: crate::config::PolicyLimits,
     pub prompt: String,
@@ -65,6 +66,21 @@ pub fn build_context(
             &format!("pid={} stale — reconciling", stale_pid),
         );
         lifecycle::reconcile_crashed(session_id, config_dir)?;
+        lifecycle::run_hook(
+            &effective.hooks,
+            crate::config::HookEvent::TurnStop,
+            lifecycle::hook_payload(
+                crate::config::HookEvent::TurnStop,
+                session_id,
+                crate::config::HookStatus::Failed,
+                &effective.working_dir,
+                config_dir,
+                &session_dir,
+                Some("previous run was detected as crashed".into()),
+                Some("crash reconciliation".into()),
+            ),
+            &log,
+        );
     }
 
     log.info("run_start", session_id);
@@ -81,6 +97,22 @@ pub fn build_context(
     );
 
     lifecycle::on_run_start(session_id, config_dir)?;
+
+    lifecycle::run_hook(
+        &effective.hooks,
+        crate::config::HookEvent::TurnStart,
+        lifecycle::hook_payload(
+            crate::config::HookEvent::TurnStart,
+            session_id,
+            crate::config::HookStatus::Running,
+            &effective.working_dir,
+            config_dir,
+            &session_dir,
+            None,
+            None,
+        ),
+        &log,
+    );
 
     let working_dir = effective.working_dir.to_string_lossy().to_string();
 
@@ -104,6 +136,7 @@ pub fn build_context(
         log,
         config_dir: config_dir.to_path_buf(),
         working_dir,
+        hooks: effective.hooks.clone(),
         permissions,
         limits: effective.limits.clone(),
         prompt: effective.prompt.clone(),
@@ -116,7 +149,14 @@ pub fn build_context(
 
 /// Execute the main session loop.
 pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), String> {
-    let mut guard = RunGuard::new(&ctx.meta.id, &ctx.config_dir);
+    let mut guard = RunGuard::with_hooks(
+        &ctx.meta.id,
+        &ctx.config_dir,
+        Path::new(&ctx.working_dir),
+        &ctx.session_dir,
+        ctx.hooks.clone(),
+        &ctx.log,
+    );
     let mut last_warn_tokens: Option<u32> = None;
 
     loop {
@@ -143,8 +183,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 ..Default::default()
             };
             ctx.store.update(&ctx.meta.id, updates)?;
-            guard.disarm();
-            lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
+            guard.finish(Status::Failed, Some("token budget termination".into()), Some("budget termination".into()))?;
             ctx.log.info("run_end", "pre_send_budget_exceeded");
             return Err(format!(
                 "token hard limit would be exceeded before sending: {} estimated tokens",
@@ -216,8 +255,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 ..Default::default()
             };
             ctx.store.update(&ctx.meta.id, updates)?;
-            guard.disarm();
-            lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
+            guard.finish(Status::Failed, Some("token budget termination".into()), Some("budget termination".into()))?;
             ctx.log.info("run_end", "budget_exceeded");
             return Err(format!(
                 "token hard limit exceeded: {} tokens",
@@ -319,8 +357,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         }
     }
 
-    lifecycle::on_run_end(&ctx.meta.id, &ctx.config_dir)?;
-    guard.disarm();
+    guard.finish(Status::Idle, None, None)?;
     ctx.log.info("run_end", &ctx.meta.id);
     Ok(())
 }

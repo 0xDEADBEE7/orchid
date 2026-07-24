@@ -127,7 +127,9 @@ Manage the selected configuration directory.
 orchid --config ./config validate
 orchid --config ./config config path
 orchid --config ./config config current
+orchid --config ./config config show hooks
 ```
 
-`validate` checks the root config and every referenced Connection, Policy, and
-Prompt before a run. There is no profile or legacy configuration command.
+`validate` checks the root config, hook configuration, and every referenced
+Connection, Policy, and Prompt before a run. `config show hooks` displays the
+resolved hook arrays. There is no profile or legacy configuration command.

@@ -1,16 +1,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub mod resolve;
-pub mod directory;
 pub mod connection;
+pub mod directory;
 pub mod error;
+pub mod hooks;
 pub mod policy;
 pub mod prompt;
+pub mod resolve;
 pub mod root;
-pub use directory::ConfigDir;
 pub use connection::{AuthProfile, Connection};
+pub use directory::ConfigDir;
 pub use error::ResourceLoadError;
+pub use hooks::{HookConfiguration, HookEvent, HookPayload, HookStatus};
 pub use policy::{Permissions, Policy, PolicyLimits};
 pub use root::RootConfig;
 
@@ -163,6 +165,16 @@ impl ConfigDir {
     }
     pub fn validate(&self) -> Result<(), ResourceLoadError> {
         let root = self.load_root()?;
+        let hooks = root.hooks.clone().unwrap_or_else(|| HookConfiguration {
+            turn_start: Vec::new(),
+            turn_stop: Vec::new(),
+        });
+        hooks
+            .validate()
+            .map_err(|message| ResourceLoadError::Invalid {
+                path: self.root_path(),
+                message,
+            })?;
         self.load_policy(&root.policy).map(|_| ())
     }
 }
