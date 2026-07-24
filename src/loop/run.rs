@@ -303,12 +303,14 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 let content = match tools::execute_tool_with_permissions(
                     &tool_call.name,
                     tool_call.input.clone(),
-                    &ctx.working_dir,
-                    &ctx.env_vars,
-                    &ctx.global_scope_set,
-                    &ctx.session_scope_set,
-                    &ctx.permissions.tools,
-                    &ctx.permissions.paths,
+                    &tools::ToolContext {
+                        working_dir: &ctx.working_dir,
+                        env_vars: &ctx.env_vars,
+                        global_scope_set: &ctx.global_scope_set,
+                        session_scope_set: &ctx.session_scope_set,
+                        allowed_tools: &ctx.permissions.tools,
+                        allowed_paths: &ctx.permissions.paths,
+                    },
                 ) {
                     Ok(raw) => {
                         ctx.log

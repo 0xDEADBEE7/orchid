@@ -11,6 +11,15 @@ pub trait Tool: Send + Sync {
     fn execute(&self, args: Value, working_dir: &str) -> Result<String, String>;
 }
 
+pub struct ToolContext<'a> {
+    pub working_dir: &'a str,
+    pub env_vars: &'a HashMap<String, String>,
+    pub global_scope_set: &'a GlobSet,
+    pub session_scope_set: &'a GlobSet,
+    pub allowed_tools: &'a [String],
+    pub allowed_paths: &'a [String],
+}
+
 pub fn tool_definitions() -> Vec<Value> {
     vec![
         serde_json::json!({"name":"bash","description":"Run a shell command.","input_schema":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}),
@@ -30,51 +39,53 @@ pub fn execute_tool(
     execute_tool_with_permissions(
         name,
         input,
-        working_dir,
-        env_vars,
-        global_scope_set,
-        session_scope_set,
-        &[],
-        &[],
+        &ToolContext {
+            working_dir,
+            env_vars,
+            global_scope_set,
+            session_scope_set,
+            allowed_tools: &[],
+            allowed_paths: &[],
+        },
     )
 }
 
 pub fn execute_tool_with_permissions(
     name: &str,
     input: Value,
-    working_dir: &str,
-    env_vars: &HashMap<String, String>,
-    global_scope_set: &GlobSet,
-    session_scope_set: &GlobSet,
-    allowed_tools: &[String],
-    allowed_paths: &[String],
+    context: &ToolContext<'_>,
 ) -> Result<Value, String> {
-    if !allowed_tools.is_empty() && !allowed_tools.iter().any(|tool| tool == name || tool == "*") {
+    if !context.allowed_tools.is_empty()
+        && !context
+            .allowed_tools
+            .iter()
+            .any(|tool| tool == name || tool == "*")
+    {
         return Err(format!("tool denied by policy: {}", name));
     }
     match name {
         "bash" => bash::execute(
             input,
-            working_dir,
-            env_vars,
-            global_scope_set,
-            session_scope_set,
-            allowed_paths,
+            context.working_dir,
+            context.env_vars,
+            context.global_scope_set,
+            context.session_scope_set,
+            context.allowed_paths,
         )
         .map(Value::String),
         "fs_read" => fs_read::execute(
             input,
-            working_dir,
-            global_scope_set,
-            session_scope_set,
-            allowed_paths,
+            context.working_dir,
+            context.global_scope_set,
+            context.session_scope_set,
+            context.allowed_paths,
         ),
         "fs_edit" => fs_edit::execute(
             input,
-            working_dir,
-            global_scope_set,
-            session_scope_set,
-            allowed_paths,
+            context.working_dir,
+            context.global_scope_set,
+            context.session_scope_set,
+            context.allowed_paths,
         )
         .map(Value::String),
         _ => Err(format!("unknown tool: {}", name)),
@@ -103,12 +114,14 @@ mod tests {
         let error = execute_tool_with_permissions(
             "bash",
             serde_json::json!({"cmd":"printf denied"}),
-            ".",
-            &HashMap::new(),
-            &GlobSet::empty(),
-            &GlobSet::empty(),
-            &["fs_read".to_string()],
-            &[],
+            &ToolContext {
+                working_dir: ".",
+                env_vars: &HashMap::new(),
+                global_scope_set: &GlobSet::empty(),
+                session_scope_set: &GlobSet::empty(),
+                allowed_tools: &["fs_read".to_string()],
+                allowed_paths: &[],
+            },
         )
         .unwrap_err();
         assert_eq!(error, "tool denied by policy: bash");
@@ -119,12 +132,14 @@ mod tests {
         let result = execute_tool_with_permissions(
             "bash",
             serde_json::json!({"cmd":"printf %s \\\"$ORCHID_TOOL_TEST\\\""}),
-            ".",
-            &HashMap::from([("ORCHID_TOOL_TEST".to_string(), "runtime-secret".to_string())]),
-            &GlobSet::empty(),
-            &GlobSet::empty(),
-            &["bash".to_string()],
-            &[],
+            &ToolContext {
+                working_dir: ".",
+                env_vars: &HashMap::from([("ORCHID_TOOL_TEST".to_string(), "runtime-secret".to_string())]),
+                global_scope_set: &GlobSet::empty(),
+                session_scope_set: &GlobSet::empty(),
+                allowed_tools: &["bash".to_string()],
+                allowed_paths: &[],
+            },
         )
         .unwrap();
         assert_eq!(result, serde_json::json!("\"runtime-secret\""));
@@ -140,12 +155,14 @@ mod tests {
         let result = execute_tool_with_permissions(
             "fs_read",
             serde_json::json!({"paths":[denied.to_string_lossy()]}),
-            ".",
-            &HashMap::new(),
-            &GlobSet::empty(),
-            &GlobSet::empty(),
-            &["fs_read".to_string()],
-            &[allowed.to_string_lossy().to_string()],
+            &ToolContext {
+                working_dir: ".",
+                env_vars: &HashMap::new(),
+                global_scope_set: &GlobSet::empty(),
+                session_scope_set: &GlobSet::empty(),
+                allowed_tools: &["fs_read".to_string()],
+                allowed_paths: &[allowed.to_string_lossy().to_string()],
+            },
         );
         assert!(result.unwrap_err().contains("out of scope"));
     }
