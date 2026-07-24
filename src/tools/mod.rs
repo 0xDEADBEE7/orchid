@@ -134,7 +134,10 @@ mod tests {
             serde_json::json!({"cmd":"printf %s \\\"$ORCHID_TOOL_TEST\\\""}),
             &ToolContext {
                 working_dir: ".",
-                env_vars: &HashMap::from([("ORCHID_TOOL_TEST".to_string(), "runtime-secret".to_string())]),
+                env_vars: &HashMap::from([(
+                    "ORCHID_TOOL_TEST".to_string(),
+                    "runtime-secret".to_string(),
+                )]),
                 global_scope_set: &GlobSet::empty(),
                 session_scope_set: &GlobSet::empty(),
                 allowed_tools: &["bash".to_string()],

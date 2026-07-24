@@ -406,17 +406,12 @@ fn session_path_restrictions_cannot_expand_policy_paths() {
         tools: vec!["fs_read".into()],
         paths: vec!["/tmp/project".into()],
     };
-    let narrowed = orchid::config::resolve::intersect_permissions(
-        &policy,
-        Some(&["/tmp/project/src".into()]),
-    );
+    let narrowed =
+        orchid::config::resolve::intersect_permissions(&policy, Some(&["/tmp/project/src".into()]));
     assert_eq!(narrowed.tools, policy.tools);
     assert_eq!(narrowed.paths, vec!["/tmp/project/src"]);
 
-    let outside = orchid::config::resolve::intersect_permissions(
-        &policy,
-        Some(&["/etc".into()]),
-    );
+    let outside = orchid::config::resolve::intersect_permissions(&policy, Some(&["/etc".into()]));
     assert!(outside.paths.is_empty());
 }
 
@@ -426,10 +421,8 @@ fn session_restrictions_match_glob_policy_paths() {
         tools: vec!["fs_read".into()],
         paths: vec!["/tmp/**".into()],
     };
-    let narrowed = orchid::config::resolve::intersect_permissions(
-        &policy,
-        Some(&["/tmp/project/src".into()]),
-    );
+    let narrowed =
+        orchid::config::resolve::intersect_permissions(&policy, Some(&["/tmp/project/src".into()]));
     assert_eq!(narrowed.paths, vec!["/tmp/project/src"]);
 }
 

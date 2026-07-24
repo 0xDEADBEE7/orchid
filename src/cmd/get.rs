@@ -26,10 +26,16 @@ pub fn get(
         }
     }
     if metadata {
-        result.insert("metadata".to_string(), read_json(&store.metadata_path(id), "metadata")?);
+        result.insert(
+            "metadata".to_string(),
+            read_json(&store.metadata_path(id), "metadata")?,
+        );
     }
     if state {
-        result.insert("state".to_string(), read_json(&store.state_path(id), "state")?);
+        result.insert(
+            "state".to_string(),
+            read_json(&store.state_path(id), "state")?,
+        );
     }
     Ok(Value::Object(result))
 }
@@ -37,30 +43,44 @@ pub fn get(
 fn latest_assistant(events: &Value) -> Value {
     events
         .as_array()
-        .and_then(|events| events.iter().rev().find(|event| {
-            event["type"] == "message" && event["message"]["role"] == "assistant"
-        }))
+        .and_then(|events| {
+            events
+                .iter()
+                .rev()
+                .find(|event| event["type"] == "message" && event["message"]["role"] == "assistant")
+        })
         .cloned()
         .unwrap_or(Value::Null)
 }
 
 fn read_json(path: &Path, resource: &str) -> Result<Value, String> {
     let contents = fs::read_to_string(path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound { format!("session {} is missing", resource) }
-        else { format!("failed to read {}: {}", resource, e) }
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("session {} is missing", resource)
+        } else {
+            format!("failed to read {}: {}", resource, e)
+        }
     })?;
     serde_json::from_str(&contents).map_err(|e| format!("invalid {} JSON: {}", resource, e))
 }
 
 fn read_jsonl(path: &Path, resource: &str) -> Result<Value, String> {
     let contents = fs::read_to_string(path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound { format!("session {} is missing", resource) }
-        else { format!("failed to read {}: {}", resource, e) }
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("session {} is missing", resource)
+        } else {
+            format!("failed to read {}: {}", resource, e)
+        }
     })?;
     let mut events = Vec::new();
     for (line, text) in contents.lines().enumerate() {
-        if text.trim().is_empty() { continue; }
-        events.push(serde_json::from_str(text).map_err(|e| format!("invalid {} JSON on line {}: {}", resource, line + 1, e))?);
+        if text.trim().is_empty() {
+            continue;
+        }
+        events.push(
+            serde_json::from_str(text)
+                .map_err(|e| format!("invalid {} JSON on line {}: {}", resource, line + 1, e))?,
+        );
     }
     Ok(Value::Array(events))
 }

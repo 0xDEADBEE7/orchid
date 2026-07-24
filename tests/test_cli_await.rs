@@ -52,7 +52,10 @@ fn await_binary_reports_timeout_with_exit_code_two() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value, serde_json::json!({"completed": [], "timed_out": true}));
+    assert_eq!(
+        value,
+        serde_json::json!({"completed": [], "timed_out": true})
+    );
     assert_eq!(store.state(&session.id).unwrap().status, Status::Running);
 }
 
@@ -65,7 +68,10 @@ fn await_binary_reports_invalid_usage_as_json_error() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"], "command_error");
-    assert!(error["message"].as_str().unwrap().contains("invalid session ID"));
+    assert!(error["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid session ID"));
 }
 
 #[test]
@@ -83,8 +89,14 @@ fn await_binary_reports_missing_state_as_json_error_without_mutation() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"], "command_error");
-    assert!(error["message"].as_str().unwrap().contains("session state is missing"));
-    assert_eq!(std::fs::read(store.metadata_path(&session.id)).unwrap(), metadata_before);
+    assert!(error["message"]
+        .as_str()
+        .unwrap()
+        .contains("session state is missing"));
+    assert_eq!(
+        std::fs::read(store.metadata_path(&session.id)).unwrap(),
+        metadata_before
+    );
     assert!(!store.state_path(&session.id).exists());
 }
 
@@ -104,9 +116,18 @@ fn await_binary_reports_malformed_state_as_json_error_without_mutation() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"], "command_error");
-    assert!(error["message"].as_str().unwrap().contains("invalid state JSON"));
-    assert_eq!(std::fs::read(store.state_path(&session.id)).unwrap(), malformed);
-    assert_eq!(std::fs::read(store.metadata_path(&session.id)).unwrap(), metadata_before);
+    assert!(error["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid state JSON"));
+    assert_eq!(
+        std::fs::read(store.state_path(&session.id)).unwrap(),
+        malformed
+    );
+    assert_eq!(
+        std::fs::read(store.metadata_path(&session.id)).unwrap(),
+        metadata_before
+    );
 }
 
 #[cfg(unix)]
@@ -150,8 +171,14 @@ fn await_ctrl_c_does_not_cancel_session() {
     assert_eq!(output.status.code(), None);
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
-    assert_eq!(std::fs::read(store.state_path(&session.id)).unwrap(), state_before);
-    assert_eq!(std::fs::read(store.metadata_path(&session.id)).unwrap(), metadata_before);
+    assert_eq!(
+        std::fs::read(store.state_path(&session.id)).unwrap(),
+        state_before
+    );
+    assert_eq!(
+        std::fs::read(store.metadata_path(&session.id)).unwrap(),
+        metadata_before
+    );
 }
 #[test]
 #[serial_test::serial]
@@ -162,8 +189,18 @@ fn await_binary_accepts_config_before_and_after_command() {
     let binary = env!("CARGO_BIN_EXE_orchid");
 
     for args in [
-        vec!["--config", temp.path().to_str().unwrap(), "await", &session.id],
-        vec!["await", &session.id, "--config", temp.path().to_str().unwrap()],
+        vec![
+            "--config",
+            temp.path().to_str().unwrap(),
+            "await",
+            &session.id,
+        ],
+        vec![
+            "await",
+            &session.id,
+            "--config",
+            temp.path().to_str().unwrap(),
+        ],
     ] {
         let output = Command::new(binary).args(&args).output().unwrap();
         assert_eq!(output.status.code(), Some(0), "args={args:?}");

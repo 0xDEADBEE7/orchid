@@ -148,7 +148,9 @@ mod tests {
     fn missing_and_empty_hook_lists_are_valid() {
         let missing = serde_json::from_str::<HookConfiguration>("{}").unwrap();
         assert!(missing.turn_start.is_empty() && missing.turn_stop.is_empty());
-        let empty = serde_json::from_str::<HookConfiguration>(r#"{"turn-start":[],"turn-stop":[]}"#).unwrap();
+        let empty =
+            serde_json::from_str::<HookConfiguration>(r#"{"turn-start":[],"turn-stop":[]}"#)
+                .unwrap();
         assert_eq!(missing, empty);
     }
 }

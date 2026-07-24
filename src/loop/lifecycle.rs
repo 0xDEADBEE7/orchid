@@ -31,12 +31,21 @@ pub fn hook_payload(
     }
 }
 
-pub fn run_hook(hooks: &HookConfiguration, event: HookEvent, payload: HookPayload, logger: &DiagLogger) {
+pub fn run_hook(
+    hooks: &HookConfiguration,
+    event: HookEvent,
+    payload: HookPayload,
+    logger: &DiagLogger,
+) {
     let _ = HookRunner::default().run(hooks, event, &payload, logger);
 }
 
 fn absolute_path(path: &Path) -> std::path::PathBuf {
-    if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) }
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    }
 }
 
 pub fn on_run_start(session_id: &str, config_dir: &Path) -> Result<(), String> {

@@ -87,8 +87,8 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
         } else {
             // Check if the first positional is a known command.
             let known_commands = [
-                "help", "list", "create", "config", "send", "await", "get", "set", "delete", "stop",
-                "kill", "__run", "validate",
+                "help", "list", "create", "config", "send", "await", "get", "set", "delete",
+                "stop", "kill", "__run", "validate",
             ];
             if known_commands.contains(&rest[0].as_str()) {
                 // Known command: treat it as such.
@@ -304,7 +304,13 @@ pub fn parse_args(args: &[String]) -> Result<(Command, BTreeMap<String, Option<S
             if positional.len() > 1 {
                 return Err("get accepts exactly one session ID".to_string());
             }
-            Command::Get { id, conversation, last_message, metadata, state }
+            Command::Get {
+                id,
+                conversation,
+                last_message,
+                metadata,
+                state,
+            }
         }
         "await" => {
             if positional.is_empty() {

@@ -101,9 +101,14 @@ fn test_config_use_validates_then_atomically_updates_root() {
     .unwrap();
 
     config_use(dir.path(), "new").unwrap();
-    assert_eq!(fs::read_to_string(dir.path().join("config.json")).unwrap(), "{\n  \"policy\": \"new\"\n}");
+    assert_eq!(
+        fs::read_to_string(dir.path().join("config.json")).unwrap(),
+        "{\n  \"policy\": \"new\"\n}"
+    );
     assert!(config_use(dir.path(), "missing").is_err());
-    assert!(fs::read_to_string(dir.path().join("config.json")).unwrap().contains("new"));
+    assert!(fs::read_to_string(dir.path().join("config.json"))
+        .unwrap()
+        .contains("new"));
 }
 
 #[test]
@@ -131,7 +136,9 @@ fn test_config_show_redacts_connection_api_key() {
     let shown = config_show(dir.path(), "connection/local").unwrap();
     assert_eq!(shown["api_key"], "[REDACTED]");
     assert!(!shown.to_string().contains("literal-secret"));
-    assert!(fs::read_to_string(dir.path().join("connections/local.json"))
-        .unwrap()
-        .contains("literal-secret"));
+    assert!(
+        fs::read_to_string(dir.path().join("connections/local.json"))
+            .unwrap()
+            .contains("literal-secret")
+    );
 }

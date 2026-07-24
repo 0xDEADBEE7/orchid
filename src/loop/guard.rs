@@ -17,7 +17,17 @@ pub struct RunGuard<'a> {
 
 impl<'a> RunGuard<'a> {
     pub fn new(session_id: &str, config_dir: &Path) -> Self {
-        Self::with_hooks(session_id, config_dir, Path::new("."), Path::new("."), HookConfiguration { turn_start: Vec::new(), turn_stop: Vec::new() }, Box::leak(Box::new(DiagLogger::noop())))
+        Self::with_hooks(
+            session_id,
+            config_dir,
+            Path::new("."),
+            Path::new("."),
+            HookConfiguration {
+                turn_start: Vec::new(),
+                turn_stop: Vec::new(),
+            },
+            Box::leak(Box::new(DiagLogger::noop())),
+        )
     }
 
     pub fn with_hooks(
@@ -28,7 +38,15 @@ impl<'a> RunGuard<'a> {
         hooks: HookConfiguration,
         logger: &'a DiagLogger,
     ) -> Self {
-        Self { session_id: session_id.to_string(), config_dir: config_dir.to_path_buf(), working_dir: working_dir.to_path_buf(), session_dir: session_dir.to_path_buf(), hooks, logger, finished: false }
+        Self {
+            session_id: session_id.to_string(),
+            config_dir: config_dir.to_path_buf(),
+            working_dir: working_dir.to_path_buf(),
+            session_dir: session_dir.to_path_buf(),
+            hooks,
+            logger,
+            finished: false,
+        }
     }
     pub fn finish(
         &mut self,
@@ -36,15 +54,34 @@ impl<'a> RunGuard<'a> {
         error: Option<String>,
         reason: Option<String>,
     ) -> Result<(), String> {
-        if self.finished { return Ok(()); }
+        if self.finished {
+            return Ok(());
+        }
         self.finished = true;
         let state_result = match status {
             Status::Idle => lifecycle::on_run_end(&self.session_id, &self.config_dir),
-            Status::Cancelled => lifecycle::on_run_end_with_status(&self.session_id, Status::Cancelled, &self.config_dir),
+            Status::Cancelled => lifecycle::on_run_end_with_status(
+                &self.session_id,
+                Status::Cancelled,
+                &self.config_dir,
+            ),
             _ => lifecycle::on_run_failed(&self.session_id, &self.config_dir),
         };
-        let hook_status = match status { Status::Idle => HookStatus::Succeeded, Status::Cancelled => HookStatus::Cancelled, _ => HookStatus::Failed };
-        let payload = lifecycle::hook_payload(HookEvent::TurnStop, &self.session_id, hook_status, &self.working_dir, &self.config_dir, &self.session_dir, error, reason);
+        let hook_status = match status {
+            Status::Idle => HookStatus::Succeeded,
+            Status::Cancelled => HookStatus::Cancelled,
+            _ => HookStatus::Failed,
+        };
+        let payload = lifecycle::hook_payload(
+            HookEvent::TurnStop,
+            &self.session_id,
+            hook_status,
+            &self.working_dir,
+            &self.config_dir,
+            &self.session_dir,
+            error,
+            reason,
+        );
         let _ = HookRunner::default().run(&self.hooks, HookEvent::TurnStop, &payload, self.logger);
         state_result
     }
@@ -53,7 +90,11 @@ impl<'a> RunGuard<'a> {
 impl Drop for RunGuard<'_> {
     fn drop(&mut self) {
         if !self.finished {
-            let _ = self.finish(Status::Failed, Some("unexpected run exit".into()), Some("guard fallback".into()));
+            let _ = self.finish(
+                Status::Failed,
+                Some("unexpected run exit".into()),
+                Some("guard fallback".into()),
+            );
         }
     }
 }

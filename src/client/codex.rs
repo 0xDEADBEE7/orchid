@@ -63,33 +63,44 @@ fn codex_tool_definitions() -> Vec<serde_json::Value> {
 }
 
 fn codex_input_items(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
-    messages.iter().flat_map(|message| {
-        if let Some(calls) = &message.tool_calls {
-            return calls.iter().map(|call| serde_json::json!({
-                "type": "function_call",
-                "call_id": call.id,
-                "name": call.name,
-                "arguments": call.input.to_string()
-            })).collect::<Vec<_>>();
-        }
-        if let Some(result) = &message.tool_result {
-            return vec![serde_json::json!({
-                "type": "function_call_output",
-                "call_id": result.call_id,
-                "output": result.content.to_string()
-            })];
-        }
-        vec![serde_json::json!({
-            "role": message.role,
-            "content": [{
-                "type": responses_content_type(&message.role),
-                "text": message.content
-            }]
-        })]
-    }).collect()
+    messages
+        .iter()
+        .flat_map(|message| {
+            if let Some(calls) = &message.tool_calls {
+                return calls
+                    .iter()
+                    .map(|call| {
+                        serde_json::json!({
+                            "type": "function_call",
+                            "call_id": call.id,
+                            "name": call.name,
+                            "arguments": call.input.to_string()
+                        })
+                    })
+                    .collect::<Vec<_>>();
+            }
+            if let Some(result) = &message.tool_result {
+                return vec![serde_json::json!({
+                    "type": "function_call_output",
+                    "call_id": result.call_id,
+                    "output": result.content.to_string()
+                })];
+            }
+            vec![serde_json::json!({
+                "role": message.role,
+                "content": [{
+                    "type": responses_content_type(&message.role),
+                    "text": message.content
+                }]
+            })]
+        })
+        .collect()
 }
 
-fn parse_codex_output(raw: &str, model: &str) -> Result<crate::provider::Response, crate::provider::ProviderError> {
+fn parse_codex_output(
+    raw: &str,
+    model: &str,
+) -> Result<crate::provider::Response, crate::provider::ProviderError> {
     let values = if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
         vec![v]
     } else {
@@ -108,33 +119,62 @@ fn parse_codex_output(raw: &str, model: &str) -> Result<crate::provider::Respons
             items.push(item.clone());
         }
         for item in items {
-                if item["type"] == "function_call" {
-                    let Some(arguments) = item["arguments"].as_str() else { continue };
-                    let Ok(input) = serde_json::from_str(arguments) else { continue };
-                    tool_calls.push(crate::types::ToolCall {
-                        id: item["call_id"].as_str().or_else(|| item["id"].as_str()).unwrap_or_default().to_string(),
-                        name: item["name"].as_str().unwrap_or_default().to_string(),
-                        input,
-                    });
-                }
-                if let Some(t) = item["content"][0]["text"].as_str() { completed_text.push_str(t); }
+            if item["type"] == "function_call" {
+                let Some(arguments) = item["arguments"].as_str() else {
+                    continue;
+                };
+                let Ok(input) = serde_json::from_str(arguments) else {
+                    continue;
+                };
+                tool_calls.push(crate::types::ToolCall {
+                    id: item["call_id"]
+                        .as_str()
+                        .or_else(|| item["id"].as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    name: item["name"].as_str().unwrap_or_default().to_string(),
+                    input,
+                });
+            }
+            if let Some(t) = item["content"][0]["text"].as_str() {
+                completed_text.push_str(t);
+            }
         }
-        if value["type"].as_str().is_some_and(|kind| {
-            kind == "response.output_text.delta" || kind == "output_text.delta"
-        }) {
-            if let Some(t) = value["delta"].as_str() { delta_text.push_str(t); }
+        if value["type"]
+            .as_str()
+            .is_some_and(|kind| kind == "response.output_text.delta" || kind == "output_text.delta")
+        {
+            if let Some(t) = value["delta"].as_str() {
+                delta_text.push_str(t);
+            }
         }
-        if value["type"].as_str().is_none() || value["type"].as_str().is_some_and(|kind| {
-            kind == "response.completed" || kind == "response.output_text.done"
-        }) {
-            if let Some(t) = value["output_text"].as_str() { completed_text.push_str(t); }
+        if value["type"].as_str().is_none()
+            || value["type"].as_str().is_some_and(|kind| {
+                kind == "response.completed" || kind == "response.output_text.done"
+            })
+        {
+            if let Some(t) = value["output_text"].as_str() {
+                completed_text.push_str(t);
+            }
         }
     }
-    let text = if !delta_text.is_empty() { delta_text } else { completed_text };
+    let text = if !delta_text.is_empty() {
+        delta_text
+    } else {
+        completed_text
+    };
     if text.is_empty() && tool_calls.is_empty() {
-        return Err(crate::provider::ProviderError::InvalidResponse("Codex response contained no text output or tool call".into()));
+        return Err(crate::provider::ProviderError::InvalidResponse(
+            "Codex response contained no text output or tool call".into(),
+        ));
     }
-    Ok(crate::provider::Response { message: (!text.is_empty()).then_some(text), reasoning: None, tool_calls: (!tool_calls.is_empty()).then_some(tool_calls), usage: None, model: Some(model.to_string()) })
+    Ok(crate::provider::Response {
+        message: (!text.is_empty()).then_some(text),
+        reasoning: None,
+        tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+        usage: None,
+        model: Some(model.to_string()),
+    })
 }
 fn save(dir: &ConfigDir, name: &str, tokens: &CodexTokens) -> Result<(), String> {
     let p = token_path(dir, name);
@@ -194,7 +234,10 @@ pub fn access_token(dir: &ConfigDir, name: &str) -> Result<CodexTokens, String> 
 }
 
 pub fn model_allowed(model: &str) -> bool {
-    matches!(model, "gpt-5" | "gpt-5-codex" | "codex-mini-latest" | "gpt-5.6-luna")
+    matches!(
+        model,
+        "gpt-5" | "gpt-5-codex" | "codex-mini-latest" | "gpt-5.6-luna"
+    )
 }
 
 pub fn validate_token(dir: &ConfigDir, name: &str) -> Result<serde_json::Value, String> {
@@ -379,8 +422,13 @@ impl CodexClient {
         if !response.status().is_success() {
             let status = response.status();
             let mut detail = response.text().unwrap_or_default();
-            if detail.len() > 600 { detail.truncate(600); detail.push_str("..."); }
-            detail = detail.replace(&tokens.access_token, "[REDACTED]").replace(&tokens.refresh_token, "[REDACTED]");
+            if detail.len() > 600 {
+                detail.truncate(600);
+                detail.push_str("...");
+            }
+            detail = detail
+                .replace(&tokens.access_token, "[REDACTED]")
+                .replace(&tokens.refresh_token, "[REDACTED]");
             return Err(crate::provider::ProviderError::InvalidResponse(format!(
                 "Codex backend HTTP {}: {}",
                 status, detail
@@ -418,9 +466,31 @@ mod tests {
     #[test]
     fn serializes_codex_tool_turns_as_responses_items() {
         let messages = vec![
-            Message { role: "user".into(), content: "run it".into(), tool_calls: None, tool_result: None },
-            Message { role: "assistant".into(), content: String::new(), tool_calls: Some(vec![ToolCall { id: "call_1".into(), name: "bash".into(), input: json!({"cmd":"ls -la"}) }]), tool_result: None },
-            Message { role: "user".into(), content: String::new(), tool_calls: None, tool_result: Some(ToolResult { call_id: "call_1".into(), content: json!("file.txt") }) },
+            Message {
+                role: "user".into(),
+                content: "run it".into(),
+                tool_calls: None,
+                tool_result: None,
+            },
+            Message {
+                role: "assistant".into(),
+                content: String::new(),
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_1".into(),
+                    name: "bash".into(),
+                    input: json!({"cmd":"ls -la"}),
+                }]),
+                tool_result: None,
+            },
+            Message {
+                role: "user".into(),
+                content: String::new(),
+                tool_calls: None,
+                tool_result: Some(ToolResult {
+                    call_id: "call_1".into(),
+                    content: json!("file.txt"),
+                }),
+            },
         ];
         let items = codex_input_items(&messages);
         assert_eq!(items[1]["type"], "function_call");

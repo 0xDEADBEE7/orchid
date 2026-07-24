@@ -11,9 +11,13 @@ pub fn create(
     config_dir: &std::path::Path,
 ) -> Result<serde_json::Value, String> {
     let wd = resolve_working_dir(working_dir)?;
-    let effective =
-        resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
-            .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+    let effective = resolve_effective_config(
+        &ConfigDir::new(config_dir),
+        policy.as_deref(),
+        prompt.as_deref(),
+        Some(&wd),
+    )
+    .map_err(|e| format!("failed to resolve effective config: {}", e))?;
     let store = SessionStore::with_config_dir(config_dir)?;
     let meta = store.create(label, Some(wd), restrictions)?;
     let meta = store.update(

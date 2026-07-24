@@ -62,7 +62,8 @@ pub fn send(request: SendRequest<'_>) -> Result<serde_json::Value, String> {
         let effective = resolve_effective_config(
             &ConfigDir::new(config_dir),
             meta.policy.as_deref().or(policy.as_deref()),
-            prompt.as_deref(), Some(&working_dir),
+            prompt.as_deref(),
+            Some(&working_dir),
         )
         .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         let meta = if policy.is_some() || prompt.is_some() {
@@ -81,9 +82,13 @@ pub fn send(request: SendRequest<'_>) -> Result<serde_json::Value, String> {
         (resolved_id, meta, effective)
     } else {
         let wd = resolve_working_dir(working_dir)?;
-        let effective =
-            resolve_effective_config(&ConfigDir::new(config_dir), policy.as_deref(), prompt.as_deref(), Some(&wd))
-                .map_err(|e| format!("failed to resolve effective config: {}", e))?;
+        let effective = resolve_effective_config(
+            &ConfigDir::new(config_dir),
+            policy.as_deref(),
+            prompt.as_deref(),
+            Some(&wd),
+        )
+        .map_err(|e| format!("failed to resolve effective config: {}", e))?;
         if await_completion {
             create_provider_from_connections_with_log(&effective.connection_candidates, None)
                 .map_err(|e| e.to_string())?;
