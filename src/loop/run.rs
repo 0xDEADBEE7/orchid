@@ -1,9 +1,9 @@
 use crate::config::resolve::EffectiveSessionConfig;
 use crate::log::{DiagLogger, LogLevel};
-use crate::provider::{Provider, StreamEvent};
+use crate::provider::Provider;
 use crate::r#loop::guard::RunGuard;
 use crate::r#loop::lifecycle;
-use crate::r#loop::stream::StreamState;
+use crate::r#loop::stream::{self, StreamOutcome};
 use crate::r#loop::{events, history};
 use crate::session::get_session_dir_from_config;
 use crate::tools;
@@ -161,7 +161,6 @@ fn provider_turn(
 ) -> LoopOutcome {
     ctx.log
         .info("provider_send", &format!("messages={}", messages.len()));
-    let mut stream_state = StreamState::create(&ctx.session_dir);
     let event_iter = match provider.send_streaming(ctx.prompt.clone(), messages) {
         Ok(events) => events,
         Err(e) => {
@@ -169,27 +168,12 @@ fn provider_turn(
             return LoopOutcome::Failed(format!("provider error: {}", e));
         }
     };
-    for event in event_iter {
-        match event {
-            Err(e) => {
-                ctx.log.error("stream_error", &e.to_string());
-                return LoopOutcome::Failed(format!("provider error: {}", e));
-            }
-            Ok(StreamEvent::TextDelta(_))
-            | Ok(StreamEvent::ToolCallDelta { .. })
-            | Ok(StreamEvent::ReasoningDelta(_)) => stream_state.tick(),
-            Ok(StreamEvent::Complete(response)) => {
-                return if response.tool_calls.is_some() {
-                    LoopOutcome::ContinueWithTools(response)
-                } else if response.message.is_some() {
-                    LoopOutcome::Complete(response)
-                } else {
-                    LoopOutcome::Empty
-                };
-            }
-        }
+    match stream::reduce_response_stream(&ctx.log, &ctx.session_dir, event_iter) {
+        Ok(StreamOutcome::ContinueWithTools(response)) => LoopOutcome::ContinueWithTools(response),
+        Ok(StreamOutcome::Complete(response)) => LoopOutcome::Complete(response),
+        Ok(StreamOutcome::Empty) => LoopOutcome::Empty,
+        Err(error) => LoopOutcome::Failed(error),
     }
-    LoopOutcome::Failed("stream ended without a Complete event".to_string())
 }
 
 /// Execute the main session loop.

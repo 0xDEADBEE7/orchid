@@ -1,3 +1,5 @@
+use crate::log::DiagLogger;
+use crate::provider::{ProviderError, Response, StreamEvent};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -43,4 +45,39 @@ impl StreamState {
             let _ = writeln!(f, "{} {}", ts, self.chunk_count);
         }
     }
+}
+
+pub(crate) enum StreamOutcome {
+    ContinueWithTools(Response),
+    Complete(Response),
+    Empty,
+}
+
+pub(crate) fn reduce_response_stream(
+    log: &DiagLogger,
+    session_dir: &Path,
+    events: Box<dyn Iterator<Item = Result<StreamEvent, ProviderError>>>,
+) -> Result<StreamOutcome, String> {
+    let mut state = StreamState::create(session_dir);
+    for event in events {
+        match event {
+            Err(error) => {
+                log.error("stream_error", &error.to_string());
+                return Err(format!("provider error: {}", error));
+            }
+            Ok(StreamEvent::TextDelta(_))
+            | Ok(StreamEvent::ToolCallDelta { .. })
+            | Ok(StreamEvent::ReasoningDelta(_)) => state.tick(),
+            Ok(StreamEvent::Complete(response)) => {
+                return Ok(if response.tool_calls.is_some() {
+                    StreamOutcome::ContinueWithTools(response)
+                } else if response.message.is_some() {
+                    StreamOutcome::Complete(response)
+                } else {
+                    StreamOutcome::Empty
+                });
+            }
+        }
+    }
+    Err("stream ended without a Complete event".to_string())
 }
