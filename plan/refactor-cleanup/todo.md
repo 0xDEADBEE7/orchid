@@ -9,7 +9,7 @@ only after the relevant tests and quality gates have run.
 - **Phase 1 — CLI parser:** active; parser helper extraction `481cc22` reduced `parse` CC from 58 to 41. This recovery run restored the partial visibility/module changes, applied rustfmt, and confirmed `make check` passes; no dispatch extraction was retained because the partial module was not viable. `make metrics` still reports parser `parse` CC 41 and six red files.
 - **Phase 1 follow-up — delete validation/parsing:** the delete parser is already owned by `src/cli/delete.rs` from prior parser-helper work before commit `56e3fd9`; this run added characterization coverage for the stable missing-ID error, global-flag preservation, and existing first-ID behavior. No lifecycle/stop/kill or dispatch rewrite was combined. Focused CLI tests pass; the first `make check` was blocked only by rustfmt on the new test spacing, now corrected. `make check` and `make metrics` remain to be rerun.
 - **Delegation protocol:** each agent receives the relevant plan links and prior findings, works only in the assigned scope, runs repository-prescribed `make` targets, commits all work even when unsuccessful, and reports commit, tests, failures, and follow-up recommendations. The orchestrator reviews the diff before marking items complete.
-- **Phase 2 — execution loop:** not started.
+- **Phase 2 — execution loop:** characterization pass added in `tests/test_loop_run.rs`: successful completion, provider setup failure, stream failure, tool-call continuation, pre-send budget stop, and lifecycle cancellation/cleanup are covered against current APIs. Focused tests passed (6/6), `make test` passed, `make check` passed, and `make metrics` passed. Production loop was not refactored; cancellation remains owned by lifecycle stop/kill APIs. Metrics still report `run_loop` CC 41 and six red files; no complexity reduction is expected before refactoring.
 - **Phase 1 — CLI parser:** active; command dispatch extraction from `src/cli/parser.rs` into private `dispatch_command` is complete in the pending commit for this run. The match was moved mechanically; tokenization, global flag merging, command modules, command representations, and error strings were unchanged. Focused existing CLI tests and `make check` pass. `make metrics` reports parser `parse` CC 5, dispatch helper CC 14, parser file 201 LOC, and six red files remain. No focused tests were added.
 - **Phase 3 — provider and session boundaries:** not started.
 - **Phase 4 — legacy and documentation cleanup:** not started.
@@ -50,7 +50,7 @@ only after the relevant tests and quality gates have run.
 
 ## Phase 2 — execution loop
 
-- [ ] Add characterization tests for all terminal loop outcomes.
+- [x] Add characterization tests for current terminal loop outcomes (6 focused tests pass: completion, provider failure, stream failure, tool continuation, budget stop, and cancellation/lifecycle cleanup). `make test`, `make check`, and `make metrics` pass; `run_loop` remains CC 41.
 - [ ] Define typed loop outcomes/transitions.
 - [ ] Extract stream response reduction.
 - [ ] Extract tool-turn execution.
