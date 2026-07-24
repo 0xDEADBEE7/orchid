@@ -4,6 +4,7 @@ mod auth;
 mod config;
 mod create;
 mod delete;
+mod get;
 mod internal_run;
 mod lifecycle;
 mod options;

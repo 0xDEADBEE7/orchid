@@ -7,9 +7,9 @@ only after the relevant tests and quality gates have run.
 
 - **Phase 0 — baseline and hygiene:** complete; implementation commits `b424b9c`, `2781606`, `7b2538e`, `7a1bb93`; formatting commits `2279f43` and `307cf2f`. `make check` and `make metrics` pass. Six metrics red zones remain for later phases.
 - **Phase 1 — CLI parser:** active; parser helper extraction `481cc22` reduced `parse` CC from 58 to 41. This recovery run restored the partial visibility/module changes, applied rustfmt, and confirmed `make check` passes; no dispatch extraction was retained because the partial module was not viable. `make metrics` still reports parser `parse` CC 41 and six red files.
-- **Phase 1 follow-up — dispatch/validation extraction:** blocked for this run; an attempted dispatch module extraction was reverted after it introduced parser syntax errors and could not be validated safely. Existing routing, unknown-flag, and obsolete-command characterization coverage remains intact; `make test`, `make check`, and `make metrics` were rerun successfully (parser `parse` CC 41; six red files remain).
+- **Phase 1 follow-up — get validation extraction:** complete in this run; moved cohesive `get` selector/id validation from `src/cli/parser.rs` to `src/cli/get.rs`, preserving exact errors and global flag merging. `make test`, `make check`, and `make metrics` pass; parser `parse` CC is 35 and six red files remain.
 - **Delegation protocol:** each agent receives the relevant plan links and prior findings, works only in the assigned scope, runs repository-prescribed `make` targets, commits all work even when unsuccessful, and reports commit, tests, failures, and follow-up recommendations. The orchestrator reviews the diff before marking items complete.
-- **Phase 1 — CLI parser:** not started.
+- **Phase 1 — CLI parser:** active; remaining work is reducing parser dispatch complexity below the phase exit criterion.
 - **Phase 2 — execution loop:** not started.
 - **Phase 3 — provider and session boundaries:** not started.
 - **Phase 4 — legacy and documentation cleanup:** not started.
@@ -17,7 +17,7 @@ only after the relevant tests and quality gates have run.
 
 - **Delegated sessions:** `39446ba8419cda8e456c841728fc8b96` — Phase 0 OpenAI SSE cleanup; completed idle; commit `b424b9c`.
 - `d61c564b24b321b574f6b7dbcf661f81` — Phase 1 parser helper extraction; completed idle; commit `481cc22`; `make metrics` passed; `make check` failed only formatting; parser `parse` CC 41.
-- **Pending:** Phase 1 dispatch/validation extraction remains for a follow-up; this run only recovered the partial changes and formatting.
+- **Pending:** no Phase 1 follow-up is pending from this run; the next step is a separate small parser extraction after review.
 
 - [x] Phase 0 — baseline and hygiene
 - [ ] Phase 1 — CLI parser
