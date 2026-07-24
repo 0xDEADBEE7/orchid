@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use super::{auth, config};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Help(Option<String>),
@@ -212,49 +214,8 @@ pub(crate) fn parse(
                 restrictions,
             }
         }
-        "config" => {
-            if positional.is_empty() {
-                return Err("config requires subcommand: validate, list, or show".to_string());
-            }
-            match positional[0].as_str() {
-                "validate" => Command::Config(ConfigSubcommand::Validate),
-                "list" => Command::Config(ConfigSubcommand::List),
-                "show" => {
-                    let resource = positional
-                        .get(1)
-                        .cloned()
-                        .ok_or_else(|| "config show requires <resource>".to_string())?;
-                    Command::Config(ConfigSubcommand::Show(resource))
-                }
-                "use" => Command::Config(ConfigSubcommand::Use(
-                    positional
-                        .get(1)
-                        .cloned()
-                        .ok_or_else(|| "config use requires <policy>".to_string())?,
-                )),
-                other => return Err(format!("unknown config subcommand: {}", other)),
-            }
-        }
-        "auth" => {
-            let sub = positional
-                .first()
-                .ok_or_else(|| "auth requires subcommand: list, validate, or login".to_string())?;
-            match sub.as_str() {
-                "list" => Command::Auth(AuthSubcommand::List),
-                "validate" => Command::Auth(AuthSubcommand::Validate(
-                    positional
-                        .get(1)
-                        .cloned()
-                        .ok_or_else(|| "auth validate requires <name>".to_string())?,
-                )),
-                "login" => Command::Auth(AuthSubcommand::Login(
-                    rest.get(1)
-                        .cloned()
-                        .ok_or_else(|| "auth login requires <name>".to_string())?,
-                )),
-                other => return Err(format!("unknown auth subcommand: {}", other)),
-            }
-        }
+        "config" => config::parse(&positional),
+        "auth" => auth::parse(&positional, rest),
         "send" => {
             if positional.is_empty() {
                 return Err("send requires a message".to_string());

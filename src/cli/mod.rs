@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+mod auth;
+mod config;
 mod options;
 mod parser;
 
