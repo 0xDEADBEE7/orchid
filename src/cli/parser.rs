@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use super::{auth, await_command, config, create, delete, get, internal_run, lifecycle, list, set};
+use super::{
+    auth, await_command, config, create, delete, get, internal_run, lifecycle, list, send, set,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -64,7 +66,7 @@ pub enum AuthSubcommand {
     Login(String),
 }
 
-const VALUE_FLAGS: &[&str] = &[
+pub(super) const VALUE_FLAGS: &[&str] = &[
     "id",
     "label",
     "policy",
@@ -179,38 +181,7 @@ pub(crate) fn parse(
         "create" => create::parse(&mut flags),
         "config" => config::parse(&positional)?,
         "auth" => auth::parse(&positional, rest)?,
-        "send" => {
-            if positional.is_empty() {
-                return Err("send requires a message".to_string());
-            }
-            let message = positional[0].clone();
-            let id = flags.remove("id").flatten();
-            let await_completion = flags.contains_key("await");
-            flags.remove("await");
-            let label = flags.remove("label").flatten();
-            let policy = flags.remove("policy").flatten();
-            let prompt = flags.remove("prompt").flatten();
-            let working_dir = flags.remove("working-dir").flatten();
-
-            // Check for unknown flags.
-            if let Some(unknown) = flags
-                .iter()
-                .find(|(k, _v)| !VALUE_FLAGS.contains(&k.as_str()))
-                .map(|(k, _)| k.as_str())
-            {
-                return Err(format!("unknown flag: --{}", unknown));
-            }
-
-            Command::Send {
-                id,
-                message,
-                await_completion,
-                label,
-                working_dir,
-                policy,
-                prompt,
-            }
-        }
+        "send" => send::parse(&mut flags, &positional)?,
         "get" => get::parse(&mut flags, &positional)?,
         "await" => await_command::parse(&mut flags, positional)?,
         "set" => set::parse(&mut flags)?,

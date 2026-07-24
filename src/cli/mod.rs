@@ -11,6 +11,7 @@ mod lifecycle;
 mod list;
 mod options;
 mod parser;
+mod send;
 mod set;
 
 pub mod output;
