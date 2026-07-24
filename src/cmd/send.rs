@@ -13,16 +13,29 @@ use serde_json::json;
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 
-pub fn send(
-    id: Option<String>,
-    message: String,
-    await_completion: bool,
-    config_dir: &std::path::Path,
-    label: Option<String>,
-    working_dir: Option<String>,
-    policy: Option<String>,
-    prompt: Option<String>,
-) -> Result<serde_json::Value, String> {
+#[derive(Debug)]
+pub struct SendRequest<'a> {
+    pub id: Option<String>,
+    pub message: String,
+    pub await_completion: bool,
+    pub config_dir: &'a std::path::Path,
+    pub label: Option<String>,
+    pub working_dir: Option<String>,
+    pub policy: Option<String>,
+    pub prompt: Option<String>,
+}
+
+pub fn send(request: SendRequest<'_>) -> Result<serde_json::Value, String> {
+    let SendRequest {
+        id,
+        message,
+        await_completion,
+        config_dir,
+        label,
+        working_dir,
+        policy,
+        prompt,
+    } = request;
     let store = SessionStore::with_config_dir(config_dir)?;
 
     let new_session = id.is_none();

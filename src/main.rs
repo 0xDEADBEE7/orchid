@@ -73,16 +73,16 @@ fn main() {
             working_dir,
             policy,
             prompt,
-        } => cmd::send(
+        } => cmd::send::send(cmd::send::SendRequest {
             id,
             message,
             await_completion,
-            &config_dir,
+            config_dir: &config_dir,
             label,
             working_dir,
             policy,
             prompt,
-        ),
+        }),
         Command::Await {
             ids,
             timeout,

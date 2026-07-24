@@ -1,7 +1,50 @@
-use orchid::cmd::send;
+use orchid::cmd::send::{send as send_command, SendRequest};
 use orchid::SessionStore as Store;
 mod support;
 use support::TestEnv;
+
+fn send_request(
+    id: Option<String>,
+    message: String,
+    await_completion: bool,
+    config_dir: &std::path::Path,
+    label: Option<String>,
+    working_dir: Option<String>,
+    policy: Option<String>,
+    prompt: Option<String>,
+) -> SendRequest<'_> {
+    SendRequest {
+        id,
+        message,
+        await_completion,
+        config_dir,
+        label,
+        working_dir,
+        policy,
+        prompt,
+    }
+}
+
+fn send(    id: Option<String>,
+    message: String,
+    await_completion: bool,
+    config_dir: &std::path::Path,
+    label: Option<String>,
+    working_dir: Option<String>,
+    policy: Option<String>,
+    prompt: Option<String>,
+) -> Result<serde_json::Value, String> {
+    send_command(send_request(
+        id,
+        message,
+        await_completion,
+        config_dir,
+        label,
+        working_dir,
+        policy,
+        prompt,
+    ))
+}
 
 fn write_resource_config(dir: &std::path::Path) {
     for name in ["connections", "policies", "prompts", "sessions"] {
