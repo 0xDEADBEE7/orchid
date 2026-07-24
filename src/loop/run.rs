@@ -183,7 +183,11 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 ..Default::default()
             };
             ctx.store.update(&ctx.meta.id, updates)?;
-            guard.finish(Status::Failed, Some("token budget termination".into()), Some("budget termination".into()))?;
+            guard.finish(
+                Status::Failed,
+                Some("token budget termination".into()),
+                Some("budget termination".into()),
+            )?;
             ctx.log.info("run_end", "pre_send_budget_exceeded");
             return Err(format!(
                 "token hard limit would be exceeded before sending: {} estimated tokens",
@@ -255,7 +259,11 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                 ..Default::default()
             };
             ctx.store.update(&ctx.meta.id, updates)?;
-            guard.finish(Status::Failed, Some("token budget termination".into()), Some("budget termination".into()))?;
+            guard.finish(
+                Status::Failed,
+                Some("token budget termination".into()),
+                Some("budget termination".into()),
+            )?;
             ctx.log.info("run_end", "budget_exceeded");
             return Err(format!(
                 "token hard limit exceeded: {} tokens",
@@ -276,7 +284,8 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     ),
                 );
                 events::append_system(
-                    &ctx.meta.id, &ctx.config_dir,
+                    &ctx.meta.id,
+                    &ctx.config_dir,
                     &format!(
                         "[WARNING] This session has consumed {} tokens (warn threshold: {}). \
                         Consider wrapping up or the session will be terminated at {} tokens.",
@@ -298,7 +307,11 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
                     "tool_call",
                     &format!("tool={} id={}", tool_call.name, tool_call.id),
                 );
-                events::append_tool_call(&ctx.meta.id, &ctx.config_dir, std::slice::from_ref(&tool_call))?;
+                events::append_tool_call(
+                    &ctx.meta.id,
+                    &ctx.config_dir,
+                    std::slice::from_ref(&tool_call),
+                )?;
 
                 let content = match tools::execute_tool_with_permissions(
                     &tool_call.name,
@@ -355,7 +368,7 @@ pub fn run_loop(ctx: &mut LoopContext, provider: &dyn Provider) -> Result<(), St
         } else {
             ctx.log.warn("empty_response", "");
             let empty_msg = "The previous response contained no text and no tool calls. Please respond with a message or use a tool.".to_string();
-        events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
+            events::append_system(&ctx.meta.id, &ctx.config_dir, &empty_msg)?;
         }
     }
 

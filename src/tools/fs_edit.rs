@@ -50,15 +50,11 @@ pub fn execute(
         serde_json::from_value(input).map_err(|e| format!("invalid fs_edit input: {}", e))?;
 
     if !is_allowed(
-            &edit_input.path,
-            working_dir,
-            global_scope_set,
-            session_scope_set,
-        ) || !crate::tools::scope::is_allowed_by_policy(
-            &edit_input.path,
-            working_dir,
-            allowed_paths,
-        )
+        &edit_input.path,
+        working_dir,
+        global_scope_set,
+        session_scope_set,
+    ) || !crate::tools::scope::is_allowed_by_policy(&edit_input.path, working_dir, allowed_paths)
     {
         return Err(format!("path out of scope: {}", edit_input.path));
     }
