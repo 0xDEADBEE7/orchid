@@ -62,10 +62,10 @@ fi
 
 # ---------------------------------------------------------------------------
 section "Binary Size"
-if [ -f "target/release/stash" ]; then
-  size_bytes=$(wc -c < target/release/stash)
-  size_human=$(ls -lh target/release/stash | awk '{print $5}')
-  ok "target/release/stash  →  ${size_human} (${size_bytes} bytes)"
+if [ -f "target/release/orchid" ]; then
+  size_bytes=$(wc -c < target/release/orchid)
+  size_human=$(ls -lh target/release/orchid | awk '{print $5}')
+  ok "target/release/orchid  →  ${size_human} (${size_bytes} bytes)"
   echo ""
   echo -e "  ${CYAN}Tip: run \`cargo build --release\` with RUSTFLAGS='-C strip=symbols' for a smaller binary.${RESET}"
 else
