@@ -20,7 +20,7 @@ only after the relevant tests and quality gates have run.
 - **Next delegation — Phase 3 completion:** assign one agent to review the current provider/session boundary state and complete several tightly related remaining subtasks: verify and integrate the Codex wire module without duplicate/dead mappings, extract Codex response parsing if safe, inspect session resolution/model/update boundaries for any clear low-risk completion, add focused characterization tests where needed, and run `make check` plus `make metrics`. Preserve public APIs, on-disk contracts, and the unrelated `gpt-5.4-mini` worktree change; commit all work and report results.
 - **Next delegation — Phase 4 audit/docs:** assign one agent to complete the legacy/reference audit and reconcile the highest-confidence documentation drift. Read `audit.md`, current Rust modules, and architecture/user docs. Remove only confirmed dead implementation or obsolete references/tests; update contradictory provider and execution docs; preserve contracts. Run `make check` and `make metrics`, commit all work, and report results.
 - **Delegation result — Phase 4 audit/docs:** reviewed the pending documentation changes against current Rust configuration, provider, session, lifecycle, logging, SSE, and CLI/user-guide docs. Kept high-confidence reconciliation, corrected the Codex auth wording, removed an accidental storage-doc fragment, and corrected the missing/invalid-state crash claim. `audit.md` records completed searches and deferred compatibility/history/dead-code decisions. Commit `7a58fd2`; `make check` and `make metrics` passed; six red metric files remain.
-- **Delegation result — Phase 4 remaining audit:** classified all compatibility-rejection tests as contractual; no obsolete test was removed. Classified historical plans as completed/retained (`config-refactor`, `feat-await`, completed `feat-hook`), active/partial (`emacs-client`, `get-feature`, `scope-enforcement`), or archive candidates retained as useful history (`server-actions`, superseded `hooks`). Compared provider/session/command/tool duplication and found no confirmed dead implementation or obsolete reference safe to remove. Updated `audit.md`; no CLI, storage, provider, or tool contracts changed. `make check` passed; `make metrics` passed with 6,967 production cloc and six red files remaining.
+- **Phase 5 consolidation result:** fresh metrics and a full review of the remaining red/yellow production files plus Phase 3/4 diffs found no safe consolidation or confirmed dead production code. The apparent candidates (`SessionStore::update_for_config`, default session path helpers, `loop_module::run`, and Codex module wrappers) are public compatibility surfaces or still referenced; provider/session/tool/CLI similarities have distinct contracts. No code change was justified. Final `make check` and `make metrics` passed; production is 6,967 cloc with six red files and ten yellow files, so the 5,200 target and no-red exit criteria are not met.
 - `39446ba8419cda8e456c841728fc8b96` — Phase 0 OpenAI SSE cleanup; completed idle; commit `b424b9c`.
 - `d61c564b24b321b574f6b7dbcf661f81` — Phase 1 parser helper extraction; completed idle; commit `481cc22`; `make metrics` passed; `make check` failed only formatting; parser `parse` CC 41.
 - **Pending:** no Phase 1 follow-up is pending from this run; the next step is a separate small parser extraction after review.
@@ -84,11 +84,17 @@ only after the relevant tests and quality gates have run.
 
 ## Phase 5 — consolidation
 
-- [ ] Re-run full metrics.
-- [ ] Remove duplication identified by the refactor.
-- [ ] Confirm no production red-zone files remain.
-- [ ] Compare production LOC against the 5,200 LOC target.
-- [ ] Run final `make check`.
+- [x] Re-run full metrics: 6,967 production cloc, 3,466 test cloc; six production red files and ten production yellow files.
+- [x] Review and remove duplication identified by the refactor: no safe removal or consolidation was confirmed; no production code changed.
+- [ ] Confirm no production red-zone files remain: deferred; remaining red files contain contract-sensitive orchestration, auth, hooks, or wire behavior rather than exposed duplication.
+- [x] Compare production LOC against the 5,200 LOC target: 6,967 cloc, 1,767 above target; LOC reduction was not pursued mechanically.
+- [x] Run final `make check`: passed.
+
+## Phase 5 review notes
+
+- Reviewed remaining production red/yellow files: `client/codex.rs`, `hooks.rs`, `loop/run.rs` (red); `cli/parser.rs`, `client/base.rs`, `client/sse/mod.rs`, `cmd/send.rs`, `session/mod.rs`, `types.rs` (yellow).
+- Reviewed Phase 3/4 diffs. Codex wire/auth and session persistence boundaries are already narrow; remaining forwarding/module helpers either preserve public compatibility or are referenced. No CLI JSON, session storage, provider, tool, or public API changes were made.
+- Deferred: repository/process ports, shared-type splits, additional provider support, and any further red-zone refactor until a responsibility-level design—not LOC pressure—justifies it.
 
 ## Deferred decisions
 
