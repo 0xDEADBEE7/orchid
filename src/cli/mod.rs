@@ -2,8 +2,13 @@ use std::collections::BTreeMap;
 
 mod auth;
 mod config;
+mod create;
+mod delete;
+mod internal_run;
+mod lifecycle;
 mod options;
 mod parser;
+mod set;
 
 pub mod output;
 pub use output::{print_error, print_json};

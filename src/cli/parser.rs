@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{auth, config};
+use super::{auth, config, create, delete, internal_run, lifecycle, set};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
@@ -197,23 +197,7 @@ pub(crate) fn parse(
             }
             Command::List(resource)
         }
-        "create" => {
-            let label = flags.remove("label").flatten();
-            let policy = flags.remove("policy").flatten();
-            let prompt = flags.remove("prompt").flatten();
-            let working_dir = flags.remove("working-dir").flatten();
-            let restrictions = flags
-                .remove("restriction")
-                .map(|v| v.map(|s| vec![s]))
-                .unwrap_or_default();
-            Command::Create {
-                label,
-                working_dir,
-                policy,
-                prompt,
-                restrictions,
-            }
-        }
+        "create" => create::parse(&mut flags),
         "config" => config::parse(&positional)?,
         "auth" => auth::parse(&positional, rest)?,
         "send" => {
@@ -292,49 +276,10 @@ pub(crate) fn parse(
                 interval,
             }
         }
-        "set" => {
-            let id = flags
-                .remove("id")
-                .flatten()
-                .ok_or_else(|| "set requires --id".to_string())?;
-            let label = flags.remove("label").flatten();
-            let working_dir = flags.remove("working-dir").flatten();
-            let restrictions = flags
-                .remove("restriction")
-                .map(|v| v.map(|s| vec![s]))
-                .unwrap_or_default();
-            Command::Set {
-                id,
-                label,
-                working_dir,
-                restrictions,
-            }
-        }
-        "delete" => {
-            let id = positional
-                .first()
-                .cloned()
-                .ok_or_else(|| "delete requires <id>".to_string())?;
-            Command::Delete(id)
-        }
-        "stop" | "kill" => {
-            let id = positional
-                .first()
-                .cloned()
-                .ok_or_else(|| format!("{} requires <id>", cmd_name))?;
-            if cmd_name == "stop" {
-                Command::Stop(id)
-            } else {
-                Command::Kill(id)
-            }
-        }
-        "__run" => {
-            let id = positional
-                .first()
-                .cloned()
-                .ok_or_else(|| "__run requires <id>".to_string())?;
-            Command::InternalRun { id }
-        }
+        "set" => set::parse(&mut flags)?,
+        "delete" => delete::parse(&positional)?,
+        "stop" | "kill" => lifecycle::parse(&positional, &cmd_name)?,
+        "__run" => internal_run::parse(&positional)?,
         "validate" => Command::Config(ConfigSubcommand::Validate),
         _ => return Err(format!("unknown command: {}", cmd_name)),
     };
