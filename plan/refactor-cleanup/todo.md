@@ -66,11 +66,11 @@ only after the relevant tests and quality gates have run.
 
 ## Phase 3 — provider and session boundaries
 
-- [ ] Split Codex auth/token handling from client behavior.
-- [ ] Separate provider wire mapping from shared transport.
+- [x] Split Codex auth/token handling from client behavior (`5b77e02`).
+- [x] Separate provider wire mapping from shared transport (`983caf5`, `46928a7`, `f3e6bcc`).
 - [x] Separate session model, resolution, and filesystem persistence. `SessionStore` delegates persistence and update merging to `src/session/persistence.rs`; focused session/lifecycle/get tests cover merge semantics, atomic writes, and state/metadata behavior.
-- [ ] Preserve provider and on-disk contracts with focused tests.
-- [x] Re-run `make check` and `make metrics` (formatting passes; six metrics red files remain).
+- [x] Preserve provider and on-disk contracts with focused tests.
+- [x] Re-run `make check` and `make metrics` (formatting passes; six unrelated metrics red files remain).
 
 
 ## Phase 4 — legacy and documentation cleanup
