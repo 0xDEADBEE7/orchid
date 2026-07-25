@@ -54,6 +54,6 @@ jq .status ./config/sessions/<id>/state.json
 ## Design
 
 - 1 session = 1 directory under the selected config directory's `sessions/`
-- Tool loop execution: read log → call model → execute tools → append results → repeat
+- Tool loop execution: read the conversation transcript → call the model → execute tools → append results → repeat
 - Stream-first: observe with `tail -f` and standard tooling
-- Anthropic provider only
+- Anthropic and OpenAI-compatible providers, including the Codex OAuth client

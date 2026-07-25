@@ -9,61 +9,58 @@
 ```bash
 IDS=()
 for task in "run tests" "review the diff" "update the docs"; do
-  IDS+=("$(orchid send "$task" | jq -r .id)")
+  ID=$(orchid --config ./config create | jq -r '.id')
+  orchid --config ./config send --id "$ID" "$task"
+  IDS+=("$ID")
 done
 ```
 
 ### Await in batches
 
 ```bash
-orchid await "${IDS[@]}" --timeout 300 --interval 2
+orchid --config ./config await "${IDS[@]}" --timeout 300
 ```
 
-The result contains every terminal session found in a poll:
+The result contains a `sessions` array. Each requested session is included
+when it reaches a terminal state:
 
 ```json
-{"completed":[{"id":"...","status":"idle"}]}
+{"sessions":[{"id":"...","status":"idle"}]}
 ```
 
-A timeout returns `{"completed":[],"timed_out":true}` and exits with code `2`. Errors are JSON on stderr and exit with code `1`.
+A timeout returns the sessions observed so far. Check the process exit status if
+your script must distinguish a timeout from a completed batch.
 
 ### Process results and repeat
 
 Remove completed IDs before awaiting the remaining sessions:
 
 ```bash
-result=$(orchid await "${IDS[@]}" --timeout 30) || {
-  code=$?
-  [ "$code" -eq 2 ] || exit "$code"
-  result=$(cat /dev/null)
-}
+result=$(orchid --config ./config await "${IDS[@]}" --timeout 300)
 
-mapfile -t done < <(jq -r '.completed[].id' <<<"$result")
-for id in "${done[@]}"; do
-  jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content' \
-    "./config/sessions/$id/conversation.jsonl" | tail -1
-done
-
-remaining=()
-for id in "${IDS[@]}"; do
-  [[ " ${done[*]} " == *" $id "* ]] || remaining+=("$id")
-done
-[ "${#remaining[@]}" -eq 0 ] || orchid await "${remaining[@]}" --timeout 300
+while read -r id; do
+  orchid --config ./config get "$id" --last-message \
+    | jq -r '.last_message // empty'
+done < <(jq -r '.sessions[] | select(.status != "running") | .id' <<<"$result")
 ```
 
-`await` only observes session state; it does not stop, kill, or otherwise control sessions. Use [`orchid get`](get.md) to retrieve session data through the selected config boundary. See [sending.md](sending.md) for session setup and [conversations.md](conversations.md) for storage details.
-
-All errors are written as JSON to stderr. Exit code is `0` on success, `1` on an error, and `2` when `await` reaches its timeout.
+`await` only observes session state; it does not stop, kill, or otherwise
+control sessions. Use [`orchid get`](get.md) to retrieve session data through
+the selected config boundary. Errors are JSON on stderr with exit code `1`.
 
 ```json
 {"error":"conversation not found: fix-auth-bug"}
 ```
 
 ```bash
-if ! orchid send --await "message" 2>/tmp/orchid-err; then
-  jq -r .error /tmp/orchid-err
+ID=$(orchid --config ./config create | jq -r '.id')
+orchid --config ./config send --id "$ID" "message"
+if ! orchid --config ./config await "$ID" --timeout 600; then
+  echo "await failed or timed out" >&2
   exit 1
 fi
+orchid --config ./config get "$ID" --last-message \
+  | jq -r '.last_message // empty'
 ```
 
 ## Inspecting session results
@@ -71,11 +68,12 @@ fi
 Use `get` rather than reading session files directly in scripts:
 
 ```bash
-ID=$(orchid --config ./config send "run the tests" | jq -r .id)
+ID=$(orchid --config ./config create | jq -r '.id')
+orchid --config ./config send --id "$ID" "run the tests"
 orchid --config ./config await "$ID" --timeout 600
 orchid --config ./config get "$ID" --state --metadata
-orchid --config ./config get "$ID" --last-message \\
-  | jq -r '.last_message.message.content'
+orchid --config ./config get "$ID" --last-message \
+  | jq -r '.last_message // empty'
 ```
 
 Retrieve the final `N` transcript events as a JSON array:
@@ -83,12 +81,20 @@ Retrieve the final `N` transcript events as a JSON array:
 ```bash
 N=10
 orchid --config ./config get "$ID" --conversation \\
-  | jq --argjson n "$N" '.conversation | .[-$n:]'
+  | jq --argjson n "$N" '.events | .[-$n:]'
 ```
 
-Add `[]` to the jq expression to emit one event per line. `get --conversation`
-parses JSONL and preserves event order. Reads are point-in-time and read-only,
-including for running sessions. See [get.md](get.md) for selectors and errors.
+To inspect only the most recent event:
+
+```bash
+orchid --config ./config get "$ID" --conversation \\
+  | jq '.events[-1:]'
+```
+
+The result is an array so the command remains safe when the conversation is
+empty. Add `[]` to emit one event per line. `get --conversation` parses JSONL
+and preserves event order. Reads are point-in-time and read-only, including for
+running sessions. See [get.md](get.md) for selectors and errors.
 
 ## Patterns
 
@@ -100,40 +106,41 @@ Dispatch a run and capture the ID for later follow-up:
 ID=$(orchid send "run the audit" | jq -r .id)
 ```
 
-The run is already in progress. Use the ID to poll or send follow-ups:
+The run is already in progress. Observe it without sending another message:
 
 ```bash
-# poll until idle
-until [ "$(jq -r .status ./config/sessions/$ID/state.json)" = "idle" ]; do
-  sleep 2
-done
-
-# read last assistant message
-jq -r 'select(.type == "message" and .message.role == "assistant") | .message.content' \
-  ./config/sessions/$ID/conversation.jsonl | tail -1
+orchid --config ./config await "$ID" --timeout 600
+orchid --config ./config get "$ID" --last-message \\
+  | jq -r '.last_message // empty'
+```
+```bash
+# observe the run without sending another message
+orchid --config ./config await "$ID" --timeout 600
+orchid --config ./config get "$ID" --last-message \\
+  | jq -r '.last_message // empty'
 ```
 
 ### Blocking with `--await`
 
 ```bash
-ID=$(orchid create | jq -r .id)
-orchid set --id $ID --working-dir /path/to/project
-orchid send --id $ID --await "fix the failing test" || {
-  echo "run failed"
-  exit 1
-}
+ID=$(orchid --config ./config create | jq -r '.id')
+orchid --config ./config set --id "$ID" --working-dir /path/to/project
+orchid --config ./config send --id "$ID" "fix the failing test"
+orchid --config ./config await "$ID" --timeout 600
 ```
 
 ### Per-project conversation
 
 ```bash
 # Create and configure once
-ID=$(orchid create | jq -r .id)
-orchid set --config ./config --id $ID --label my-project --working-dir /path/to/project
+ID=$(orchid --config ./config create | jq -r '.id')
+orchid --config ./config set --id "$ID" --label my-project --working-dir /path/to/project
 
 # All subsequent sends use the ID
-orchid send --id $ID --await "add a readme"
-orchid send --id $ID --await "write tests for the new module"
+orchid --config ./config send --id "$ID" "add a readme"
+orchid --config ./config await "$ID" --timeout 600
+orchid --config ./config send --id "$ID" "write tests for the new module"
+orchid --config ./config await "$ID" --timeout 600
 ```
 
 Labels are for human reference only — always use the hex ID in scripts.
@@ -147,18 +154,20 @@ validation.
 ```bash
 ID=<session-id>
 orchid --config ./config get "$ID" --conversation \\
-  | jq '.conversation | .[-10:]'                                      # last 10 events
+  | jq '.events | .[-10:]'                                            # last 10 events
 orchid --config ./config get "$ID" --conversation \\
-  | jq '.conversation | .[-10:][]'                                   # one event per line
+  | jq '.events[-1:]'                                                 # most recent event
+orchid --config ./config get "$ID" --conversation \\
+  | jq '.events | .[-10:][]'                                          # one event per line
 orchid --config ./config get "$ID" --last-message \\
-  | jq -r '.last_message.message.content'                             # latest assistant text
+  | jq -r '.last_message // empty'                             # latest assistant text
 ```
 
 For direct local inspection:
 
 ```bash
-FILE=./config/sessions/<id>/conversation.jsonl
-jq 'select(.type == "message")' $FILE                                # messages only
-jq 'select(.type == "tool_call") | .tool_call.calls[] | {name, input}' $FILE
-jq -s '.' $FILE                                                       # full history as array
+FILE=./config/sessions/<id>/events.jsonl
+jq 'select(.type == "message")' "$FILE"                            # messages only
+jq 'select(.type == "tool_call") | .calls[] | {name, input}' "$FILE"  # tool calls
+jq -s '.' "$FILE"                                                     # full history as array
 ```

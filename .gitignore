@@ -5,3 +5,4 @@
 /plan
 .claude
 /config/
+**/target

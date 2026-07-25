@@ -1,26 +1,38 @@
-.PHONY: build clean test lint check metrics help
+.PHONY: help build pack install-bin test lint check metrics clean
+
+RELEASE_BINARY := target/release/orchid
+STAGED_BINARY := bin/orchid
 
 help:
 	@echo "Available targets:"
-	@echo "  make build   - Build release binary"
+	@echo "  make build   - Build and stage the uncompressed release binary"
+	@echo "  make pack    - UPX-compress the staged release binary"
+	@echo "  make install-bin - Build and stage as ./bin/orchid"
 	@echo "  make clean   - Remove build artifacts"
-	@echo "  make test    - Run tests (single-threaded)"
+	@echo "  make test    - Run tests"
 	@echo "  make lint    - Run clippy and fmt check"
 	@echo "  make check   - lint + test"
-	@echo "  make metrics - Run code health metrics (LoC, complexity, binary size)"
-	@echo "  make help    - Show this help"
+	@echo "  make metrics - Run LoC, file-size, and assay metrics"
 
 build:
-	./.scripts/build.sh
+	cargo build --release
+	mkdir -p bin
+	cp $(RELEASE_BINARY) $(STAGED_BINARY)
+
+pack: build
+	upx --best --lzma --force-macos $(STAGED_BINARY)
+
+install-bin: build
 
 clean:
-	./.scripts/clean.sh
+	cargo clean
 
 test:
-	./.scripts/test.sh
+	cargo test --offline
 
 lint:
-	./.scripts/lint.sh
+	cargo fmt --check
+	cargo clippy --offline --all-targets -- -D warnings
 
 check: lint test
 

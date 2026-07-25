@@ -2,33 +2,16 @@
 name = "orchid"
 version = "0.1.0"
 edition = "2021"
-authors = ["orchid contributors"]
-description = "Minimal headless CLI for LLM conversations"
-license = "MIT"
-repository = "https://github.com/anthropics/orchid"
-
-[[bin]]
-name = "orchid"
-path = "src/main.rs"
-
-[lib]
-name = "orchid"
-path = "src/lib.rs"
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
-dirs = "5.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
-getrandom = "0.2"
-hex = "0.4"
-sha2 = "0.10"
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 base64 = "0.22"
-globset = "0.4"
-reqwest = { version = "0.11", features = ["blocking", "gzip", "stream", "json"] }
-nix = { version = "0.27", features = ["signal"] }
+sha2 = "0.10"
+getrandom = "0.2"
 
 [dev-dependencies]
 tempfile = "3.0"
-serial_test = "0"

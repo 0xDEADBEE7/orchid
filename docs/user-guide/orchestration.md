@@ -45,7 +45,7 @@ ordered transcript is needed. To inspect only the final `N` events:
 ```bash
 N=10
 orchid --config ./config get "$ID" --conversation \\
-  | jq --argjson n "$N" '.conversation | .[-$n:]'
+  | jq --argjson n "$N" '.events | .[-$n:]'
 ```
 
 Add `[]` to the jq expression to emit one event per line. `--last-message`
@@ -100,7 +100,7 @@ For orchestration, prefer the CLI shortcut:
 
 ```bash
 orchid --config ./config get "$ID" --last-message \\
-  | jq -r '.last_message.message.content'
+  | jq -r '.last_message // empty'
 ```
 
 This returns the complete latest assistant message. Use the transcript recipe
@@ -138,7 +138,7 @@ For config-scoped, read-only inspection, prefer `orchid get`:
 ```bash
 orchid --config ./config get <id> --last-message
 orchid --config ./config get <id> --conversation \\
-  | jq --argjson n 10 '.conversation | .[-$n:]'
+  | jq --argjson n 10 '.events | .[-$n:]'
 ```
 
 The `get` command parses JSONL, preserves event order, and can read running
@@ -158,7 +158,7 @@ IDS+=("$(orchid --config ./config send \
   "Review the test suite. Identify missing coverage and propose specific tests." \
   | jq -r .id)")
 
-orchid --config ./config await "${IDS[@]}" --timeout 600 --interval 2
+orchid --config ./config await "${IDS[@]}" --timeout 600
 ```
 
 `await` returns when one or more sessions reach a terminal state. Remove the
@@ -167,7 +167,7 @@ remaining IDs:
 
 ```bash
 result=$(orchid --config ./config await "${IDS[@]}" --timeout 600)
-completed=$(jq -r '.completed[].id' <<<"$result")
+completed=$(jq -r '.sessions[] | select(.status != "running") | .id' <<<"$result")
 
 remaining=()
 for id in "${IDS[@]}"; do

@@ -1,74 +1,67 @@
 pub mod base;
-pub use base::{is_retryable, BaseClient};
-pub mod anthropic;
-pub mod codex;
-pub mod openai;
-pub mod resolve;
-pub mod sse;
+pub mod factory;
+pub mod openai_codex;
+pub mod transport;
 
-use crate::config::Connection;
-use crate::provider::{Provider, ProviderError};
-use std::sync::Arc;
-
-pub use resolve::{
-    resolve_connection, resolve_env_inline_strict, EnvResolutionError, ResolvedConnection,
+pub use base::{
+    Client, ClientError, ClientErrorKind, ClientEvent, ClientRequest, Message, ToolDefinition,
 };
+pub use factory::client_for;
 
-pub fn create_provider_from_connections_with_log(
-    connections: &[Connection],
-    log_path: Option<std::path::PathBuf>,
-) -> Result<Arc<dyn Provider>, ProviderError> {
-    let mut diagnostics = Vec::new();
-    for connection in connections {
-        match create_provider_from_connection_with_log(connection, log_path.clone()) {
-            Ok(provider) => return Ok(provider),
-            Err(error) => diagnostics.push(format!("{}: {}", connection.interface, error)),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Connection, Credential, ResolvedConnection};
+    use serde_json::json;
+
+    fn connection(interface: &str, credential: Option<Credential>) -> ResolvedConnection {
+        ResolvedConnection {
+            connection: Connection {
+                interface: interface.into(),
+                base_url: "http://localhost".into(),
+                model: "test-model".into(),
+                api_key: None,
+                auth: None,
+                params: Default::default(),
+                headers: Default::default(),
+            },
+            credential,
+            params: Default::default(),
+            headers: Default::default(),
         }
     }
-    Err(ProviderError::InvalidResponse(format!(
-        "all connection candidates failed: {}",
-        diagnostics.join("; ")
-    )))
-}
-pub fn create_provider_from_connection(
-    connection: &Connection,
-) -> Result<Arc<dyn Provider>, ProviderError> {
-    create_provider_from_connection_with_log(connection, None)
-}
 
-pub fn create_provider_from_connection_with_log(
-    connection: &Connection,
-    log_path: Option<std::path::PathBuf>,
-) -> Result<Arc<dyn Provider>, ProviderError> {
-    let provider_name = if connection.interface.is_empty() {
-        "anthropic"
-    } else {
-        &connection.interface
-    };
+    #[test]
+    fn factory_selects_codex_for_interface_and_oauth() {
+        assert!(client_for(connection(
+            "codex",
+            Some(Credential::Codex {
+                access_token: "token".into(),
+                account_id: "account".into()
+            })
+        ))
+        .is_ok());
+        assert!(client_for(connection("openai", None)).is_err());
+    }
 
-    match provider_name {
-        "anthropic" => {
-            let mut client = anthropic::AnthropicClient::from_connection(connection)?;
-            if let Some(path) = log_path {
-                client = client.with_log(path);
-            }
-            Ok(Arc::new(client))
-        }
-        "openai" => {
-            if connection.auth_profile.as_ref().map(|p| p.kind.as_str())
-                == Some("openai_codex_oauth")
-            {
-                return Ok(Arc::new(codex::CodexClient::from_connection(connection)?));
-            }
-            let mut client = openai::OpenAiClient::from_connection(connection)?;
-            if let Some(path) = log_path {
-                client = client.with_log(path);
-            }
-            Ok(Arc::new(client))
-        }
-        _ => Err(ProviderError::InvalidResponse(format!(
-            "unknown provider: {}",
-            provider_name
-        ))),
+    #[test]
+    fn codex_sse_maps_text_tool_call_and_done() {
+        let input = format!(
+            "data: {}\ndata: {}\ndata: [DONE]\n",
+            json!({"type":"response.output_text.delta","delta":"hello"}),
+            json!({"type":"response.output_item.done","item":{"type":"function_call","call_id":"call-1","name":"bash","arguments": "{}"}})
+        );
+        let events = crate::client::openai_codex::parse_sse(&input);
+        assert!(events.contains(&ClientEvent::TextDelta("hello".into())));
+        assert!(events.contains(&ClientEvent::Done));
+        assert!(
+            matches!(events.get(1), Some(ClientEvent::ToolCall(call)) if call.call_id == "call-1")
+        );
+    }
+
+    #[test]
+    fn codex_sse_maps_extracted_json_payload() {
+        let events = crate::client::openai_codex::parse_sse(r#"{"type":"response.completed"}"#);
+        assert_eq!(events, vec![ClientEvent::Done]);
     }
 }
