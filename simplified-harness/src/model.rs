@@ -10,6 +10,7 @@ pub enum Status {
     Running,
     Failed,
     Cancelled,
+    Terminated,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,6 +19,7 @@ pub struct Metadata {
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub policy: Option<String>,
+    pub prompt: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -28,16 +30,68 @@ pub struct SessionState {
     pub pid: Option<u32>,
     pub last_message: Option<String>,
     pub updated_at: DateTime<Utc>,
+    pub token_estimate: u32,
+    pub termination_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    Message { role: String, content: String },
-    ToolCall { name: String, input: Value },
-    ToolResult { content: Value },
-    Reasoning { content: String },
-    Usage { input: u32, output: u32 },
+    Message {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        role: String,
+        content: String,
+    },
+    ToolCall {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        calls: Vec<ToolCall>,
+    },
+    ToolResult {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        call_id: String,
+        content: Value,
+    },
+    Reasoning {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        content: String,
+    },
+    Usage {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        input: u32,
+        output: u32,
+    },
+    Termination {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        reason: String,
+    },
+    Failure {
+        event_id: String,
+        timestamp: DateTime<Utc>,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCall {
+    pub call_id: String,
+    pub name: String,
+    pub input: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LogRecord {
+    pub event_id: String,
+    pub timestamp: DateTime<Utc>,
+    pub level: String,
+    pub message: String,
+    #[serde(default)]
+    pub fields: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -69,6 +123,7 @@ impl Session {
                 label,
                 working_dir,
                 policy,
+                prompt: None,
                 created_at: now,
                 updated_at: now,
             },
@@ -77,13 +132,15 @@ impl Session {
                 pid: None,
                 last_message: None,
                 updated_at: now,
+                token_estimate: 0,
+                termination_reason: None,
             },
             events: Vec::new(),
         }
     }
 
     pub fn append(&mut self, event: Event) {
-        if let Event::Message { role, content } = &event {
+        if let Event::Message { role, content, .. } = &event {
             if role == "assistant" {
                 self.state.last_message = Some(content.clone());
             }
@@ -92,5 +149,14 @@ impl Session {
         let now = Utc::now();
         self.metadata.updated_at = now;
         self.state.updated_at = now;
+    }
+
+    pub fn message(role: &str, content: String) -> Event {
+        Event::Message {
+            event_id: Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            role: role.into(),
+            content,
+        }
     }
 }

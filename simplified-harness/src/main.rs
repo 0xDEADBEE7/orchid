@@ -1,3 +1,5 @@
+mod cli_send;
+
 use orchid_simplified::{
     config::{init, Settings},
     model::{Session, Status},
@@ -6,7 +8,7 @@ use orchid_simplified::{
 use std::{
     env, io,
     path::PathBuf,
-    process::{Command, ExitCode, Stdio},
+    process::{Command, ExitCode},
     time::{Duration, Instant},
 };
 
@@ -43,13 +45,15 @@ fn run(args: Vec<String>) -> io::Result<String> {
 
 type Handler = fn(&[String], &Store, &Settings) -> io::Result<String>;
 const COMMANDS: &[(&str, Handler)] = &[
-    ("help", |_, _, _| Ok(help())),
-    ("create", |a, s, _| create(s, a)),
+    ("help", |_, _, _| {
+        Ok(serde_json::json!({"ok":true,"help":help()}).to_string())
+    }),
+    ("create", |a, s, c| create(s, c, a)),
     ("list", |_, s, _| list(s)),
     ("get", |a, s, _| get(s, a)),
     ("set", |a, s, _| set(s, a)),
     ("delete", |a, s, _| delete(s, a)),
-    ("send", |a, s, c| send(s, c, a)),
+    ("send", |a, s, c| cli_send::send(s, c, a)),
     ("tool", |a, _, c| orchid_simplified::tools::command(c, a)),
     ("config", |a, _, c| orchid_simplified::config::command(c, a)),
     ("auth", |a, _, c| orchid_simplified::config::auth(c, a)),
@@ -93,27 +97,34 @@ fn root_arg(mut args: Vec<String>) -> (PathBuf, Vec<String>) {
     (root, args)
 }
 
-fn create(store: &Store, args: &[String]) -> io::Result<String> {
+fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let label = value(args, "--label");
     let working_dir = value(args, "--working-dir");
     let policy = value(args, "--policy");
-    let session = Session::new(label, working_dir, policy);
+    let mut session = Session::new(label, working_dir, policy);
+    session.metadata.prompt = settings
+        .policy
+        .prompt
+        .clone()
+        .or_else(|| Some("default".into()));
     let id = session.metadata.id.clone();
     store.create(&session)?;
-    Ok(id)
+    Ok(serde_json::json!({"id":id,"status":"idle","prompt":session.metadata.prompt}).to_string())
 }
 
 fn list(store: &Store) -> io::Result<String> {
     let mut sessions = store.list()?;
     sessions.sort_by_key(|s| s.metadata.created_at);
-    serde_json::to_string(&sessions).map_err(io::Error::other)
+    serde_json::to_string(&serde_json::json!({"sessions":sessions})).map_err(io::Error::other)
 }
 
 fn get(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("get requires an id"))?;
     let session = store.load(id)?;
     if args.iter().any(|x| x == "--last-message") {
-        return Ok(session.state.last_message.unwrap_or_default());
+        return Ok(
+            serde_json::json!({"id":id,"last_message":session.state.last_message}).to_string(),
+        );
     }
     serde_json::to_string(&session).map_err(io::Error::other)
 }
@@ -133,7 +144,7 @@ fn set(store: &Store, args: &[String]) -> io::Result<String> {
             s.metadata.working_dir = dir;
         }
     })?;
-    Ok(id)
+    Ok(serde_json::json!({"id":id,"updated":true}).to_string())
 }
 
 fn delete(store: &Store, args: &[String]) -> io::Result<String> {
@@ -141,50 +152,7 @@ fn delete(store: &Store, args: &[String]) -> io::Result<String> {
         .first()
         .ok_or_else(|| invalid("delete requires an id"))?;
     store.archive(id)?;
-    Ok(id.to_string())
-}
-
-fn send(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
-    let message = positional(args)
-        .first()
-        .ok_or_else(|| invalid("send requires a message"))?
-        .clone();
-    let id = value(args, "--id").ok_or_else(|| invalid("send requires --id"))?;
-    orchid_simplified::hooks::run(settings, "run_start", &id)?;
-    if args.iter().any(|arg| arg == "--await") {
-        return Err(invalid("send does not support --await; use await <ID>"));
-    }
-    let mut session = store.load(&id)?;
-    // Persist the user event before starting the asynchronous worker so the
-    // send command is immediately observable in events.jsonl.
-    session.append(orchid_simplified::model::Event::Message {
-        role: "user".into(),
-        content: message.clone(),
-    });
-    session.state.status = Status::Running;
-    let exe = env::current_exe()?;
-    let child = Command::new(exe)
-        .arg("--config")
-        .arg(&settings.root)
-        .arg("__run")
-        .arg("--id")
-        .arg(&id)
-        .arg(&message)
-        // The worker persists the model response in the session store. It
-        // must never inherit the CLI's stdout/stderr and corrupt its JSON
-        // protocol with assistant text (or worker diagnostics).
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    session.state.pid = Some(child.id());
-    store.save(&session)?;
-    Ok(serde_json::json!({
-        "id": id,
-        "status": Status::Running,
-        "pid": child.id(),
-    })
-    .to_string())
+    Ok(serde_json::json!({"id":id,"archived":true}).to_string())
 }
 
 fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
@@ -208,7 +176,8 @@ fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
                 .zip(&ids)
                 .map(|(s, id)| serde_json::json!({"id": id, "status": s.state.status}))
                 .collect();
-            return serde_json::to_string(&statuses).map_err(io::Error::other);
+            return serde_json::to_string(&serde_json::json!({"sessions":statuses}))
+                .map_err(io::Error::other);
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -226,8 +195,14 @@ fn stop(store: &Store, args: &[String]) -> io::Result<String> {
     store.update(id, |s| {
         s.state.status = Status::Cancelled;
         s.state.pid = None;
+        s.state.termination_reason = Some("cancelled by user".into());
+        s.append(orchid_simplified::model::Event::Termination {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            reason: "cancelled by user".into(),
+        });
     })?;
-    Ok(id.clone())
+    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
 }
 
 fn positional(args: &[String]) -> Vec<String> {

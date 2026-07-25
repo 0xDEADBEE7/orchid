@@ -7,13 +7,17 @@ use std::{
 };
 
 pub fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
+    read_from(settings, paths, &settings.root)
+}
+
+pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Result<Value> {
     require(settings, "fs_read")?;
     if paths.is_empty() {
         return Err(invalid("fs_read requires a non-empty paths array"));
     }
     let mut result = serde_json::Map::new();
     for input in paths {
-        match safe_path(settings, input)
+        match safe_path_at(settings, input, base)
             .and_then(|path| fs::read_to_string(&path).map(|s| (path, s)))
         {
             Ok((path, content)) => {
@@ -33,8 +37,12 @@ pub fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
 }
 
 pub fn edit(settings: &Settings, path: &str, edits: &Value) -> io::Result<Value> {
+    edit_from(settings, path, edits, &settings.root)
+}
+
+pub fn edit_from(settings: &Settings, path: &str, edits: &Value, base: &Path) -> io::Result<Value> {
     require(settings, "fs_edit")?;
-    let path = safe_path(settings, path)?;
+    let path = safe_path_at(settings, path, base)?;
     let edits = edits
         .as_array()
         .ok_or_else(|| invalid("fs_edit edits must be an array"))?;
@@ -80,19 +88,33 @@ fn apply_edit(content: String, edit: &Value) -> io::Result<String> {
 pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
     [
         Event::ToolCall {
-            name: name.into(),
-            input,
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            calls: vec![crate::model::ToolCall {
+                call_id: uuid::Uuid::new_v4().to_string(),
+                name: name.into(),
+                input,
+            }],
         },
-        Event::ToolResult { content: result },
+        Event::ToolResult {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            call_id: String::new(),
+            content: result,
+        },
     ]
 }
 
 pub fn bash(settings: &Settings, command: &str) -> io::Result<Value> {
+    bash_in(settings, command, &settings.root)
+}
+
+pub fn bash_in(settings: &Settings, command: &str, working_dir: &Path) -> io::Result<Value> {
     require(settings, "bash")?;
     let output = Command::new("bash")
         .arg("-c")
         .arg(command)
-        .current_dir(&settings.root)
+        .current_dir(working_dir)
         .output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -121,8 +143,8 @@ fn require(settings: &Settings, tool: &str) -> io::Result<()> {
     }
 }
 
-fn safe_path(settings: &Settings, input: &str) -> io::Result<PathBuf> {
-    let base = Path::new(settings.root.as_path());
+fn safe_path_at(settings: &Settings, input: &str, base_path: &Path) -> io::Result<PathBuf> {
+    let base = Path::new(base_path);
     let path = if Path::new(input).is_absolute() {
         PathBuf::from(input)
     } else {
@@ -159,7 +181,7 @@ pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
         .ok_or_else(|| invalid("tool requires a name"))?;
     let input = args.get(1..).unwrap_or_default().join(" ");
     let result = run_named(settings, name, &input)?;
-    serde_json::to_string(&result).map_err(io::Error::other)
+    serde_json::to_string(&serde_json::json!({"result":result})).map_err(io::Error::other)
 }
 
 fn run_named(settings: &Settings, name: &str, input: &str) -> io::Result<Value> {

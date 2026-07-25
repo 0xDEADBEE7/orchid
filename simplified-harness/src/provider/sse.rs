@@ -10,8 +10,11 @@ pub fn parse(input: &str) -> Vec<StreamEvent> {
             events.push(StreamEvent::Done);
             continue;
         }
-        if let Ok(value) = serde_json::from_str::<Value>(data) {
-            handle(&value, &mut events, &mut calls);
+        match serde_json::from_str::<Value>(data) {
+            Ok(value) => handle(&value, &mut events, &mut calls),
+            Err(error) => events.push(StreamEvent::Malformed(format!(
+                "malformed provider content: {error}"
+            ))),
         }
     }
     events

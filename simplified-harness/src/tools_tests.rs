@@ -44,6 +44,7 @@ fn fs_read_supports_batch_calls() {
         root: dir.path().into(),
         policy_name: "default".into(),
         policy,
+        log_level: "info".into(),
     };
     assert_eq!(
         read(&settings, &["a".into(), "b".into()]).unwrap(),
@@ -62,6 +63,7 @@ fn fs_edit_applies_structured_edits() {
         root: dir.path().into(),
         policy_name: "default".into(),
         policy,
+        log_level: "info".into(),
     };
     edit(
         &settings,
