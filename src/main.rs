@@ -1,149 +1,271 @@
-use orchid::cli::{output, parse_args, AuthSubcommand, Command, ConfigSubcommand};
-use orchid::cmd;
-use orchid::JsonError;
-use std::env;
-use std::process;
+mod cli_send;
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let args_slice = if args.len() > 1 { &args[1..] } else { &[] };
+use orchid::{
+    config::{init, Settings},
+    model::{Session, Status},
+    store::{default_root, Store},
+};
+use std::{
+    env, io,
+    path::PathBuf,
+    process::{Command, ExitCode},
+    time::{Duration, Instant},
+};
 
-    let mut config_dir = std::path::PathBuf::from("config");
-    let mut filtered_args = Vec::new();
-    let mut i = 0;
-    while i < args_slice.len() {
-        if args_slice[i] == "--config" {
-            if i + 1 >= args_slice.len() {
-                let err = JsonError::new("invalid_args", "--config requires <directory>");
-                let _ = output::print_error(&err);
-                process::exit(1);
+fn main() -> ExitCode {
+    match run(env::args().skip(1).collect()) {
+        Ok(output) => {
+            if !output.is_empty() {
+                println!("{output}");
             }
-            config_dir = std::path::PathBuf::from(&args_slice[i + 1]);
-            i += 2;
-        } else if let Some(path) = args_slice[i].strip_prefix("--config=") {
-            config_dir = std::path::PathBuf::from(path);
-            i += 1;
-        } else {
-            filtered_args.push(args_slice[i].clone());
-            i += 1;
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!(
+                "{}",
+                serde_json::json!({"error": "command_failed", "message": error.to_string()})
+            );
+            ExitCode::from(1)
         }
     }
+}
 
-    let (cmd, _flags) = match parse_args(&filtered_args) {
-        Ok((c, f)) => (c, f),
-        Err(e) => {
-            let err = JsonError::new("invalid_args", &e);
-            let _ = output::print_error(&err);
-            process::exit(1);
-        }
-    };
+fn run(args: Vec<String>) -> io::Result<String> {
+    let (root, args) = root_arg(args);
+    init(&root)?;
+    let settings = Settings::load(&root)?;
+    let store = Store::new(&root)?;
+    let (command, command_args) = args
+        .split_first()
+        .map_or((None, &[][..]), |(command, args)| {
+            let command = match command.as_str() {
+                "-h" | "--help" => "help",
+                other => other,
+            };
+            (Some(command), args)
+        });
+    dispatch(
+        command,
+        command_args,
+        &store,
+        &settings,
+    )
+}
 
-    let result = match cmd {
-        Command::Help(None) => cmd::help(),
-        Command::Help(Some(ref cmd_name)) => cmd::help_command(cmd_name),
-        Command::List(resource) => cmd::list(&config_dir, resource.as_deref()),
-        Command::Config(ConfigSubcommand::Validate) => cmd::config_validate(&config_dir),
-        Command::Config(ConfigSubcommand::List) => cmd::config_list(&config_dir),
-        Command::Config(ConfigSubcommand::Show(resource)) => {
-            cmd::config_show(&config_dir, &resource)
-        }
-        Command::Config(ConfigSubcommand::Use(policy)) => cmd::config_use(&config_dir, &policy),
-        Command::Auth(AuthSubcommand::List) => cmd::auth_list(&config_dir),
-        Command::Auth(AuthSubcommand::Validate(name)) => cmd::auth_validate(&config_dir, &name),
-        Command::Auth(AuthSubcommand::Login(name)) => cmd::auth_login(&config_dir, &name),
-        Command::Create {
-            label,
-            working_dir,
-            policy,
-            prompt,
-            restrictions,
-        } => cmd::create(
-            label,
-            working_dir,
-            restrictions,
-            policy,
-            prompt,
-            &config_dir,
-        ),
-        Command::Send {
-            id,
-            message,
-            await_completion,
-            label,
-            working_dir,
-            policy,
-            prompt,
-        } => cmd::send::send(cmd::send::SendRequest {
-            id,
-            message,
-            await_completion,
-            config_dir: &config_dir,
-            label,
-            working_dir,
-            policy,
-            prompt,
-        }),
-        Command::Await {
-            ids,
-            timeout,
-            interval,
-        } => match cmd::await_sessions(ids, timeout, interval, &config_dir) {
-            Ok((json, code)) => {
-                if code != 0 {
-                    if let Err(error) = output::print_json(&json) {
-                        let err = JsonError::new("output_error", &error);
-                        let _ = output::print_error(&err);
-                    }
-                    process::exit(code);
-                }
-                Ok(json)
-            }
-            Err(error) => Err(error),
-        },
-        Command::Get {
-            id,
-            conversation,
-            last_message,
-            metadata,
-            state,
-        } => cmd::get(
-            &id,
-            conversation,
-            last_message,
-            metadata,
-            state,
-            &config_dir,
-        ),
-        Command::Set {
-            id,
-            label,
-            working_dir,
-            restrictions,
-        } => cmd::set(id, label, working_dir, restrictions, &config_dir),
-        Command::Delete(id) => cmd::delete(id, &config_dir),
-        Command::Stop(id) => cmd::stop(id, &config_dir),
-        Command::Kill(id) => cmd::kill(id, &config_dir),
-        Command::InternalRun { id } => match cmd::internal_run(&id, &config_dir) {
-            Ok(()) => Ok(serde_json::json!({"status": "ok"})),
-            Err(e) => Err(e),
-        },
-    };
+type Handler = fn(&[String], &Store, &Settings) -> io::Result<String>;
+const COMMANDS: &[(&str, Handler)] = &[
+    ("help", |_, _, _| {
+        Ok(serde_json::json!({"ok":true,"help":help()}).to_string())
+    }),
+    ("create", |a, s, c| create(s, c, a)),
+    ("list", |_, s, _| list(s)),
+    ("get", |a, s, _| get(s, a)),
+    ("set", |a, s, _| set(s, a)),
+    ("delete", |a, s, _| delete(s, a)),
+    ("send", |a, s, c| cli_send::send(s, c, a)),
+    ("tool", |a, _, c| orchid::tools::command(c, a)),
+    ("auth", |a, _, c| orchid::config::auth(c, a)),
+    ("__run", |a, s, c| {
+        orchid::provider::command(s, c, a)
+    }),
+    ("await", |a, s, _| await_sessions(s, a)),
+    ("stop", |a, s, _| stop(s, a)),
+    ("agent", |_, _, c| agent(c)),
+    ("session", |a, s, c| session(s, c, a)),
+];
 
-    match result {
-        Ok(json) => {
-            if json.is_null() {
-                return;
-            }
-            if let Err(e) = output::print_json(&json) {
-                let err = JsonError::new("output_error", &e);
-                let _ = output::print_error(&err);
-                process::exit(1);
-            }
-        }
-        Err(e) => {
-            let err = JsonError::new("command_error", &e);
-            let _ = output::print_error(&err);
-            process::exit(1);
+fn dispatch(
+    command: Option<&str>,
+    args: &[String],
+    store: &Store,
+    settings: &Settings,
+) -> io::Result<String> {
+    let name = command.unwrap_or("help");
+    let name = if name == "kill" { "stop" } else { name };
+    COMMANDS
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map_or_else(
+            || {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("unknown command: {name}"),
+                ))
+            },
+            |(_, handler)| handler(args, store, settings),
+        )
+}
+
+fn root_arg(mut args: Vec<String>) -> (PathBuf, Vec<String>) {
+    let mut root = default_root();
+    if let Some(i) = args.iter().position(|x| x == "--config") {
+        if i + 1 < args.len() {
+            root = PathBuf::from(args.remove(i + 1));
+            args.remove(i);
         }
     }
+    (root, args)
+}
+
+fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
+    let label = value(args, "--label");
+    let working_dir = value(args, "--working-dir");
+    let agent = value(args, "--agent").unwrap_or_else(|| "default".into());
+    settings.resolve_agent(&agent)?;
+    let session = Session::new(label, working_dir, Some(agent.clone()));
+    let id = session.metadata.id.clone();
+    store.create(&session)?;
+    Ok(serde_json::json!({"id":id,"status":"idle","agent":agent}).to_string())
+}
+
+fn agent(settings: &Settings) -> io::Result<String> {
+    serde_json::to_string(&serde_json::json!({"agents": settings.agent_summaries()?}))
+        .map_err(io::Error::other)
+}
+
+fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
+    let id = args
+        .first()
+        .ok_or_else(|| invalid("session requires an id"))?;
+    let agent = value(&args[1..], "--agent").ok_or_else(|| invalid("session requires --agent"))?;
+    settings.resolve_agent(&agent)?;
+    store.update(id, |session| session.state.agent = agent.clone())?;
+    Ok(serde_json::json!({"id":id,"agent":agent,"updated":true}).to_string())
+}
+
+fn list(store: &Store) -> io::Result<String> {
+    let mut sessions = store.list()?;
+    sessions.sort_by_key(|s| s.metadata.created_at);
+    serde_json::to_string(&serde_json::json!({"sessions":sessions})).map_err(io::Error::other)
+}
+
+fn get(store: &Store, args: &[String]) -> io::Result<String> {
+    let id = args.first().ok_or_else(|| invalid("get requires an id"))?;
+    let session = store.load(id)?;
+    if args.iter().any(|x| x == "--last-message") {
+        return Ok(
+            serde_json::json!({"id":id,"last_message":session.state.last_message}).to_string(),
+        );
+    }
+    serde_json::to_string(&session).map_err(io::Error::other)
+}
+
+fn set(store: &Store, args: &[String]) -> io::Result<String> {
+    let id = args
+        .first()
+        .ok_or_else(|| invalid("set requires an id"))?
+        .clone();
+    let label = value(&args[1..], "--label");
+    let dir = value(&args[1..], "--working-dir");
+    store.update(&id, |s| {
+        if label.is_some() {
+            s.metadata.label = label;
+        }
+        if dir.is_some() {
+            s.metadata.working_dir = dir;
+        }
+    })?;
+    Ok(serde_json::json!({"id":id,"updated":true}).to_string())
+}
+
+fn delete(store: &Store, args: &[String]) -> io::Result<String> {
+    let id = args
+        .first()
+        .ok_or_else(|| invalid("delete requires an id"))?;
+    store.archive(id)?;
+    Ok(serde_json::json!({"id":id,"archived":true}).to_string())
+}
+
+fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
+    if args.is_empty() {
+        return Err(invalid("await requires at least one id"));
+    }
+    let ids = positional(args);
+    let timeout = value(args, "--timeout")
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(60.0);
+    let deadline = Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
+    loop {
+        let sessions: Vec<_> = ids
+            .iter()
+            .map(|id| store.reconcile(id))
+            .collect::<io::Result<_>>()?;
+        if sessions.iter().all(|s| s.state.status != Status::Running) || Instant::now() >= deadline
+        {
+            let statuses: Vec<_> = sessions
+                .iter()
+                .zip(&ids)
+                .map(|(s, id)| serde_json::json!({"id": id, "status": s.state.status}))
+                .collect();
+            return serde_json::to_string(&serde_json::json!({"sessions":statuses}))
+                .map_err(io::Error::other);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn stop(store: &Store, args: &[String]) -> io::Result<String> {
+    let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
+    let session = store.load(id)?;
+    if let Some(pid) = session.state.pid {
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .status();
+    }
+    store.update(id, |s| {
+        s.state.status = Status::Cancelled;
+        s.state.pid = None;
+        s.state.termination_reason = Some("cancelled by user".into());
+        s.append(orchid::model::Event::Termination {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            reason: "cancelled by user".into(),
+        });
+    })?;
+    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
+}
+
+fn positional(args: &[String]) -> Vec<String> {
+    let value_flags = [
+        "--id",
+        "--label",
+        "--working-dir",
+        "--agent",
+        "--timeout",
+        "--interval",
+    ];
+    let mut result = Vec::new();
+    let mut skip = false;
+    for arg in args {
+        if skip {
+            skip = false;
+            continue;
+        }
+        if value_flags.contains(&arg.as_str()) {
+            skip = true;
+            continue;
+        }
+        if arg.starts_with('-') {
+            continue;
+        }
+        result.push(arg.clone());
+    }
+    result
+}
+
+fn value(args: &[String], name: &str) -> Option<String> {
+    args.windows(2)
+        .find(|w| w[0] == name)
+        .map(|w| w[1].clone())
+        .or_else(|| {
+            args.iter()
+                .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
+        })
+}
+fn invalid(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
+}
+fn help() -> String {
+    "orchid <create|list|get|set|delete|send|agent|session>\n  --config DIR  configuration/session root".into()
 }

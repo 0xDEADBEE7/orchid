@@ -1,6 +1,0 @@
-{
-  "prompt": "You are a helpful assistant.",
-  "max_steps": 8,
-  "connections": ["codex"],
-  "tools": []
-}
