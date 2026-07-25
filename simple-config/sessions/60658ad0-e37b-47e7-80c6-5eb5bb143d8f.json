@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "id": "60658ad0-e37b-47e7-80c6-5eb5bb143d8f",
+    "label": null,
+    "working_dir": null,
+    "policy": null,
+    "created_at": "2026-07-25T00:11:47.622204Z",
+    "updated_at": "2026-07-25T00:13:39.029276Z"
+  },
+  "state": {
+    "status": "failed",
+    "pid": null,
+    "last_message": null,
+    "updated_at": "2026-07-25T00:13:39.029276Z"
+  },
+  "events": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+    }
+  ]
+}
