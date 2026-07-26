@@ -19,12 +19,14 @@ pub fn dispatch(settings: &Settings, name: &str, trigger: &Event, session: &Sess
     }).map_err(io::Error::other)?;
     for hook in hooks {
         match hook.mode {
-            HookMode::Sync => run_one(settings, hook, &input)?,
+            HookMode::Sync => run_one(settings, &session.metadata.id, name, hook, &input)?,
             HookMode::Async => {
                 let settings = settings.clone();
                 let hook = hook.clone();
                 let input = input.clone();
-                thread::spawn(move || { let _ = run_one(&settings, &hook, &input); });
+                let session_id = session.metadata.id.clone();
+                let event_name = name.to_owned();
+                thread::spawn(move || { let _ = run_one(&settings, &session_id, &event_name, &hook, &input); });
             }
         }
     }
@@ -65,8 +67,9 @@ pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> i
     Ok(())
 }
 
-fn run_one(settings: &Settings, hook: &HookDefinition, input: &[u8]) -> io::Result<()> {
+fn run_one(settings: &Settings, session_id: &str, event_name: &str, hook: &HookDefinition, input: &[u8]) -> io::Result<()> {
     let timeout = Duration::from_secs(hook.timeout_seconds.or(settings.policy.hooks.timeout).unwrap_or(30));
+    log_lifecycle(settings, session_id, "hook started", "info", json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}));
     let mut child = Command::new(settings.root.join(&hook.script))
         .current_dir(&settings.root)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
@@ -80,18 +83,34 @@ fn run_one(settings: &Settings, hook: &HookDefinition, input: &[u8]) -> io::Resu
         if let Some(status) = child.try_wait()? {
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
-            if status.success() { return Ok(()) }
-            return Err(io::Error::other(format!("hook exited with status {status}")));
+            if status.success() {
+                log_lifecycle(settings, session_id, "hook completed", "info", json!({"event":event_name,"script":hook.script,"status":status.code()}));
+                return Ok(())
+            }
+            let error = io::Error::other(format!("hook exited with status {status}"));
+            log_lifecycle(settings, session_id, "hook failed", "error", json!({"event":event_name,"script":hook.script,"error":error.to_string()}));
+            return Err(error);
         }
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
+            log_lifecycle(settings, session_id, "hook timed out", "error", json!({"event":event_name,"script":hook.script}));
             return Err(io::Error::new(io::ErrorKind::TimedOut, "hook timed out"));
         }
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn format_mode(mode: &HookMode) -> &'static str { match mode { HookMode::Sync => "sync", HookMode::Async => "async" } }
+
+fn log_lifecycle(settings: &Settings, session_id: &str, message: &str, level: &str, fields: serde_json::Value) {
+    let Ok(store) = Store::new(&settings.root) else { return };
+    let _ = store.log_both(session_id, &crate::model::LogRecord {
+        event_id: uuid::Uuid::new_v4().to_string(), timestamp: chrono::Utc::now(),
+        level: level.into(), message: message.into(), fields,
+    }, &settings.log_level);
 }
 
 fn event_id(event: &Event) -> &str {
