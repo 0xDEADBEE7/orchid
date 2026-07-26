@@ -64,7 +64,7 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("__hook-run", |a, _, c| {
         orchid::hooks::monitor(c, a).map(|_| String::new())
     }),
-    ("await", |a, s, _| await_sessions(s, a)),
+    ("await", |a, s, c| await_sessions(s, c, a)),
     ("stop", |a, s, c| stop(s, c, a)),
     ("agent", |_, _, c| agent(c)),
     ("session", |a, s, c| session(s, c, a)),
@@ -172,7 +172,7 @@ fn delete(store: &Store, args: &[String]) -> io::Result<String> {
     Ok(serde_json::json!({"id":id,"archived":true}).to_string())
 }
 
-fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
+fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     if args.is_empty() {
         return Err(invalid("await requires at least one id"));
     }
@@ -184,7 +184,14 @@ fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
     loop {
         let sessions: Vec<_> = ids
             .iter()
-            .map(|id| store.reconcile(id))
+            .map(|id| {
+                let before = store.load(id)?.events.len();
+                let session = store.reconcile(id)?;
+                if session.events.len() > before {
+                    let _ = orchid::hooks::dispatch_events(settings, &session, before);
+                }
+                Ok(session)
+            })
             .collect::<io::Result<_>>()?;
         if sessions.iter().all(|s| s.state.status != Status::Running) || Instant::now() >= deadline
         {
