@@ -34,13 +34,13 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         progress(session);
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
+            progress(session);
             return Ok(answer);
         }
         if calls.is_empty() {
             return Err(io::Error::other("provider returned no text"));
         }
-        dispatch::execute(settings, session, calls)?;
-        progress(session);
+        dispatch::execute(settings, session, calls, &mut progress)?;
     }
     Err(io::Error::other("provider tool loop exceeded safety limit"))
 }

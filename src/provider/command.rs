@@ -83,13 +83,15 @@ pub fn run_command(
     log(store, &settings, &id, "debug", "client run started");
     log(store, &settings, &id, "debug", "client request dispatched");
     let _ = crate::hooks::run(&settings, "on-turn-start", &id);
-    let event_start = session.events.len();
+    let mut dispatched = session.events.len();
     match run_with_progress(provider, &settings, &mut session, &message, |session| {
-        let _ = store.save(session);
+        if store.save(session).is_ok() {
+            let _ = crate::hooks::dispatch_events(&settings, session, dispatched);
+            dispatched = session.events.len();
+        }
     }) {
         Ok(reply) => {
             log(store, &settings, &id, "debug", "client stream completed");
-            let _ = crate::hooks::dispatch_events(&settings, &session, event_start);
             finish_success(store, &settings, &id, session, reply)
         }
         Err(error) => {

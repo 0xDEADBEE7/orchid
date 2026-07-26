@@ -3,10 +3,11 @@ use crate::model::{Event, Session};
 use serde_json::Value;
 use std::io;
 
-pub fn execute(
+pub fn execute<F: FnMut(&Session)>(
     settings: &Settings,
     session: &mut Session,
     calls: Vec<(String, Value)>,
+    mut progress: F,
 ) -> io::Result<String> {
     let mut output = Vec::new();
     for (name, input) in calls {
@@ -20,6 +21,7 @@ pub fn execute(
                 input: input.clone(),
             }],
         });
+        progress(session);
         match invoke(settings, session, &name, &input) {
             Ok(value) => {
                 output.push(value.to_string());
@@ -29,6 +31,7 @@ pub fn execute(
                     call_id,
                     content: value,
                 });
+                progress(session);
             }
             Err(error) => {
                 session.append(Event::ToolResult {
@@ -37,6 +40,7 @@ pub fn execute(
                     call_id,
                     content: serde_json::json!({"error":error.to_string()}),
                 });
+                progress(session);
                 return Err(error);
             }
         }
