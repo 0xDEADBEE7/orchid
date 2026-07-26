@@ -17,6 +17,8 @@ echo "=== session storage smoke test ==="
 echo "config: $CONFIG"
 echo "binary: $BIN"
 
+echo
+echo "=== create ==="
 CREATE=$($BIN --config "$CONFIG" create \
   --label session-storage-smoke \
   --working-dir "$WORKDIR")
@@ -25,6 +27,8 @@ if [ -z "$ID" ]; then
   echo "failed to extract session id from: $CREATE" >&2
   exit 1
 fi
+echo "created session: $ID"
+printf '%s\n' "$CREATE" | python3 -m json.tool
 
 SESSION_DIR="$CONFIG/sessions/$ID"
 METADATA="$SESSION_DIR/metadata.json"
@@ -36,6 +40,8 @@ test -f "$EVENTS"
 test -f "$LOGS"
 test ! -e "$SESSION_DIR/state.json"
 
+echo
+echo "=== initial metadata ==="
 python3 - "$METADATA" "$ID" "$WORKDIR" <<'PY'
 import json
 import sys
@@ -52,8 +58,18 @@ PY
 
 test ! -s "$EVENTS"
 
+echo
+echo "=== update session ==="
 UPDATED=$($BIN --config "$CONFIG" session "$ID" --agent default)
 printf '%s\n' "$UPDATED"
+
+echo
+echo "=== send ==="
+$BIN --config "$CONFIG" send --id "$ID" "session storage smoke test"
+
+echo
+echo "=== await ==="
+$BIN --config "$CONFIG" await "$ID" --timeout 30
 
 GET=$($BIN --config "$CONFIG" get "$ID")
 SESSION_JSON=$GET python3 - "$ID" <<'PY'
@@ -64,9 +80,28 @@ import sys
 session = json.loads(os.environ["SESSION_JSON"])
 assert session["metadata"]["id"] == sys.argv[1]
 assert session["metadata"]["status"] == "idle"
-assert session["events"] == []
+assert len(session["events"]) >= 2
 assert "last_message" not in session["metadata"]
-print("session load: ok")
+print(json.dumps({
+    "id": session["metadata"]["id"],
+    "status": session["metadata"]["status"],
+    "working_dir": session["metadata"]["working_dir"],
+    "event_count": len(session["events"]),
+    "last_message": next((event["content"] for event in reversed(session["events"])
+                           if event["type"] == "message" and event["role"] == "assistant"), None),
+}, indent=2))
+PY
+
+echo
+echo "=== persisted events ==="
+python3 - "$EVENTS" <<'PY'
+import json
+import sys
+
+for index, line in enumerate(open(sys.argv[1]), 1):
+    event = json.loads(line)
+    print(f"\n-- event {index}: {event['type']} --")
+    print(json.dumps(event, indent=2))
 PY
 
 LIST=$($BIN --config "$CONFIG" list)
