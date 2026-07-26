@@ -1,7 +1,7 @@
 use crate::{config::{HookDefinition, HookMode, Settings}, model::{Event, Session}, store::Store};
 use serde::Serialize;
 use serde_json::json;
-use std::{io::{self, Write}, process::{Command, Stdio}, thread, time::{Duration, Instant}};
+use std::{io::{self, Read, Write}, process::{Command, Stdio}, thread, time::{Duration, Instant}};
 
 #[derive(Debug, Serialize)]
 struct Envelope<'a> {
@@ -70,16 +70,24 @@ fn run_one(settings: &Settings, hook: &HookDefinition, input: &[u8]) -> io::Resu
     let mut child = Command::new(settings.root.join(&hook.script))
         .current_dir(&settings.root)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let stdout = child.stdout.take().ok_or_else(|| io::Error::other("hook stdout unavailable"))?;
+    let stderr = child.stderr.take().ok_or_else(|| io::Error::other("hook stderr unavailable"))?;
+    let stdout_reader = thread::spawn(move || { let mut bytes = Vec::new(); let _ = stdout.take(1024 * 1024).read_to_end(&mut bytes); bytes });
+    let stderr_reader = thread::spawn(move || { let mut bytes = Vec::new(); let _ = stderr.take(1024 * 1024).read_to_end(&mut bytes); bytes });
     child.stdin.take().ok_or_else(|| io::Error::other("hook stdin unavailable"))?.write_all(input)?;
     let started = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
             if status.success() { return Ok(()) }
             return Err(io::Error::other(format!("hook exited with status {status}")));
         }
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
             return Err(io::Error::new(io::ErrorKind::TimedOut, "hook timed out"));
         }
         thread::sleep(Duration::from_millis(10));
@@ -110,3 +118,7 @@ pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()>
     let trigger = session.events.last().ok_or_else(|| io::Error::other("session has no events"))?;
     dispatch(settings, event, trigger, &session)
 }
+
+#[cfg(test)]
+#[path = "hooks_tests.rs"]
+mod tests;
