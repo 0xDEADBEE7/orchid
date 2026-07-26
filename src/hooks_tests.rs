@@ -63,3 +63,24 @@ fn sync_hook_timeout_is_reported() {
     let error = dispatch(&settings, "on-event", &event, &session);
     assert!(error.is_err());
 }
+
+#[test]
+fn async_hook_is_launched_without_blocking_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = settings(dir.path());
+    script(dir.path(), "async.sh", "sleep 0.1; echo done > async-result");
+    settings.policy.hooks.events.insert("on-event".into(), vec![HookDefinition {
+        script: "async.sh".into(), mode: HookMode::Async, timeout_seconds: Some(2),
+    }]);
+    let mut session = Session::new(None, None, None);
+    let event = Session::message("user", "hello".into());
+    session.append(event.clone());
+    let started = std::time::Instant::now();
+    dispatch(&settings, "on-event", &event, &session).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_millis(90));
+    for _ in 0..30 {
+        if dir.path().join("async-result").exists() { return; }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("async hook did not complete");
+}
