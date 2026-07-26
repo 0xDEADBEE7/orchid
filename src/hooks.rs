@@ -169,12 +169,25 @@ fn run_one(
         json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
     );
     let _depth = HookDepth::enter(&settings.root, session_id)?;
-    let mut child = Command::new(settings.root.join(&hook.script))
+    let mut child = match Command::new(settings.root.join(&hook.script))
         .current_dir(&settings.root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            log_lifecycle(
+                settings,
+                session_id,
+                "hook failed to start",
+                "error",
+                json!({"event":event_name,"script":hook.script,"error":error.to_string()}),
+            );
+            return Err(error);
+        }
+    };
     let stdout = child
         .stdout
         .take()
