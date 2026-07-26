@@ -203,15 +203,17 @@ fn run_one(
     let started = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+            let stdout =
+                String::from_utf8_lossy(&stdout_reader.join().unwrap_or_default()).into_owned();
+            let stderr =
+                String::from_utf8_lossy(&stderr_reader.join().unwrap_or_default()).into_owned();
             if status.success() {
                 log_lifecycle(
                     settings,
                     session_id,
                     "hook completed",
                     "info",
-                    json!({"event":event_name,"script":hook.script,"status":status.code()}),
+                    json!({"event":event_name,"script":hook.script,"status":status.code(),"stdout":stdout,"stderr":stderr}),
                 );
                 return Ok(());
             }
@@ -221,7 +223,7 @@ fn run_one(
                 session_id,
                 "hook failed",
                 "error",
-                json!({"event":event_name,"script":hook.script,"error":error.to_string()}),
+                json!({"event":event_name,"script":hook.script,"error":error.to_string(),"stdout":stdout,"stderr":stderr}),
             );
             return Err(error);
         }
