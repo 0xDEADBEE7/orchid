@@ -260,10 +260,27 @@ fn run_one(
 fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     let path = std::path::Path::new(script);
     let local = settings.root.join(path);
-    if path.is_absolute() || path.components().count() > 1 || local.exists() {
+    if path.is_absolute() || path.components().count() > 1 || is_executable(&local) {
         local
     } else {
         path.to_path_buf()
+    }
+}
+
+fn is_executable(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        true
     }
 }
 

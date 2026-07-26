@@ -153,4 +153,9 @@ fn executable_resolution_distinguishes_path_like_and_bare_names() {
         resolve_executable(&settings, "ls"),
         std::path::PathBuf::from("ls")
     );
+    std::fs::write(dir.path().join("ls"), "not executable").unwrap();
+    assert_eq!(
+        resolve_executable(&settings, "ls"),
+        std::path::PathBuf::from("ls")
+    );
 }
