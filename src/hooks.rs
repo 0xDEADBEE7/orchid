@@ -286,7 +286,7 @@ fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     let path = std::path::Path::new(script);
     let local = settings.root.join(path);
     if path.is_absolute() || path.components().count() > 1 || is_executable(&local) {
-        local
+        local.canonicalize().unwrap_or(local)
     } else {
         path.to_path_buf()
     }

@@ -15,10 +15,10 @@ echo "=== configuration ==="
 echo "config: $CONFIG"
 echo "binary: $BIN"
 
-HOOK_LOG="$CONFIG/hook-events.jsonl"
-: > "$HOOK_LOG"
 WORKDIR="$CONFIG/smoke-working-dir"
 mkdir -p "$WORKDIR"
+HOOK_LOG="$WORKDIR/hook-events.jsonl"
+: > "$HOOK_LOG"
 
 CREATE=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 ID=$(printf '%s\n' "$CREATE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
