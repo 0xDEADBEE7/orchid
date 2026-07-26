@@ -62,7 +62,7 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("auth", |a, _, c| orchid::config::auth(c, a)),
     ("__run", |a, s, c| orchid::provider::command(s, c, a)),
     ("await", |a, s, _| await_sessions(s, a)),
-    ("stop", |a, s, _| stop(s, a)),
+    ("stop", |a, s, c| stop(s, c, a)),
     ("agent", |_, _, c| agent(c)),
     ("session", |a, s, c| session(s, c, a)),
 ];
@@ -197,7 +197,7 @@ fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
     }
 }
 
-fn stop(store: &Store, args: &[String]) -> io::Result<String> {
+fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
     if let Some(pid) = session.state.pid {
@@ -206,16 +206,20 @@ fn stop(store: &Store, args: &[String]) -> io::Result<String> {
             .arg(pid.to_string())
             .status();
     }
-    store.update(id, |s| {
-        s.state.status = Status::Cancelled;
-        s.state.pid = None;
-        s.state.termination_reason = Some("cancelled by user".into());
-        s.append(orchid::model::Event::Termination {
+    let mut session = store.load(id)?;
+    session.state.status = Status::Cancelled;
+    session.state.pid = None;
+    session.state.termination_reason = Some("cancelled by user".into());
+    orchid::hooks::append(
+        store,
+        settings,
+        &mut session,
+        orchid::model::Event::Termination {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: "cancelled by user".into(),
-        });
-    })?;
+        },
+    )?;
     Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
 }
 
