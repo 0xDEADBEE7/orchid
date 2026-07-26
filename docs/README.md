@@ -48,7 +48,7 @@ orchid --config ./config get <id> --conversation \\
   | jq --argjson n 10 '.conversation | .[-$n:]'
 
 # check run state
-jq .status ./config/sessions/<id>/state.json
+jq .status ./config/sessions/<id>/metadata.json
 ```
 
 ## Design

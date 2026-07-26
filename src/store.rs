@@ -30,12 +30,9 @@ impl Store {
         let dir = self.path(id);
         let metadata = serde_json::from_slice(&fs::read(dir.join("metadata.json"))?)
             .map_err(io::Error::other)?;
-        let state =
-            serde_json::from_slice(&fs::read(dir.join("state.json"))?).map_err(io::Error::other)?;
         let events = read_jsonl(&dir.join("events.jsonl"))?;
         Ok(Session {
             metadata,
-            state,
             events,
         })
     }
@@ -43,9 +40,9 @@ impl Store {
     pub fn reconcile(&self, id: &str) -> io::Result<Session> {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
-        if session.state.status == crate::model::Status::Running {
+        if session.metadata.status == crate::model::Status::Running {
             let alive = session
-                .state
+                .metadata
                 .pid
                 .map(|pid| {
                     std::process::Command::new("kill")
@@ -56,9 +53,9 @@ impl Store {
                 })
                 .unwrap_or(false);
             if !alive {
-                session.state.status = crate::model::Status::Failed;
-                session.state.pid = None;
-                session.state.termination_reason = Some("worker process disappeared".into());
+                session.metadata.status = crate::model::Status::Failed;
+                session.metadata.pid = None;
+                session.metadata.termination_reason = Some("worker process disappeared".into());
                 session.append(crate::model::Event::Failure {
                     event_id: uuid::Uuid::new_v4().to_string(),
                     timestamp: chrono::Utc::now(),
@@ -88,7 +85,6 @@ impl Store {
         let dir = self.path(&session.metadata.id);
         fs::create_dir_all(&dir)?;
         write_json(&dir.join("metadata.json"), &session.metadata)?;
-        write_json(&dir.join("state.json"), &session.state)?;
         append_events(&dir.join("events.jsonl"), &session.events)?;
         if !dir.join("logs.jsonl").exists() {
             fs::write(dir.join("logs.jsonl"), "")?;

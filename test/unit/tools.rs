@@ -1,6 +1,6 @@
+use orchid::config::{init, Settings};
 use orchid::tools::{edit, read};
 use std::io;
-use orchid::config::{init, Settings};
 
 #[test]
 fn policy_denies_tools_by_default() {

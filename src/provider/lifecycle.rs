@@ -29,7 +29,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         if malformed(&calls) {
             return Err(io::Error::other("malformed provider content"));
         }
-        session.state.token_estimate = estimated_request_tokens;
+        session.metadata.token_estimate = estimated_request_tokens;
         record_usage(session, usage);
         progress(session);
         if !answer.is_empty() {
@@ -127,10 +127,13 @@ fn malformed(calls: &[(String, Value)]) -> bool {
         .first()
         .is_some_and(|(name, _)| name == "__malformed__")
 }
-fn budget(session: &mut Session, pending: &str, limit: u32) -> io::Result<u32> {
+fn budget(session: &mut Session, pending: &str, limit: i64) -> io::Result<u32> {
     let estimate = estimate_request_tokens(session, pending);
-    if estimate > limit {
-        session.state.termination_reason =
+    if limit == -1 {
+        return Ok(estimate);
+    }
+    if i64::from(estimate) > limit {
+        session.metadata.termination_reason =
             Some("token threshold exceeded before provider request".into());
         Err(io::Error::other("token threshold exceeded"))
     } else {
