@@ -29,7 +29,8 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         if malformed(&calls) {
             return Err(io::Error::other("malformed provider content"));
         }
-        record_usage(session, usage, estimated_request_tokens);
+        session.state.token_estimate = estimated_request_tokens;
+        record_usage(session, usage);
         progress(session);
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
@@ -50,38 +51,75 @@ fn transcript(session: &Session, prompt: &str) -> String {
     for event in &session.events {
         match event {
             Event::Message { role, content, .. } => {
-                context.push_str(role);
-                context.push_str(": ");
+                // Roles and separators are protocol overhead, not context
+                // content.  The fallback is intentionally only a rough
+                // estimate, so count the text sent for each message.
+                let _ = role;
                 context.push_str(content);
-                context.push('\n');
             }
             Event::Reasoning { content, .. } => {
-                context.push_str("reasoning: ");
                 context.push_str(content);
-                context.push('\n');
             }
             Event::ToolCall { calls, .. } => {
-                context.push_str("assistant tool call: ");
                 context.push_str(&serde_json::to_string(calls).unwrap_or_default());
-                context.push('\n');
             }
             Event::ToolResult {
-                call_id, content, ..
+                call_id: _,
+                content,
+                ..
             } => {
-                context.push_str("tool result ");
-                context.push_str(call_id);
-                context.push_str(": ");
                 context.push_str(&content.to_string());
-                context.push('\n');
             }
             Event::Usage { .. } | Event::Termination { .. } | Event::Failure { .. } => {}
         }
     }
-    if context.is_empty() {
-        prompt.to_owned()
-    } else {
-        format!("{context}\ncurrent user request: {prompt}")
-    }
+    context.push_str(prompt);
+    context
+}
+
+/// Estimate the size of the serialized message history sent to the provider.
+/// This is a snapshot of the current context, not cumulative provider usage.
+fn estimate_request_tokens(session: &Session, prompt: &str) -> u32 {
+    let mut messages = session
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Message { role, content, .. } => Some(crate::client::Message {
+                role: role.clone(),
+                content: content.clone(),
+                tool_calls: Vec::new(),
+                tool_result: None,
+            }),
+            Event::ToolCall { calls, .. } => Some(crate::client::Message {
+                role: "assistant".into(),
+                content: String::new(),
+                tool_calls: calls.clone(),
+                tool_result: None,
+            }),
+            Event::ToolResult {
+                call_id, content, ..
+            } => Some(crate::client::Message {
+                role: "tool".into(),
+                content: content.to_string(),
+                tool_calls: Vec::new(),
+                tool_result: Some((call_id.clone(), content.clone())),
+            }),
+            Event::Reasoning { .. }
+            | Event::Usage { .. }
+            | Event::Termination { .. }
+            | Event::Failure { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    messages.push(crate::client::Message {
+        role: "user".into(),
+        content: prompt.into(),
+        tool_calls: Vec::new(),
+        tool_result: None,
+    });
+    let bytes = serde_json::to_string(&messages)
+        .map(|s| s.len())
+        .unwrap_or(0);
+    (bytes / 3) as u32
 }
 
 fn malformed(calls: &[(String, Value)]) -> bool {
@@ -90,8 +128,8 @@ fn malformed(calls: &[(String, Value)]) -> bool {
         .is_some_and(|(name, _)| name == "__malformed__")
 }
 fn budget(session: &mut Session, pending: &str, limit: u32) -> io::Result<u32> {
-    let estimate = transcript(session, pending).chars().count().div_ceil(3) as u32;
-    if session.state.token_estimate.saturating_add(estimate) > limit {
+    let estimate = estimate_request_tokens(session, pending);
+    if estimate > limit {
         session.state.termination_reason =
             Some("token threshold exceeded before provider request".into());
         Err(io::Error::other("token threshold exceeded"))
@@ -99,13 +137,11 @@ fn budget(session: &mut Session, pending: &str, limit: u32) -> io::Result<u32> {
         Ok(estimate)
     }
 }
-fn record_usage(session: &mut Session, usage: Option<Usage>, fallback: u32) {
-    let (input, output, total) = if let Some(ref tokens) = usage {
-        (tokens.input, tokens.output, tokens.input + tokens.output)
-    } else {
-        (fallback, 0, fallback)
-    };
-    session.state.token_estimate += total;
+fn record_usage(session: &mut Session, usage: Option<Usage>) {
+    let (input, output) = usage
+        .as_ref()
+        .map(|tokens| (tokens.input, tokens.output))
+        .unwrap_or((0, 0));
     if usage.is_some() {
         session.append(Event::Usage {
             event_id: uuid::Uuid::new_v4().to_string(),

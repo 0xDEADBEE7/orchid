@@ -150,7 +150,7 @@ fn token_threshold_stops_before_provider_request() {
 }
 
 #[test]
-fn token_estimate_falls_back_to_three_chars_per_token() {
+fn token_estimate_is_serialized_request_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     crate::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -163,7 +163,24 @@ fn token_estimate_falls_back_to_three_chars_per_token() {
     let mut session = Session::new(None, None, None);
     session.append(Session::message("user", "123456789".into()));
     run(&NoUsage, &settings, &mut session, "").unwrap();
-    assert_eq!(session.state.token_estimate, 13);
+    let expected = serde_json::to_string(&vec![
+        crate::client::Message {
+            role: "user".into(),
+            content: "123456789".into(),
+            tool_calls: Vec::new(),
+            tool_result: None,
+        },
+        crate::client::Message {
+            role: "user".into(),
+            content: "".into(),
+            tool_calls: Vec::new(),
+            tool_result: None,
+        },
+    ])
+    .unwrap()
+    .len() as u32
+        / 3;
+    assert_eq!(session.state.token_estimate, expected);
 }
 
 #[test]

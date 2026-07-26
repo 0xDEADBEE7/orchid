@@ -1,8 +1,9 @@
 use crate::model::{ToolCall, Usage};
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::{fmt, io};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Message {
     pub role: String,
     pub content: String,
