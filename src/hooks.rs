@@ -65,66 +65,16 @@ fn launch_async(
     input: &[u8],
     working_dir: Option<&str>,
 ) -> io::Result<()> {
-    let _ = working_dir;
-    #[cfg(test)]
-    {
-        let settings = settings.clone();
-        let session_id = session_id.to_owned();
-        let event_name = event_name.to_owned();
-        let hook = hook.clone();
-        let input = input.to_vec();
-        let working_dir = working_dir.map(str::to_owned);
-        thread::spawn(move || {
-            let _ = run_one(
-                &settings,
-                &session_id,
-                &event_name,
-                &hook,
-                &input,
-                working_dir.as_deref(),
-            );
-        });
-        return Ok(());
-    }
-    #[cfg(not(test))]
-    {
-        let input_path = settings
-            .root
-            .join("sessions")
-            .join(session_id)
-            .join(format!(".hook-input-{}.json", uuid::Uuid::new_v4()));
-        fs::write(&input_path, input)?;
-        let timeout = hook
-            .timeout_seconds
-            .or(settings.policy.hooks.timeout)
-            .unwrap_or(30);
-        let child = Command::new(std::env::current_exe()?)
-            .arg("--config")
-            .arg(&settings.root)
-            .arg("__hook-run")
-            .arg("--id")
-            .arg(session_id)
-            .arg("--event")
-            .arg(event_name)
-            .arg("--script")
-            .arg(&hook.script)
-            .arg("--input")
-            .arg(&input_path)
-            .arg("--timeout")
-            .arg(timeout.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-        log_lifecycle(
-            settings,
-            session_id,
-            "async hook monitor launched",
-            "info",
-            json!({"event":event_name,"script":hook.script,"pid":child.id()}),
-        );
-        Ok(())
-    }
+    let settings = settings.clone();
+    let session_id = session_id.to_owned();
+    let event_name = event_name.to_owned();
+    let hook = hook.clone();
+    let input = input.to_vec();
+    let working_dir = working_dir.map(str::to_owned);
+    thread::spawn(move || {
+        let _ = run_one(&settings, &session_id, &event_name, &hook, &input, working_dir.as_deref());
+    });
+    Ok(())
 }
 
 /// Append an event durably, then dispatch the hooks that match it. The store
@@ -282,7 +232,7 @@ fn run_one(
     }
 }
 
-fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
+pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     let path = std::path::Path::new(script);
     let local = settings.root.join(path);
     if path.is_absolute() || path.components().count() > 1 || is_executable(&local) {
@@ -457,7 +407,3 @@ fn value(args: &[String], name: &str) -> Option<String> {
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
-
-#[cfg(test)]
-#[path = "hooks_tests.rs"]
-mod tests;

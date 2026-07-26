@@ -15,3 +15,23 @@ getrandom = "0.2"
 
 [dev-dependencies]
 tempfile = "3.0"
+
+[[test]]
+name = "client"
+path = "test/client.rs"
+
+[[test]]
+name = "hooks"
+path = "test/unit/hooks.rs"
+
+[[test]]
+name = "provider"
+path = "test/unit/provider.rs"
+
+[[test]]
+name = "store"
+path = "test/unit/store.rs"
+
+[[test]]
+name = "tools"
+path = "test/unit/tools.rs"

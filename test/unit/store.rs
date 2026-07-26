@@ -1,5 +1,5 @@
-use super::*;
-use crate::model::Session;
+use orchid::Store;
+use orchid::model::Session;
 
 #[test]
 fn round_trips_and_archives_sessions() {
@@ -18,11 +18,11 @@ fn reconciles_dead_running_processes() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
-    session.state.status = crate::model::Status::Running;
+    session.state.status = orchid::model::Status::Running;
     session.state.pid = Some(999_999);
     store.create(&session).unwrap();
     let recovered = store.reconcile(&session.metadata.id).unwrap();
-    assert_eq!(recovered.state.status, crate::model::Status::Failed);
+    assert_eq!(recovered.state.status, orchid::model::Status::Failed);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn debug_logs_are_filtered_by_configured_level() {
     let session = Session::new(None, None, None);
     let id = session.metadata.id.clone();
     store.create(&session).unwrap();
-    let record = crate::model::LogRecord {
+    let record = orchid::model::LogRecord {
         event_id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now(),
         level: "debug".into(),

@@ -152,7 +152,3 @@ pub fn tool_allowed(settings: &Settings, name: &str) -> bool {
 pub fn tool_result(value: impl Into<Value>) -> Value {
     value.into()
 }
-
-#[cfg(test)]
-#[path = "../provider_tests.rs"]
-mod tests;

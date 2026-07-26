@@ -207,7 +207,3 @@ fn edit_input(settings: &Settings, input: &str) -> io::Result<Value> {
         &serde_json::json!([{"old_string":"","new_string":content}]),
     )
 }
-
-#[cfg(test)]
-#[path = "tools_tests.rs"]
-mod tests;

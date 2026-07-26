@@ -273,7 +273,3 @@ pub fn default_root() -> PathBuf {
         .map(|home| home.join(".config").join("orchid"))
         .unwrap_or_else(|| PathBuf::from(".orchid-simplified"))
 }
-
-#[cfg(test)]
-#[path = "store_tests.rs"]
-mod tests;
