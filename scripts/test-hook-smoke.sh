@@ -17,8 +17,10 @@ echo "binary: $BIN"
 
 HOOK_LOG="$CONFIG/hook-events.jsonl"
 : > "$HOOK_LOG"
+WORKDIR="$CONFIG/smoke-working-dir"
+mkdir -p "$WORKDIR"
 
-CREATE=$($BIN --config "$CONFIG" create)
+CREATE=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 ID=$(printf '%s\n' "$CREATE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
 if [ -z "$ID" ]; then
   echo "failed to extract session id from: $CREATE" >&2
@@ -47,6 +49,7 @@ session = json.load(sys.stdin)
 print(json.dumps({
     "id": session["metadata"]["id"],
     "status": session["state"]["status"],
+    "working_dir": session["metadata"]["working_dir"],
     "event_count": len(session["events"]),
     "last_message": session["state"]["last_message"],
 }))
