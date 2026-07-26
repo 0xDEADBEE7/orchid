@@ -5,8 +5,6 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::json;
-#[cfg(not(test))]
-use std::env;
 use std::{
     fs,
     io::{self, Read, Write},
@@ -76,7 +74,7 @@ fn launch_async(
             .timeout_seconds
             .or(settings.policy.hooks.timeout)
             .unwrap_or(30);
-        let child = Command::new(env::current_exe()?)
+        let child = Command::new(std::env::current_exe()?)
             .arg("--config")
             .arg(&settings.root)
             .arg("__hook-run")
@@ -116,7 +114,7 @@ pub fn append(
     let first = session.events.is_empty();
     let event = event;
     *session = store.append_event(&session.metadata.id, event.clone())?;
-    if hook_depth() >= 8 {
+    if hook_depth(&settings.root, &session.metadata.id) >= 8 {
         return Ok(());
     }
     let mut names = vec!["on-event"];
@@ -170,9 +168,9 @@ fn run_one(
         "info",
         json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
     );
+    let _depth = HookDepth::enter(&settings.root, session_id)?;
     let mut child = Command::new(settings.root.join(&hook.script))
         .current_dir(&settings.root)
-        .env("ORCHID_INTERNAL_HOOK_DEPTH", (hook_depth() + 1).to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -245,11 +243,40 @@ fn run_one(
     }
 }
 
-fn hook_depth() -> u32 {
-    std::env::var("ORCHID_INTERNAL_HOOK_DEPTH")
+fn hook_depth(root: &std::path::Path, session_id: &str) -> u32 {
+    fs::read_to_string(root.join("sessions").join(session_id).join(".hook-depth"))
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0)
+}
+
+struct HookDepth {
+    path: std::path::PathBuf,
+}
+
+impl HookDepth {
+    fn enter(root: &std::path::Path, session_id: &str) -> io::Result<Self> {
+        let dir = root.join("sessions").join(session_id);
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(".hook-depth");
+        let depth = hook_depth(root, session_id) + 1;
+        fs::write(&path, depth.to_string())?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for HookDepth {
+    fn drop(&mut self) {
+        let depth = fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(1);
+        if depth <= 1 {
+            let _ = fs::remove_file(&self.path);
+        } else {
+            let _ = fs::write(&self.path, (depth - 1).to_string());
+        }
+    }
 }
 
 fn format_mode(mode: &HookMode) -> &'static str {
