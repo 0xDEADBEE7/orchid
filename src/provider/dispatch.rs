@@ -7,11 +7,28 @@ pub fn execute<F: FnMut(&Session)>(
     settings: &Settings,
     session: &mut Session,
     calls: Vec<(String, Value)>,
+    progress: F,
+) -> io::Result<String> {
+    execute_with_ids(
+        settings,
+        session,
+        calls.into_iter().map(|(name, input)| (name, input, None)),
+        progress,
+    )
+}
+
+pub fn execute_with_ids<
+    F: FnMut(&Session),
+    I: IntoIterator<Item = (String, Value, Option<String>)>,
+>(
+    settings: &Settings,
+    session: &mut Session,
+    calls: I,
     mut progress: F,
 ) -> io::Result<String> {
     let mut output = Vec::new();
-    for (name, input) in calls {
-        let call_id = uuid::Uuid::new_v4().to_string();
+    for (name, input, requested_id) in calls {
+        let call_id = requested_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         session.append(Event::ToolCall {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),

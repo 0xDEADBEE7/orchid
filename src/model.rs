@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub enum Status {
     Idle,
     Running,
+    HookRunning,
     Failed,
     Cancelled,
     Terminated,

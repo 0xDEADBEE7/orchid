@@ -1,3 +1,4 @@
+use crate::hook_state::HookState;
 use crate::{
     config::{HookDefinition, HookMode, Settings},
     model::{Event, Session},
@@ -145,9 +146,32 @@ fn run_one(
         json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
     );
     let _depth = HookDepth::enter(&settings.root, session_id)?;
+    let _hook_state = if matches!(hook.mode, HookMode::Sync)
+        && settings
+            .root
+            .join("sessions")
+            .join(session_id)
+            .join("metadata.json")
+            .exists()
+    {
+        Some(HookState::enter(settings, session_id)?)
+    } else {
+        None
+    };
     let executable = resolve_executable(settings, &hook.script);
+    let token_path = settings
+        .root
+        .join("sessions")
+        .join(session_id)
+        .join(".hook-token");
     let mut child = match Command::new(executable)
         .current_dir(resolve_working_dir(settings, working_dir))
+        .env("ORCHID_SESSION_ID", session_id)
+        .env(
+            "ORCHID_HOOK_TOKEN",
+            fs::read_to_string(&token_path).unwrap_or_default().trim(),
+        )
+        .env("ORCHID_HOOK_TOKEN_FILE", &token_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -232,6 +256,7 @@ fn run_one(
         thread::sleep(Duration::from_millis(10));
     }
 }
+
 pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     let path = std::path::Path::new(script);
     let local = settings.root.join(path);
