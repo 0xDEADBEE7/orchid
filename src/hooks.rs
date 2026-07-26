@@ -5,7 +5,10 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::json;
+#[cfg(not(test))]
+use std::env;
 use std::{
+    fs,
     io::{self, Read, Write},
     process::{Command, Stdio},
     thread,
@@ -36,19 +39,70 @@ pub fn dispatch(
     for hook in hooks {
         match hook.mode {
             HookMode::Sync => run_one(settings, &session.metadata.id, name, hook, &input)?,
-            HookMode::Async => {
-                let settings = settings.clone();
-                let hook = hook.clone();
-                let input = input.clone();
-                let session_id = session.metadata.id.clone();
-                let event_name = name.to_owned();
-                thread::spawn(move || {
-                    let _ = run_one(&settings, &session_id, &event_name, &hook, &input);
-                });
-            }
+            HookMode::Async => launch_async(settings, &session.metadata.id, name, hook, &input)?,
         }
     }
     Ok(())
+}
+
+fn launch_async(
+    settings: &Settings,
+    session_id: &str,
+    event_name: &str,
+    hook: &HookDefinition,
+    input: &[u8],
+) -> io::Result<()> {
+    #[cfg(test)]
+    {
+        let settings = settings.clone();
+        let session_id = session_id.to_owned();
+        let event_name = event_name.to_owned();
+        let hook = hook.clone();
+        let input = input.to_vec();
+        thread::spawn(move || {
+            let _ = run_one(&settings, &session_id, &event_name, &hook, &input);
+        });
+        return Ok(());
+    }
+    #[cfg(not(test))]
+    {
+        let input_path = settings
+            .root
+            .join("sessions")
+            .join(session_id)
+            .join(format!(".hook-input-{}.json", uuid::Uuid::new_v4()));
+        fs::write(&input_path, input)?;
+        let timeout = hook
+            .timeout_seconds
+            .or(settings.policy.hooks.timeout)
+            .unwrap_or(30);
+        let child = Command::new(env::current_exe()?)
+            .arg("--config")
+            .arg(&settings.root)
+            .arg("__hook-run")
+            .arg("--id")
+            .arg(session_id)
+            .arg("--event")
+            .arg(event_name)
+            .arg("--script")
+            .arg(&hook.script)
+            .arg("--input")
+            .arg(&input_path)
+            .arg("--timeout")
+            .arg(timeout.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        log_lifecycle(
+            settings,
+            session_id,
+            "async hook monitor launched",
+            "info",
+            json!({"event":event_name,"script":hook.script,"pid":child.id()}),
+        );
+        Ok(())
+    }
 }
 
 /// Append an event durably, then dispatch the hooks that match it. The store
@@ -258,6 +312,34 @@ pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()>
         .last()
         .ok_or_else(|| io::Error::other("session has no events"))?;
     dispatch(settings, event, trigger, &session)
+}
+
+pub fn monitor(settings: &Settings, args: &[String]) -> io::Result<String> {
+    let id = value(args, "--id").ok_or_else(|| invalid("__hook-run requires --id"))?;
+    let event = value(args, "--event").ok_or_else(|| invalid("__hook-run requires --event"))?;
+    let script = value(args, "--script").ok_or_else(|| invalid("__hook-run requires --script"))?;
+    let input_path =
+        value(args, "--input").ok_or_else(|| invalid("__hook-run requires --input"))?;
+    let timeout = value(args, "--timeout").and_then(|x| x.parse().ok());
+    let input = fs::read(&input_path);
+    let _ = fs::remove_file(&input_path);
+    let input = input?;
+    let hook = HookDefinition {
+        script,
+        mode: HookMode::Sync,
+        timeout_seconds: timeout,
+    };
+    run_one(settings, &id, &event, &hook, &input).map(|_| String::new())
+}
+
+fn value(args: &[String], name: &str) -> Option<String> {
+    args.windows(2)
+        .find(|pair| pair[0] == name)
+        .map(|pair| pair[1].clone())
+}
+
+fn invalid(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
 #[cfg(test)]

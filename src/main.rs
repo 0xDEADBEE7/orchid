@@ -61,6 +61,9 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("tool", |a, _, c| orchid::tools::command(c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
     ("__run", |a, s, c| orchid::provider::command(s, c, a)),
+    ("__hook-run", |a, _, c| {
+        orchid::hooks::monitor(c, a).map(|_| String::new())
+    }),
     ("await", |a, s, _| await_sessions(s, a)),
     ("stop", |a, s, c| stop(s, c, a)),
     ("agent", |_, _, c| agent(c)),
