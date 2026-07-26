@@ -35,11 +35,36 @@ pub struct Policy {
     #[serde(default)]
     pub paths: Vec<String>,
     #[serde(default)]
-    pub hooks: Vec<String>,
+    pub hooks: Hooks,
     #[serde(default)]
     pub permissions: Permissions,
     #[serde(default)]
     pub env: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Hooks {
+    #[serde(default)]
+    pub timeout: Option<u64>,
+    #[serde(default)]
+    pub events: HashMap<String, Vec<HookDefinition>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookDefinition {
+    pub script: String,
+    pub mode: HookMode,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HookMode {
+    Sync,
+    Async,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

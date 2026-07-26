@@ -44,12 +44,7 @@ fn run(args: Vec<String>) -> io::Result<String> {
             };
             (Some(command), args)
         });
-    dispatch(
-        command,
-        command_args,
-        &store,
-        &settings,
-    )
+    dispatch(command, command_args, &store, &settings)
 }
 
 type Handler = fn(&[String], &Store, &Settings) -> io::Result<String>;
@@ -65,11 +60,12 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("send", |a, s, c| cli_send::send(s, c, a)),
     ("tool", |a, _, c| orchid::tools::command(c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
-    ("__run", |a, s, c| {
-        orchid::provider::command(s, c, a)
+    ("__run", |a, s, c| orchid::provider::command(s, c, a)),
+    ("__hook-run", |a, _, c| {
+        orchid::hooks::monitor(c, a).map(|_| String::new())
     }),
-    ("await", |a, s, _| await_sessions(s, a)),
-    ("stop", |a, s, _| stop(s, a)),
+    ("await", |a, s, c| await_sessions(s, c, a)),
+    ("stop", |a, s, c| stop(s, c, a)),
     ("agent", |_, _, c| agent(c)),
     ("session", |a, s, c| session(s, c, a)),
 ];
@@ -176,7 +172,7 @@ fn delete(store: &Store, args: &[String]) -> io::Result<String> {
     Ok(serde_json::json!({"id":id,"archived":true}).to_string())
 }
 
-fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
+fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     if args.is_empty() {
         return Err(invalid("await requires at least one id"));
     }
@@ -188,7 +184,14 @@ fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
     loop {
         let sessions: Vec<_> = ids
             .iter()
-            .map(|id| store.reconcile(id))
+            .map(|id| {
+                let before = store.load(id)?.events.len();
+                let session = store.reconcile(id)?;
+                if session.events.len() > before {
+                    let _ = orchid::hooks::dispatch_events(settings, &session, before);
+                }
+                Ok(session)
+            })
             .collect::<io::Result<_>>()?;
         if sessions.iter().all(|s| s.state.status != Status::Running) || Instant::now() >= deadline
         {
@@ -204,7 +207,7 @@ fn await_sessions(store: &Store, args: &[String]) -> io::Result<String> {
     }
 }
 
-fn stop(store: &Store, args: &[String]) -> io::Result<String> {
+fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
     if let Some(pid) = session.state.pid {
@@ -213,16 +216,20 @@ fn stop(store: &Store, args: &[String]) -> io::Result<String> {
             .arg(pid.to_string())
             .status();
     }
-    store.update(id, |s| {
-        s.state.status = Status::Cancelled;
-        s.state.pid = None;
-        s.state.termination_reason = Some("cancelled by user".into());
-        s.append(orchid::model::Event::Termination {
+    let mut session = store.load(id)?;
+    session.state.status = Status::Cancelled;
+    session.state.pid = None;
+    session.state.termination_reason = Some("cancelled by user".into());
+    orchid::hooks::append(
+        store,
+        settings,
+        &mut session,
+        orchid::model::Event::Termination {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: "cancelled by user".into(),
-        });
-    })?;
+        },
+    )?;
     Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
 }
 

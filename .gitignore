@@ -6,3 +6,4 @@
 .claude
 /config/
 **/target
+.test-config/

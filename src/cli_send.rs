@@ -12,13 +12,44 @@ use std::{
 
 pub fn send(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let (id, message) = request(args)?;
-    run_send(store, settings, &id, &message)
+    run_send(
+        store,
+        settings,
+        &id,
+        &message,
+        args.iter().any(|arg| arg == "--no-run"),
+    )
 }
 
-fn run_send(store: &Store, settings: &Settings, id: &str, message: &str) -> io::Result<String> {
-    orchid::hooks::run(settings, "run_start", id)?;
+fn run_send(
+    store: &Store,
+    settings: &Settings,
+    id: &str,
+    message: &str,
+    no_run: bool,
+) -> io::Result<String> {
     let mut session = store.load(id)?;
-    session.append(Session::message("user", message.to_owned()));
+    if session.state.status == Status::Running {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "session is already running",
+        ));
+    }
+    orchid::hooks::append(
+        store,
+        settings,
+        &mut session,
+        Session::message("user", message.to_owned()),
+    )?;
+    if no_run {
+        return Ok(
+            serde_json::json!({"id":id,"status":session.state.status,"no_run":true}).to_string(),
+        );
+    }
+    // A synchronous hook may append another event through `send --no-run`.
+    // Refresh before changing the running state so the outer process never
+    // attempts to save a stale, shorter event stream.
+    session = store.load(id)?;
     session.state.status = Status::Running;
     log(store, settings, id, "info", "send accepted");
     let child = match spawn_worker(settings, id, message) {
