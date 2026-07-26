@@ -33,7 +33,17 @@ echo "waiting for worker"
 $BIN --config "$CONFIG" await "$ID" --timeout 30
 
 echo "session"
-$BIN --config "$CONFIG" get "$ID"
+SESSION=$($BIN --config "$CONFIG" get "$ID")
+printf '%s\n' "$SESSION" | python3 -c '
+import json, sys
+session = json.load(sys.stdin)
+print(json.dumps({
+    "id": session["metadata"]["id"],
+    "status": session["state"]["status"],
+    "event_count": len(session["events"]),
+    "last_message": session["state"]["last_message"],
+}))
+'
 
 if [ -f "$HOOK_LOG" ]; then
   echo "hook events: $HOOK_LOG"
