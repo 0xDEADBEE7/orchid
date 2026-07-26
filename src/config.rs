@@ -25,7 +25,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Policy {
     #[serde(default)]
-    pub max_tokens: Option<u32>,
+    pub max_tokens: Option<i64>,
     #[serde(default)]
     pub log_level: Option<String>,
     #[serde(default)]
@@ -91,7 +91,7 @@ impl Policy {
             &self.permissions.paths
         }
     }
-    pub fn max_tokens(&self) -> u32 {
+    pub fn max_tokens(&self) -> i64 {
         self.max_tokens.unwrap_or(4096)
     }
 }

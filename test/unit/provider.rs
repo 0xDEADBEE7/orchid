@@ -154,6 +154,30 @@ fn token_threshold_stops_before_provider_request() {
 }
 
 #[test]
+fn negative_one_disables_token_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("policies/default.json"),
+        r#"{"max_tokens":-1}"#,
+    )
+    .unwrap();
+    let settings = Settings::load(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    assert_eq!(
+        run(
+            &Counted(AtomicUsize::new(0)),
+            &settings,
+            &mut session,
+            "a long pending request"
+        )
+        .unwrap(),
+        "should not arrive"
+    );
+    assert!(session.metadata.token_estimate > 0);
+}
+
+#[test]
 fn token_estimate_is_serialized_request_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
