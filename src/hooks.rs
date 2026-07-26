@@ -169,7 +169,8 @@ fn run_one(
         json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
     );
     let _depth = HookDepth::enter(&settings.root, session_id)?;
-    let mut child = match Command::new(settings.root.join(&hook.script))
+    let executable = resolve_executable(settings, &hook.script);
+    let mut child = match Command::new(executable)
         .current_dir(&settings.root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -253,6 +254,16 @@ fn run_one(
             return Err(io::Error::new(io::ErrorKind::TimedOut, "hook timed out"));
         }
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(script);
+    let local = settings.root.join(path);
+    if path.is_absolute() || path.components().count() > 1 || local.exists() {
+        local
+    } else {
+        path.to_path_buf()
     }
 }
 
