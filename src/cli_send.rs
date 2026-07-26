@@ -46,6 +46,10 @@ fn run_send(
             serde_json::json!({"id":id,"status":session.state.status,"no_run":true}).to_string(),
         );
     }
+    // A synchronous hook may append another event through `send --no-run`.
+    // Refresh before changing the running state so the outer process never
+    // attempts to save a stale, shorter event stream.
+    session = store.load(id)?;
     session.state.status = Status::Running;
     log(store, settings, id, "info", "send accepted");
     let child = match spawn_worker(settings, id, message) {
