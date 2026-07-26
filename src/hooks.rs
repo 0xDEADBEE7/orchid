@@ -62,6 +62,9 @@ pub fn append(
     let first = session.events.is_empty();
     session.append(event.clone());
     store.save(session)?;
+    if hook_depth() >= 8 {
+        return Ok(());
+    }
     let mut names = vec!["on-event"];
     if first {
         names.push("on-init");
@@ -115,6 +118,7 @@ fn run_one(
     );
     let mut child = Command::new(settings.root.join(&hook.script))
         .current_dir(&settings.root)
+        .env("ORCHID_INTERNAL_HOOK_DEPTH", (hook_depth() + 1).to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -183,6 +187,13 @@ fn run_one(
         }
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn hook_depth() -> u32 {
+    std::env::var("ORCHID_INTERNAL_HOOK_DEPTH")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
 }
 
 fn format_mode(mode: &HookMode) -> &'static str {
