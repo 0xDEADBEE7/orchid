@@ -1,4 +1,9 @@
-use orchid::{config::{init, HookDefinition, HookMode, Settings}, hooks::{append, dispatch, resolve_executable}, model::Session, store::Store};
+use orchid::{
+    config::{init, HookDefinition, HookMode, Settings},
+    hooks::{append, dispatch, resolve_executable},
+    model::Session,
+    store::Store,
+};
 use std::{fs, os::unix::fs::PermissionsExt};
 
 fn settings(dir: &std::path::Path) -> Settings {

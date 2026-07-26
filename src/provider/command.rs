@@ -8,17 +8,7 @@ pub fn run_command(
     settings: &Settings,
     args: &[String],
 ) -> io::Result<String> {
-    let id = args
-        .windows(2)
-        .find(|pair| pair[0] == "--id")
-        .map(|pair| pair[1].clone())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires --id"))?;
-    let message = args
-        .iter()
-        .rev()
-        .find(|arg| !arg.starts_with('-') && *arg != &id)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires a message"))?
-        .clone();
+    let (id, message) = command_args(args)?;
     let record = || crate::model::LogRecord {
         event_id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now(),
@@ -39,24 +29,8 @@ pub fn run_command(
             return Err(error);
         }
     };
-    let settings = settings.resolve_agent(&session.state.agent)?;
-    let configured = settings
-        .policy
-        .connections
-        .first()
-        .map(|name| {
-            let resolved = settings.resolve_connection(name)?;
-            let client = crate::client::client_for(resolved.clone())
-                .map_err(|error| io::Error::other(error.to_string()))?;
-            Ok::<super::ClientProvider, io::Error>(super::ClientProvider {
-                client,
-                model: resolved.connection.model,
-                system_prompt: settings.prompt()?,
-                tools: settings.policy.tools().to_vec(),
-                params: resolved.params.into_iter().collect(),
-            })
-        })
-        .transpose()?;
+    let settings = settings.resolve_agent(&session.metadata.agent)?;
+    let configured = configured_provider(&settings)?;
     if !settings.policy.connections.is_empty() && configured.is_none() {
         return finish_failure(
             store,
@@ -107,6 +81,41 @@ pub fn run_command(
     }
 }
 
+fn command_args(args: &[String]) -> io::Result<(String, String)> {
+    let id = args
+        .windows(2)
+        .find(|pair| pair[0] == "--id")
+        .map(|pair| pair[1].clone())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires --id"))?;
+    let message = args
+        .iter()
+        .rev()
+        .find(|arg| !arg.starts_with('-') && *arg != &id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires a message"))?
+        .clone();
+    Ok((id, message))
+}
+
+fn configured_provider(settings: &Settings) -> io::Result<Option<super::ClientProvider>> {
+    settings
+        .policy
+        .connections
+        .first()
+        .map(|name| {
+            let resolved = settings.resolve_connection(name)?;
+            let client = crate::client::client_for(resolved.clone())
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            Ok(super::ClientProvider {
+                client,
+                model: resolved.connection.model,
+                system_prompt: settings.prompt()?,
+                tools: settings.policy.tools().to_vec(),
+                params: resolved.params.into_iter().collect(),
+            })
+        })
+        .transpose()
+}
+
 fn finish_success(
     store: &crate::store::Store,
     settings: &Settings,
@@ -114,9 +123,9 @@ fn finish_success(
     mut session: Session,
     reply: String,
 ) -> io::Result<String> {
-    if store.load(id)?.state.status != crate::model::Status::Cancelled {
-        session.state.status = crate::model::Status::Idle;
-        session.state.pid = None;
+    if store.load(id)?.metadata.status != crate::model::Status::Cancelled {
+        session.metadata.status = crate::model::Status::Idle;
+        session.metadata.pid = None;
         store.save(&session)?;
     }
     let _ = store.log_both(
@@ -144,13 +153,13 @@ fn finish_failure(
 ) -> io::Result<String> {
     let message = error.to_string();
     let terminated = message.contains("token threshold");
-    session.state.status = if terminated {
+    session.metadata.status = if terminated {
         crate::model::Status::Terminated
     } else {
         crate::model::Status::Failed
     };
-    session.state.pid = None;
-    session.state.termination_reason = Some(message.clone());
+    session.metadata.pid = None;
+    session.metadata.termination_reason = Some(message.clone());
     if terminated {
         session.append(crate::model::Event::Termination {
             event_id: uuid::Uuid::new_v4().to_string(),

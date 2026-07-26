@@ -14,10 +14,9 @@ configuration directory:
     engineering.md
   sessions/
     <id>/
-      conversation.jsonl
+      events.jsonl
       metadata.json
-      state.json
-      orchid.log
+      logs.jsonl
 ```
 
 Select the directory with `--config <directory>`. If omitted, Orchid uses the
@@ -38,15 +37,14 @@ The persisted session consists of three JSON files plus a diagnostic log:
 - `conversation.jsonl` is the append-only transcript of typed message,
   tool-call, tool-result, and reasoning events. It is read to reconstruct
   provider history.
-- `metadata.json` contains session identity and configuration references such
-  as policy, prompt, label, and working directory.
-- `state.json` contains mutable execution state: status, PID, run timestamps,
-  last message, token estimate, and restrictions.
-- `orchid.log` is best-effort newline-delimited JSON diagnostics; it is not the
+- `metadata.json` contains session identity, configuration references, and
+  mutable execution state such as status, PID, timestamps, token estimates,
+  and termination information. The latest message is derived from events.
+- `logs.jsonl` is best-effort newline-delimited JSON diagnostics; it is not the
   conversation transcript or a state store.
 
-Metadata and state writes use temporary files followed by rename. The
-transcript is appended directly, and diagnostic logging is best-effort.
+Metadata writes use temporary files followed by rename. Events are appended
+directly, and diagnostic logging is best-effort.
 
 To validate the selected resource tree:
 

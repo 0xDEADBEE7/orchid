@@ -1,5 +1,5 @@
-use orchid::Store;
 use orchid::model::Session;
+use orchid::Store;
 
 #[test]
 fn round_trips_and_archives_sessions() {
@@ -8,6 +8,9 @@ fn round_trips_and_archives_sessions() {
     let mut session = Session::new(Some("test".into()), None, None);
     session.append(Session::message("user", "hello".into()));
     store.create(&session).unwrap();
+    let session_dir = dir.path().join("sessions").join(&session.metadata.id);
+    assert!(session_dir.join("metadata.json").exists());
+    assert!(!session_dir.join("state.json").exists());
     assert_eq!(store.load(&session.metadata.id).unwrap(), session);
     store.archive(&session.metadata.id).unwrap();
     assert!(store.load(&session.metadata.id).is_err());
@@ -18,11 +21,11 @@ fn reconciles_dead_running_processes() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
-    session.state.status = orchid::model::Status::Running;
-    session.state.pid = Some(999_999);
+    session.metadata.status = orchid::model::Status::Running;
+    session.metadata.pid = Some(999_999);
     store.create(&session).unwrap();
     let recovered = store.reconcile(&session.metadata.id).unwrap();
-    assert_eq!(recovered.state.status, orchid::model::Status::Failed);
+    assert_eq!(recovered.metadata.status, orchid::model::Status::Failed);
 }
 
 #[test]
@@ -39,7 +42,7 @@ fn event_stream_only_grows_on_save() {
     session.append(Session::message("user", "one".into()));
     store.save(&session).unwrap();
     let first = std::fs::read_to_string(&path).unwrap();
-    session.state.last_message = Some("changed state only".into());
+    session.metadata.label = Some("changed metadata only".into());
     store.save(&session).unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), first);
     session.append(Session::message("assistant", "two".into()));

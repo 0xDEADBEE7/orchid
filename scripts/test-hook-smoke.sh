@@ -48,10 +48,10 @@ import json, sys
 session = json.load(sys.stdin)
 print(json.dumps({
     "id": session["metadata"]["id"],
-    "status": session["state"]["status"],
+    "status": session["metadata"]["status"],
     "working_dir": session["metadata"]["working_dir"],
     "event_count": len(session["events"]),
-    "last_message": session["state"]["last_message"],
+    "last_message": next((event["content"] for event in reversed(session["events"]) if event["type"] == "message" and event["role"] == "assistant"), None),
 }))
 '
 

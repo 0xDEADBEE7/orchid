@@ -19,16 +19,10 @@ pub struct Metadata {
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SessionState {
     #[serde(default = "default_agent")]
     pub agent: String,
     pub status: Status,
     pub pid: Option<u32>,
-    pub last_message: Option<String>,
     pub updated_at: DateTime<Utc>,
     pub token_estimate: u32,
     pub termination_reason: Option<String>,
@@ -113,7 +107,6 @@ pub struct Usage {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Session {
     pub metadata: Metadata,
-    pub state: SessionState,
     pub events: Vec<Event>,
 }
 
@@ -128,13 +121,9 @@ impl Session {
                 working_dir,
                 created_at: now,
                 updated_at: now,
-            },
-            state: SessionState {
                 agent: agent.unwrap_or_else(|| "default".into()),
                 status: Status::Idle,
                 pid: None,
-                last_message: None,
-                updated_at: now,
                 token_estimate: 0,
                 termination_reason: None,
             },
@@ -143,15 +132,9 @@ impl Session {
     }
 
     pub fn append(&mut self, event: Event) {
-        if let Event::Message { role, content, .. } = &event {
-            if role == "assistant" {
-                self.state.last_message = Some(content.clone());
-            }
-        }
         self.events.push(event);
         let now = Utc::now();
         self.metadata.updated_at = now;
-        self.state.updated_at = now;
     }
 
     pub fn message(role: &str, content: String) -> Event {

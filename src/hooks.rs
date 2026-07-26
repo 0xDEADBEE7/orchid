@@ -19,7 +19,6 @@ struct Envelope<'a> {
     event: serde_json::Value,
     session: &'a Session,
 }
-
 pub fn dispatch(
     settings: &Settings,
     name: &str,
@@ -56,7 +55,6 @@ pub fn dispatch(
     }
     Ok(())
 }
-
 fn launch_async(
     settings: &Settings,
     session_id: &str,
@@ -72,11 +70,17 @@ fn launch_async(
     let input = input.to_vec();
     let working_dir = working_dir.map(str::to_owned);
     thread::spawn(move || {
-        let _ = run_one(&settings, &session_id, &event_name, &hook, &input, working_dir.as_deref());
+        let _ = run_one(
+            &settings,
+            &session_id,
+            &event_name,
+            &hook,
+            &input,
+            working_dir.as_deref(),
+        );
     });
     Ok(())
 }
-
 /// Append an event durably, then dispatch the hooks that match it. The store
 /// write intentionally happens before any hook process is started.
 pub fn append(
@@ -86,7 +90,6 @@ pub fn append(
     event: Event,
 ) -> io::Result<()> {
     let first = session.events.is_empty();
-    let event = event;
     *session = store.append_event(&session.metadata.id, event.clone())?;
     if hook_depth(&settings.root, &session.metadata.id) >= 8 {
         return Ok(());
@@ -106,7 +109,6 @@ pub fn append(
     }
     Ok(())
 }
-
 pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> io::Result<()> {
     for event in session.events.iter().skip(from) {
         let mut names = vec!["on-event"];
@@ -122,7 +124,6 @@ pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> i
     }
     Ok(())
 }
-
 fn run_one(
     settings: &Settings,
     session_id: &str,
@@ -231,7 +232,6 @@ fn run_one(
         thread::sleep(Duration::from_millis(10));
     }
 }
-
 pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     let path = std::path::Path::new(script);
     let local = settings.root.join(path);
@@ -241,7 +241,6 @@ pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathB
         path.to_path_buf()
     }
 }
-
 fn resolve_working_dir(settings: &Settings, working_dir: Option<&str>) -> std::path::PathBuf {
     let Some(working_dir) = working_dir else {
         return settings.root.clone();
@@ -253,7 +252,6 @@ fn resolve_working_dir(settings: &Settings, working_dir: Option<&str>) -> std::p
         settings.root.join(path)
     }
 }
-
 fn is_executable(path: &std::path::Path) -> bool {
     if !path.is_file() {
         return false;
@@ -270,18 +268,15 @@ fn is_executable(path: &std::path::Path) -> bool {
         true
     }
 }
-
 fn hook_depth(root: &std::path::Path, session_id: &str) -> u32 {
     fs::read_to_string(root.join("sessions").join(session_id).join(".hook-depth"))
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0)
 }
-
 struct HookDepth {
     path: std::path::PathBuf,
 }
-
 impl HookDepth {
     fn enter(root: &std::path::Path, session_id: &str) -> io::Result<Self> {
         let dir = root.join("sessions").join(session_id);
@@ -292,7 +287,6 @@ impl HookDepth {
         Ok(Self { path })
     }
 }
-
 impl Drop for HookDepth {
     fn drop(&mut self) {
         let depth = fs::read_to_string(&self.path)
@@ -306,14 +300,12 @@ impl Drop for HookDepth {
         }
     }
 }
-
 fn format_mode(mode: &HookMode) -> &'static str {
     match mode {
         HookMode::Sync => "sync",
         HookMode::Async => "async",
     }
 }
-
 fn log_lifecycle(
     settings: &Settings,
     session_id: &str,
@@ -336,7 +328,6 @@ fn log_lifecycle(
         &settings.log_level,
     );
 }
-
 fn event_id(event: &Event) -> &str {
     match event {
         Event::Message { event_id, .. }
@@ -348,7 +339,6 @@ fn event_id(event: &Event) -> &str {
         | Event::Failure { event_id, .. } => event_id,
     }
 }
-
 fn event_type(event: &Event) -> &'static str {
     match event {
         Event::Message { .. } => "message",
@@ -360,7 +350,6 @@ fn event_type(event: &Event) -> &'static str {
         Event::Failure { .. } => "failure",
     }
 }
-
 pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()> {
     let store = crate::store::Store::new(&settings.root)?;
     let session = store.load(session_id)?;

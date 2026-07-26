@@ -29,7 +29,7 @@ fn run_send(
     no_run: bool,
 ) -> io::Result<String> {
     let mut session = store.load(id)?;
-    if session.state.status == Status::Running {
+    if session.metadata.status == Status::Running {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
             "session is already running",
@@ -43,14 +43,14 @@ fn run_send(
     )?;
     if no_run {
         return Ok(
-            serde_json::json!({"id":id,"status":session.state.status,"no_run":true}).to_string(),
+        serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
         );
     }
     // A synchronous hook may append another event through `send --no-run`.
     // Refresh before changing the running state so the outer process never
     // attempts to save a stale, shorter event stream.
     session = store.load(id)?;
-    session.state.status = Status::Running;
+    session.metadata.status = Status::Running;
     log(store, settings, id, "info", "send accepted");
     let child = match spawn_worker(settings, id, message) {
         Ok(child) => child,
@@ -65,7 +65,7 @@ fn run_send(
             return Err(error);
         }
     };
-    session.state.pid = Some(child.id());
+    session.metadata.pid = Some(child.id());
     store.save(&session)?;
     log(
         store,

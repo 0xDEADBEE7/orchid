@@ -125,7 +125,7 @@ fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<St
         .ok_or_else(|| invalid("session requires an id"))?;
     let agent = value(&args[1..], "--agent").ok_or_else(|| invalid("session requires --agent"))?;
     settings.resolve_agent(&agent)?;
-    store.update(id, |session| session.state.agent = agent.clone())?;
+    store.update(id, |session| session.metadata.agent = agent.clone())?;
     Ok(serde_json::json!({"id":id,"agent":agent,"updated":true}).to_string())
 }
 
@@ -140,7 +140,7 @@ fn get(store: &Store, args: &[String]) -> io::Result<String> {
     let session = store.load(id)?;
     if args.iter().any(|x| x == "--last-message") {
         return Ok(
-            serde_json::json!({"id":id,"last_message":session.state.last_message}).to_string(),
+            serde_json::json!({"id":id,"last_message":session.events.iter().rev().find_map(|event| match event { orchid::model::Event::Message { role, content, .. } if role == "assistant" => Some(content), _ => None })}).to_string(),
         );
     }
     serde_json::to_string(&session).map_err(io::Error::other)
@@ -193,12 +193,12 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
                 Ok(session)
             })
             .collect::<io::Result<_>>()?;
-        if sessions.iter().all(|s| s.state.status != Status::Running) || Instant::now() >= deadline
+        if sessions.iter().all(|s| s.metadata.status != Status::Running) || Instant::now() >= deadline
         {
             let statuses: Vec<_> = sessions
                 .iter()
                 .zip(&ids)
-                .map(|(s, id)| serde_json::json!({"id": id, "status": s.state.status}))
+                .map(|(s, id)| serde_json::json!({"id": id, "status": s.metadata.status}))
                 .collect();
             return serde_json::to_string(&serde_json::json!({"sessions":statuses}))
                 .map_err(io::Error::other);
@@ -210,16 +210,16 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
 fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
-    if let Some(pid) = session.state.pid {
+    if let Some(pid) = session.metadata.pid {
         let _ = Command::new("kill")
             .arg("-TERM")
             .arg(pid.to_string())
             .status();
     }
     let mut session = store.load(id)?;
-    session.state.status = Status::Cancelled;
-    session.state.pid = None;
-    session.state.termination_reason = Some("cancelled by user".into());
+    session.metadata.status = Status::Cancelled;
+    session.metadata.pid = None;
+    session.metadata.termination_reason = Some("cancelled by user".into());
     orchid::hooks::append(
         store,
         settings,

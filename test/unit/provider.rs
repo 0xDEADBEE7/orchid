@@ -1,6 +1,10 @@
-use orchid::{config::Settings, model::{Event, Session}, provider::{parse_sse, run, Provider, StreamEvent}};
-use std::io;
+use orchid::{
+    config::Settings,
+    model::{Event, Session},
+    provider::{parse_sse, run, Provider, StreamEvent},
+};
 use std::cell::Cell;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
@@ -145,8 +149,8 @@ fn token_threshold_stops_before_provider_request() {
     let error = run(&provider, &settings, &mut session, "a long pending request").unwrap_err();
     assert!(error.to_string().contains("token threshold"));
     assert_eq!(provider.0.load(Ordering::SeqCst), 0);
-    assert_eq!(session.state.token_estimate, 0);
-    assert!(session.state.termination_reason.is_some());
+    assert_eq!(session.metadata.token_estimate, 0);
+    assert!(session.metadata.termination_reason.is_some());
 }
 
 #[test]
@@ -180,7 +184,7 @@ fn token_estimate_is_serialized_request_snapshot() {
     .unwrap()
     .len() as u32
         / 3;
-    assert_eq!(session.state.token_estimate, expected);
+    assert_eq!(session.metadata.token_estimate, expected);
 }
 
 #[test]

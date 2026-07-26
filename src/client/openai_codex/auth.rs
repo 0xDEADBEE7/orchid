@@ -102,109 +102,114 @@ pub fn access_token(root: &Path, name: &str) -> Result<CodexTokens, String> {
 }
 
 pub fn login(root: &Path, name: &str) -> Result<serde_json::Value, String> {
-    let mut random = [0u8; 32];
-    getrandom::getrandom(&mut random).map_err(|e| e.to_string())?;
-    let state = URL_SAFE_NO_PAD.encode(random);
-    getrandom::getrandom(&mut random).map_err(|e| e.to_string())?;
-    let verifier = URL_SAFE_NO_PAD.encode(random);
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let client_id =
-        std::env::var("ORCHID_CODEX_CLIENT_ID").unwrap_or_else(|_| DEFAULT_CLIENT_ID.into());
-    let url = format!("{AUTHORIZE_URL}?response_type=code&client_id={client_id}&redirect_uri={REDIRECT_URI}&scope=openid%20profile%20email%20offline_access&state={state}&code_challenge={challenge}&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true");
-    let listener =
-        TcpListener::bind("127.0.0.1:1455").map_err(|e| format!("callback bind failed: {e}"))?;
-    let _ = std::process::Command::new("open").arg(&url).status();
-    let (mut stream, _) = listener.accept().map_err(|e| e.to_string())?;
-    let mut buf = [0u8; 8192];
-    let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-    let request = String::from_utf8_lossy(&buf[..n]);
-    let target = request
-        .split_whitespace()
-        .nth(1)
-        .ok_or("invalid OAuth callback")?;
-    let query = target.split('?').nth(1).unwrap_or("");
-    let mut code = None;
-    let mut returned_state = None;
-    for part in query.split('&') {
-        let mut pair = part.splitn(2, '=');
-        match pair.next().unwrap_or("") {
-            "code" => code = pair.next().map(str::to_owned),
-            "state" => returned_state = pair.next().map(str::to_owned),
-            _ => {}
+    let flow = OAuthFlow::start()?;
+    let (mut stream, code) = flow.wait_for_callback()?;
+    let value = flow.exchange(&code)?;
+    save_tokens(root, name, &value)?;
+    let _ = stream
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 25\r\n\r\nOrchid login successful.\n");
+    Ok(serde_json::json!({"status":"ok","name":name}))
+}
+
+struct OAuthFlow {
+    state: String,
+    verifier: String,
+    client_id: String,
+    listener: TcpListener,
+}
+impl OAuthFlow {
+    fn start() -> Result<Self, String> {
+        let mut random = [0u8; 32];
+        getrandom::getrandom(&mut random).map_err(|e| e.to_string())?;
+        let state = URL_SAFE_NO_PAD.encode(random);
+        getrandom::getrandom(&mut random).map_err(|e| e.to_string())?;
+        let verifier = URL_SAFE_NO_PAD.encode(random);
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+        let client_id =
+            std::env::var("ORCHID_CODEX_CLIENT_ID").unwrap_or_else(|_| DEFAULT_CLIENT_ID.into());
+        let url = format!("{AUTHORIZE_URL}?response_type=code&client_id={client_id}&redirect_uri={REDIRECT_URI}&scope=openid%20profile%20email%20offline_access&state={state}&code_challenge={challenge}&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true");
+        let listener = TcpListener::bind("127.0.0.1:1455")
+            .map_err(|e| format!("callback bind failed: {e}"))?;
+        let _ = std::process::Command::new("open").arg(url).status();
+        Ok(Self {
+            state,
+            verifier,
+            client_id,
+            listener,
+        })
+    }
+    fn wait_for_callback(&self) -> Result<(std::net::TcpStream, String), String> {
+        let (mut stream, _) = self.listener.accept().map_err(|e| e.to_string())?;
+        let mut buf = [0u8; 8192];
+        let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
+        let target = String::from_utf8_lossy(&buf[..n])
+            .split_whitespace()
+            .nth(1)
+            .ok_or("invalid OAuth callback")?
+            .to_owned();
+        let params = target.split('?').nth(1).unwrap_or("");
+        let mut code = None;
+        let mut returned_state = None;
+        for part in params.split('&') {
+            let mut pair = part.splitn(2, '=');
+            match pair.next().unwrap_or("") {
+                "code" => code = pair.next().map(str::to_owned),
+                "state" => returned_state = pair.next().map(str::to_owned),
+                _ => {}
+            }
         }
-    }
-    if returned_state.as_deref() != Some(&state) {
-        let _ = stream.write_all(
-            b"HTTP/1.1 400 Bad Request\r\nContent-Length: 25\r\n\r\nOAuth state validation failed",
-        );
-        return Err("OAuth state validation failed".into());
-    }
-    let code = code.ok_or("OAuth callback did not contain an authorization code")?;
-    let response = reqwest::blocking::Client::new()
-        .post(TOKEN_URL)
-        .form(&[
-            ("grant_type", "authorization_code"),
-            ("client_id", client_id.as_str()),
-            ("code", code.as_str()),
-            ("redirect_uri", REDIRECT_URI),
-            ("code_verifier", verifier.as_str()),
-        ])
-        .send()
-        .map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        let message = format!(
-            "Codex OAuth token exchange failed (HTTP {})",
-            response.status()
-        );
-        let body = format!("OAuth login failed: {message}");
-        let _ = stream.write_all(
-            format!(
-                "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .as_bytes(),
-        );
-        return Err(message);
-    }
-    let value: serde_json::Value = response
-        .json()
-        .map_err(|_| "invalid OAuth token response")?;
-    let access = value["access_token"]
-        .as_str()
-        .ok_or("OAuth response missing access token")?;
-    let refresh = value["refresh_token"]
-        .as_str()
-        .ok_or("OAuth response missing refresh token")?;
-    let account = match account_id(&value) {
-        Some(account) => account,
-        None => {
-            let body = "OAuth login failed: response missing account ID";
-            let _ = stream.write_all(
-                format!(
-                    "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .as_bytes(),
-            );
-            return Err("OAuth response missing account ID".into());
+        if returned_state.as_deref() != Some(&self.state) {
+            let _ =
+                stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\nOAuth state validation failed");
+            return Err("OAuth state validation failed".into());
         }
-    };
+        Ok((
+            stream,
+            code.ok_or("OAuth callback did not contain an authorization code")?,
+        ))
+    }
+    fn exchange(&self, code: &str) -> Result<serde_json::Value, String> {
+        let response = reqwest::blocking::Client::new()
+            .post(TOKEN_URL)
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("client_id", self.client_id.as_str()),
+                ("code", code),
+                ("redirect_uri", REDIRECT_URI),
+                ("code_verifier", self.verifier.as_str()),
+            ])
+            .send()
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Codex OAuth token exchange failed (HTTP {})",
+                response.status()
+            ));
+        }
+        response
+            .json()
+            .map_err(|_| "invalid OAuth token response".into())
+    }
+}
+fn save_tokens(root: &Path, name: &str, value: &serde_json::Value) -> Result<(), String> {
+    let account = account_id(value).ok_or("OAuth response missing account ID")?;
     save(
         root,
         name,
         &CodexTokens {
-            access_token: access.into(),
-            refresh_token: refresh.into(),
+            access_token: value["access_token"]
+                .as_str()
+                .ok_or("OAuth response missing access token")?
+                .into(),
+            refresh_token: value["refresh_token"]
+                .as_str()
+                .ok_or("OAuth response missing refresh token")?
+                .into(),
             expires_at: chrono::Utc::now().timestamp()
                 + value["expires_in"].as_i64().unwrap_or(3600),
             account_id: account,
         },
-    )?;
-    let _ = stream
-        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 25\r\n\r\nOrchid login successful.\n");
-    Ok(serde_json::json!({"status":"ok","name":name}))
+    )
 }
 
 pub struct CodexAuth;

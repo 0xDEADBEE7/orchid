@@ -7,5 +7,5 @@ pub mod provider;
 pub mod store;
 pub mod tools;
 
-pub use model::{Event, Metadata, Session, SessionState, Status};
+pub use model::{Event, Metadata, Session, Status};
 pub use store::Store;
