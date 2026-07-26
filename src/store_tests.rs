@@ -68,3 +68,26 @@ fn debug_logs_are_filtered_by_configured_level() {
             .is_empty()
     );
 }
+
+#[test]
+fn concurrent_appends_are_serialized_across_store_clones() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let mut workers = Vec::new();
+    for index in 0..8 {
+        let store = store.clone();
+        let id = id.clone();
+        workers.push(std::thread::spawn(move || {
+            store
+                .append_event(&id, Session::message("user", index.to_string()))
+                .unwrap();
+        }));
+    }
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    assert_eq!(store.load(&id).unwrap().events.len(), 8);
+}

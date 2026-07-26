@@ -60,8 +60,8 @@ pub fn append(
     event: Event,
 ) -> io::Result<()> {
     let first = session.events.is_empty();
-    session.append(event.clone());
-    store.save(session)?;
+    let event = event;
+    *session = store.append_event(&session.metadata.id, event.clone())?;
     if hook_depth() >= 8 {
         return Ok(());
     }

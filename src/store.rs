@@ -2,6 +2,8 @@ use crate::model::{LogRecord, Session};
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    thread,
+    time::{Duration, Instant},
 };
 
 #[derive(Debug, Clone)]
@@ -39,6 +41,7 @@ impl Store {
     }
 
     pub fn reconcile(&self, id: &str) -> io::Result<Session> {
+        let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
         if session.state.status == crate::model::Status::Running {
             let alive = session
@@ -61,13 +64,27 @@ impl Store {
                     timestamp: chrono::Utc::now(),
                     message: "worker process disappeared".into(),
                 });
-                self.save(&session)?;
+                self.save_unlocked(&session)?;
             }
         }
         Ok(session)
     }
 
     pub fn save(&self, session: &Session) -> io::Result<()> {
+        let _lock = SessionLock::acquire(&self.path(&session.metadata.id))?;
+        self.save_unlocked(session)
+    }
+
+    pub fn append_event(&self, id: &str, event: crate::model::Event) -> io::Result<Session> {
+        let dir = self.path(id);
+        let _lock = SessionLock::acquire(&dir)?;
+        let mut session = self.load(id)?;
+        session.append(event);
+        self.save_unlocked(&session)?;
+        Ok(session)
+    }
+
+    fn save_unlocked(&self, session: &Session) -> io::Result<()> {
         let dir = self.path(&session.metadata.id);
         fs::create_dir_all(&dir)?;
         write_json(&dir.join("metadata.json"), &session.metadata)?;
@@ -133,14 +150,52 @@ impl Store {
     where
         F: FnOnce(&mut Session),
     {
+        let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
         edit(&mut session);
-        self.save(&session)?;
+        self.save_unlocked(&session)?;
         Ok(session)
     }
 
     fn path(&self, id: &str) -> PathBuf {
         self.root.join("sessions").join(id)
+    }
+}
+
+struct SessionLock {
+    path: PathBuf,
+}
+
+impl SessionLock {
+    fn acquire(dir: &Path) -> io::Result<Self> {
+        fs::create_dir_all(dir)?;
+        let path = dir.join(".lock");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    if Instant::now() >= deadline {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "session write lock timed out",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
 }
 
