@@ -10,8 +10,10 @@ if [ ! -x "$BIN" ]; then
   (cd "$ROOT" && cargo build --bin orchid)
 fi
 
-echo "using config: $CONFIG"
-echo "using binary: $BIN"
+echo
+echo "=== configuration ==="
+echo "config: $CONFIG"
+echo "binary: $BIN"
 
 HOOK_LOG="$CONFIG/hook-events.jsonl"
 : > "$HOOK_LOG"
@@ -23,16 +25,21 @@ if [ -z "$ID" ]; then
   exit 1
 fi
 
+echo
+echo "=== create ==="
 echo "created session: $ID"
 printf '%s\n' "$CREATE"
 
-echo "sending hi"
+echo
+echo "=== send ==="
 $BIN --config "$CONFIG" send --id "$ID" hi
 
-echo "waiting for worker"
+echo
+echo "=== await ==="
 $BIN --config "$CONFIG" await "$ID" --timeout 30
 
-echo "session"
+echo
+echo "=== session summary ==="
 SESSION=$($BIN --config "$CONFIG" get "$ID")
 printf '%s\n' "$SESSION" | python3 -c '
 import json, sys
@@ -46,8 +53,26 @@ print(json.dumps({
 '
 
 if [ -f "$HOOK_LOG" ]; then
-  echo "hook events: $HOOK_LOG"
-  tail -n 20 "$HOOK_LOG"
+  echo
+  echo "=== hook invocations ==="
+  echo "log: $HOOK_LOG"
+  python3 - "$HOOK_LOG" <<'PY'
+import json, sys
+for index, line in enumerate(open(sys.argv[1]), 1):
+    print(f"\n-- hook invocation {index} --")
+    print(json.dumps(json.loads(line), indent=2))
+PY
+
+  EVENTS="$CONFIG/sessions/$ID/events.jsonl"
+  echo
+  echo "=== persisted conversation events ==="
+  echo "events: $EVENTS"
+  python3 - "$EVENTS" <<'PY'
+import json, sys
+for index, line in enumerate(open(sys.argv[1]), 1):
+    print(f"\n-- event {index} --")
+    print(json.dumps(json.loads(line), indent=2))
+PY
 else
   echo "hook log not found: $HOOK_LOG" >&2
   exit 1
