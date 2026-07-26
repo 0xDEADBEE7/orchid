@@ -163,7 +163,8 @@ fn finish_failure(
         });
     }
     store.save(&session)?;
-    let _ = crate::hooks::dispatch_events(settings, &session, session.events.len().saturating_sub(1));
+    let _ =
+        crate::hooks::dispatch_events(settings, &session, session.events.len().saturating_sub(1));
     let _ = store.log_both(
         id,
         &crate::model::LogRecord {

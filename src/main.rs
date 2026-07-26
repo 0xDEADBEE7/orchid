@@ -44,12 +44,7 @@ fn run(args: Vec<String>) -> io::Result<String> {
             };
             (Some(command), args)
         });
-    dispatch(
-        command,
-        command_args,
-        &store,
-        &settings,
-    )
+    dispatch(command, command_args, &store, &settings)
 }
 
 type Handler = fn(&[String], &Store, &Settings) -> io::Result<String>;
@@ -65,9 +60,7 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("send", |a, s, c| cli_send::send(s, c, a)),
     ("tool", |a, _, c| orchid::tools::command(c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
-    ("__run", |a, s, c| {
-        orchid::provider::command(s, c, a)
-    }),
+    ("__run", |a, s, c| orchid::provider::command(s, c, a)),
     ("await", |a, s, _| await_sessions(s, a)),
     ("stop", |a, s, _| stop(s, a)),
     ("agent", |_, _, c| agent(c)),

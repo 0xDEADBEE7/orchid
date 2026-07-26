@@ -12,17 +12,39 @@ use std::{
 
 pub fn send(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let (id, message) = request(args)?;
-    run_send(store, settings, &id, &message, args.iter().any(|arg| arg == "--no-run"))
+    run_send(
+        store,
+        settings,
+        &id,
+        &message,
+        args.iter().any(|arg| arg == "--no-run"),
+    )
 }
 
-fn run_send(store: &Store, settings: &Settings, id: &str, message: &str, no_run: bool) -> io::Result<String> {
+fn run_send(
+    store: &Store,
+    settings: &Settings,
+    id: &str,
+    message: &str,
+    no_run: bool,
+) -> io::Result<String> {
     let mut session = store.load(id)?;
     if session.state.status == Status::Running {
-        return Err(io::Error::new(io::ErrorKind::WouldBlock, "session is already running"));
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "session is already running",
+        ));
     }
-    orchid::hooks::append(store, settings, &mut session, Session::message("user", message.to_owned()))?;
+    orchid::hooks::append(
+        store,
+        settings,
+        &mut session,
+        Session::message("user", message.to_owned()),
+    )?;
     if no_run {
-        return Ok(serde_json::json!({"id":id,"status":session.state.status,"no_run":true}).to_string());
+        return Ok(
+            serde_json::json!({"id":id,"status":session.state.status,"no_run":true}).to_string(),
+        );
     }
     session.state.status = Status::Running;
     log(store, settings, id, "info", "send accepted");
