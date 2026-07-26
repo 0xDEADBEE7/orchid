@@ -17,8 +17,6 @@ echo "binary: $BIN"
 
 WORKDIR="$CONFIG/smoke-working-dir"
 mkdir -p "$WORKDIR"
-HOOK_LOG="$WORKDIR/hook-events.jsonl"
-: > "$HOOK_LOG"
 
 CREATE=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 ID=$(printf '%s\n' "$CREATE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
@@ -26,6 +24,7 @@ if [ -z "$ID" ]; then
   echo "failed to extract session id from: $CREATE" >&2
   exit 1
 fi
+HOOK_LOG="$CONFIG/sessions/$ID/hook-events.jsonl"
 
 echo
 echo "=== create ==="
