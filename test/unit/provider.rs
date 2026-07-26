@@ -1,5 +1,5 @@
-use super::*;
-use crate::model::Event;
+use orchid::{config::Settings, model::{Event, Session}, provider::{parse_sse, run, Provider, StreamEvent}};
+use std::io;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -20,7 +20,7 @@ fn malformed_sse_is_explicit_and_fails_run() {
         [StreamEvent::Malformed(_)]
     ));
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     struct Bad;
     impl Provider for Bad {
@@ -68,7 +68,7 @@ impl Provider for Chunks {
 #[test]
 fn run_records_reassembled_stream() {
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
     assert_eq!(run(&Chunks, &settings, &mut session, "x").unwrap(), "ab");
@@ -97,7 +97,7 @@ impl Provider for ToolThenText {
 #[test]
 fn tool_results_are_fed_back_until_text_arrives() {
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     std::fs::write(
         dir.path().join("policies/default.json"),
         r#"{"tools":["fs_read"]}"#,
@@ -133,7 +133,7 @@ impl Provider for Counted {
 #[test]
 fn token_threshold_stops_before_provider_request() {
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     std::fs::write(
         dir.path().join("policies/default.json"),
         r#"{"max_tokens":1}"#,
@@ -152,7 +152,7 @@ fn token_threshold_stops_before_provider_request() {
 #[test]
 fn token_estimate_is_serialized_request_snapshot() {
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     struct NoUsage;
     impl Provider for NoUsage {
@@ -164,13 +164,13 @@ fn token_estimate_is_serialized_request_snapshot() {
     session.append(Session::message("user", "123456789".into()));
     run(&NoUsage, &settings, &mut session, "").unwrap();
     let expected = serde_json::to_string(&vec![
-        crate::client::Message {
+        orchid::client::Message {
             role: "user".into(),
             content: "123456789".into(),
             tool_calls: Vec::new(),
             tool_result: None,
         },
-        crate::client::Message {
+        orchid::client::Message {
             role: "user".into(),
             content: "".into(),
             tool_calls: Vec::new(),
@@ -186,7 +186,7 @@ fn token_estimate_is_serialized_request_snapshot() {
 #[test]
 fn tool_failure_persists_correlated_error_result() {
     let dir = tempfile::tempdir().unwrap();
-    crate::config::init(dir.path()).unwrap();
+    orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     struct FailingTool;
     impl Provider for FailingTool {

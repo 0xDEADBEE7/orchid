@@ -1,9 +1,4 @@
-use super::*;
-use crate::{
-    config::{init, HookDefinition, HookMode, Settings},
-    model::Session,
-    store::Store,
-};
+use orchid::{config::{init, HookDefinition, HookMode, Settings}, hooks::{append, dispatch, resolve_executable}, model::Session, store::Store};
 use std::{fs, os::unix::fs::PermissionsExt};
 
 fn settings(dir: &std::path::Path) -> Settings {
@@ -41,7 +36,7 @@ fn sync_hook_receives_versioned_session_envelope_after_persist() {
     )
     .unwrap();
     let received: serde_json::Value =
-        crate::config::read_json(&dir.path().join("received.json")).unwrap();
+        orchid::config::read_json(&dir.path().join("received.json")).unwrap();
     assert_eq!(received["version"], 1);
     assert_eq!(received["event"]["name"], "on-event");
     assert_eq!(received["session"]["events"].as_array().unwrap().len(), 1);
