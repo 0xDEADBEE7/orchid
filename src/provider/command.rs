@@ -82,11 +82,14 @@ pub fn run_command(
     log(store, &settings, &id, "debug", "client request prepared");
     log(store, &settings, &id, "debug", "client run started");
     log(store, &settings, &id, "debug", "client request dispatched");
+    let _ = crate::hooks::run(&settings, "on-turn-start", &id);
+    let event_start = session.events.len();
     match run_with_progress(provider, &settings, &mut session, &message, |session| {
         let _ = store.save(session);
     }) {
         Ok(reply) => {
             log(store, &settings, &id, "debug", "client stream completed");
+            let _ = crate::hooks::dispatch_events(&settings, &session, event_start);
             finish_success(store, &settings, &id, session, reply)
         }
         Err(error) => {
@@ -126,7 +129,7 @@ fn finish_success(
         &settings.log_level,
     );
     log(store, settings, id, "info", "run completed");
-    let _ = crate::hooks::run(settings, "run_end", id);
+    let _ = crate::hooks::run(settings, "on-turn-end", id);
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }
 
@@ -160,6 +163,7 @@ fn finish_failure(
         });
     }
     store.save(&session)?;
+    let _ = crate::hooks::dispatch_events(settings, &session, session.events.len().saturating_sub(1));
     let _ = store.log_both(
         id,
         &crate::model::LogRecord {
@@ -172,7 +176,7 @@ fn finish_failure(
         &settings.log_level,
     );
     log(store, settings, id, "error", &message);
-    let _ = crate::hooks::run(settings, "run_failed", id);
+    let _ = crate::hooks::run(settings, "on-error", id);
     Err(error)
 }
 
