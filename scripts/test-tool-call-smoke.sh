@@ -54,17 +54,36 @@ CREATE=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 ID=$(printf '%s\n' "$CREATE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
 test -n "$ID"
 echo "created session: $ID"
+echo "session purpose: direct CLI tool-call"
 
 echo "=== direct tool-call ==="
 $BIN --config "$CONFIG" tool-call --id "$ID" \
   --input '{"call_id":"direct-smoke-call","name":"bash","input":{"cmd":"printf direct > direct-marker"}}'
 test "$(cat "$WORKDIR/direct-marker")" = direct
 
+echo "direct session events: $CONFIG/sessions/$ID/events.jsonl"
+python3 - "$CONFIG/sessions/$ID/events.jsonl" <<'PY'
+import json
+import sys
+
+print(json.dumps([json.loads(line) for line in open(sys.argv[1])], indent=2))
+PY
+
 CREATE_HOOK=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 HOOK_ID=$(printf '%s\n' "$CREATE_HOOK" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+echo "created session: $HOOK_ID"
+echo "session purpose: synchronous hook-invoked tool-call"
 echo "=== hook-invoked tool-call ==="
 $BIN --config "$CONFIG" send --no-run --id "$HOOK_ID" smoke
 test "$(cat "$WORKDIR/hook-marker")" = hook
+
+echo "hook session events: $CONFIG/sessions/$HOOK_ID/events.jsonl"
+python3 - "$CONFIG/sessions/$HOOK_ID/events.jsonl" <<'PY'
+import json
+import sys
+
+print(json.dumps([json.loads(line) for line in open(sys.argv[1])], indent=2))
+PY
 
 python3 - "$CONFIG" "$ID" "$HOOK_ID" <<'PY'
 import json
