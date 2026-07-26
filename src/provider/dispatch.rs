@@ -51,14 +51,18 @@ pub fn execute_with_ids<
                 progress(session);
             }
             Err(error) => {
+                let message = error.to_string();
                 session.append(Event::ToolResult {
                     event_id: uuid::Uuid::new_v4().to_string(),
                     timestamp: chrono::Utc::now(),
                     call_id,
-                    content: serde_json::json!({"error":error.to_string()}),
+                    content: serde_json::json!({"error":message}),
                 });
                 progress(session);
-                return Err(error);
+                // Tool failures are part of the model interaction, rather than
+                // failures of the worker itself. Feed the structured error back
+                // to the provider so it can repair malformed arguments, choose
+                // another tool, or explain the problem to the user.
             }
         }
     }
