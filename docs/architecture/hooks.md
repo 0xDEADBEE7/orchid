@@ -6,7 +6,8 @@ hooks. This ordering prevents a failed hook from losing an event and avoids a
 deadlock when a hook invokes `orchid send --no-run`.
 
 Policy entries use `{script, mode, timeout-seconds}`. The runner resolves
-scripts from the configuration root, writes the same versioned envelope to
+path-like scripts from the configuration root, searches bare executable names
+through `PATH`, and uses absolute paths as-is. It writes the same versioned envelope to
 each script, drains bounded stdout/stderr, and records lifecycle information
 in the existing operational logs. Sync entries run in configured order;
 async entries are handed to a detached Orchid monitor process.

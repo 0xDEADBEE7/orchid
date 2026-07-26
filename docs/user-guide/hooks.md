@@ -17,7 +17,9 @@ executable scripts:
 }
 ```
 
-Relative scripts resolve from the Orchid configuration root and receive one
+Relative scripts containing a path separator resolve from the Orchid
+configuration root. Bare executable names such as `ls` are looked up through
+the process `PATH`; absolute paths are used as-is. Hooks receive one
 versioned JSON envelope on stdin. The envelope contains the triggering event
 (`name`, `event_id`, and `event_type`) and a session snapshot equivalent to
 `orchid get <ID>`. Stdout and stderr are captured for bounded lifecycle logs;

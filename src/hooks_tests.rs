@@ -136,3 +136,21 @@ fn async_hook_is_launched_without_blocking_dispatch() {
     }
     panic!("async hook did not complete");
 }
+
+#[test]
+fn executable_resolution_distinguishes_path_like_and_bare_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = settings(dir.path());
+    assert_eq!(
+        resolve_executable(&settings, "hooks/test.sh"),
+        dir.path().join("hooks/test.sh")
+    );
+    assert_eq!(
+        resolve_executable(&settings, "/bin/ls"),
+        std::path::PathBuf::from("/bin/ls")
+    );
+    assert_eq!(
+        resolve_executable(&settings, "ls"),
+        std::path::PathBuf::from("ls")
+    );
+}
