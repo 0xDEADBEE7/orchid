@@ -17,6 +17,7 @@ echo "binary: $BIN"
 
 WORKDIR="$CONFIG/smoke-working-dir"
 mkdir -p "$WORKDIR"
+rm -f "$WORKDIR/hook-events.jsonl"
 
 CREATE=$($BIN --config "$CONFIG" create --working-dir "$WORKDIR")
 ID=$(printf '%s\n' "$CREATE" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
