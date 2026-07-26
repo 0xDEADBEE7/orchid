@@ -178,7 +178,7 @@ fn negative_one_disables_token_threshold() {
 }
 
 #[test]
-fn token_estimate_is_serialized_request_snapshot() {
+fn token_estimate_matches_historical_json_size_model() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -191,24 +191,7 @@ fn token_estimate_is_serialized_request_snapshot() {
     let mut session = Session::new(None, None, None);
     session.append(Session::message("user", "123456789".into()));
     run(&NoUsage, &settings, &mut session, "").unwrap();
-    let expected = serde_json::to_string(&vec![
-        orchid::client::Message {
-            role: "user".into(),
-            content: "123456789".into(),
-            tool_calls: Vec::new(),
-            tool_result: None,
-        },
-        orchid::client::Message {
-            role: "user".into(),
-            content: "".into(),
-            tool_calls: Vec::new(),
-            tool_result: None,
-        },
-    ])
-    .unwrap()
-    .len() as u32
-        / 3;
-    assert_eq!(session.metadata.token_estimate, expected);
+    assert_eq!(session.metadata.token_estimate, 22);
 }
 
 #[test]

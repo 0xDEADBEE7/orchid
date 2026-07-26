@@ -77,49 +77,62 @@ fn transcript(session: &Session, prompt: &str) -> String {
     context
 }
 
-/// Estimate the size of the serialized message history sent to the provider.
-/// This is a snapshot of the current context, not cumulative provider usage.
+#[derive(serde::Serialize)]
+struct EstimateMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<&'a [crate::model::ToolCall]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_result: Option<EstimateToolResult<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct EstimateToolResult<'a> {
+    call_id: &'a str,
+    content: &'a Value,
+}
+
+/// Match the historical vendor-agnostic JSON-size estimate: serialized context / 3.
 fn estimate_request_tokens(session: &Session, prompt: &str) -> u32 {
-    let mut messages = session
-        .events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Message { role, content, .. } => Some(crate::client::Message {
-                role: role.clone(),
-                content: content.clone(),
-                tool_calls: Vec::new(),
+    let mut messages = Vec::new();
+    for event in &session.events {
+        match event {
+            Event::Message { role, content, .. } => messages.push(EstimateMessage {
+                role,
+                content,
+                tool_calls: None,
                 tool_result: None,
             }),
-            Event::ToolCall { calls, .. } => Some(crate::client::Message {
-                role: "assistant".into(),
-                content: String::new(),
-                tool_calls: calls.clone(),
+            Event::ToolCall { calls, .. } => messages.push(EstimateMessage {
+                role: "assistant",
+                content: "",
+                tool_calls: Some(calls),
                 tool_result: None,
             }),
             Event::ToolResult {
                 call_id, content, ..
-            } => Some(crate::client::Message {
-                role: "tool".into(),
-                content: content.to_string(),
-                tool_calls: Vec::new(),
-                tool_result: Some((call_id.clone(), content.clone())),
+            } => messages.push(EstimateMessage {
+                role: "user",
+                content: "",
+                tool_calls: None,
+                tool_result: Some(EstimateToolResult { call_id, content }),
             }),
             Event::Reasoning { .. }
             | Event::Usage { .. }
             | Event::Termination { .. }
-            | Event::Failure { .. } => None,
-        })
-        .collect::<Vec<_>>();
-    messages.push(crate::client::Message {
-        role: "user".into(),
-        content: prompt.into(),
-        tool_calls: Vec::new(),
+            | Event::Failure { .. } => {}
+        }
+    }
+    messages.push(EstimateMessage {
+        role: "user",
+        content: prompt,
+        tool_calls: None,
         tool_result: None,
     });
-    let bytes = serde_json::to_string(&messages)
-        .map(|s| s.len())
-        .unwrap_or(0);
-    (bytes / 3) as u32
+    serde_json::to_string(&messages)
+        .map(|serialized| (serialized.len() / 3) as u32)
+        .unwrap_or(0)
 }
 
 fn malformed(calls: &[(String, Value)]) -> bool {

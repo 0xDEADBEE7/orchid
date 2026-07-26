@@ -7,7 +7,7 @@ use std::io;
 
 mod command;
 mod defs;
-mod dispatch;
+pub mod dispatch;
 mod lifecycle;
 mod sse;
 pub use command::run_command as command;

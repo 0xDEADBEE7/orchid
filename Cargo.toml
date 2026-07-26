@@ -21,6 +21,10 @@ name = "client"
 path = "test/client.rs"
 
 [[test]]
+name = "cli"
+path = "test/cli.rs"
+
+[[test]]
 name = "hooks"
 path = "test/unit/hooks.rs"
 

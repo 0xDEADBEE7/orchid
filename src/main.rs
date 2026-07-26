@@ -1,4 +1,5 @@
 mod cli_send;
+mod cli_tool_call;
 
 use orchid::{
     config::{init, Settings},
@@ -58,6 +59,7 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("set", |a, s, _| set(s, a)),
     ("delete", |a, s, _| delete(s, a)),
     ("send", |a, s, c| cli_send::send(s, c, a)),
+    ("tool-call", |a, s, c| cli_tool_call::tool_call(s, c, a)),
     ("tool", |a, _, c| orchid::tools::command(c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
     ("__run", |a, s, c| orchid::provider::command(s, c, a)),
@@ -193,7 +195,10 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
                 Ok(session)
             })
             .collect::<io::Result<_>>()?;
-        if sessions.iter().all(|s| s.metadata.status != Status::Running) || Instant::now() >= deadline
+        if sessions
+            .iter()
+            .all(|s| s.metadata.status != Status::Running)
+            || Instant::now() >= deadline
         {
             let statuses: Vec<_> = sessions
                 .iter()
@@ -274,5 +279,5 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 fn help() -> String {
-    "orchid <create|list|get|set|delete|send|agent|session>\n  --config DIR  configuration/session root".into()
+    "orchid <create|list|get|set|delete|send|tool-call|agent|session>\n  --config DIR  configuration/session root".into()
 }
