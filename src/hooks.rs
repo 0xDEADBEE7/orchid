@@ -36,8 +36,22 @@ pub fn dispatch(
     }).map_err(io::Error::other)?;
     for hook in hooks {
         match hook.mode {
-            HookMode::Sync => run_one(settings, &session.metadata.id, name, hook, &input)?,
-            HookMode::Async => launch_async(settings, &session.metadata.id, name, hook, &input)?,
+            HookMode::Sync => run_one(
+                settings,
+                &session.metadata.id,
+                name,
+                hook,
+                &input,
+                session.metadata.working_dir.as_deref(),
+            )?,
+            HookMode::Async => launch_async(
+                settings,
+                &session.metadata.id,
+                name,
+                hook,
+                &input,
+                session.metadata.working_dir.as_deref(),
+            )?,
         }
     }
     Ok(())
@@ -49,7 +63,9 @@ fn launch_async(
     event_name: &str,
     hook: &HookDefinition,
     input: &[u8],
+    working_dir: Option<&str>,
 ) -> io::Result<()> {
+    let _ = working_dir;
     #[cfg(test)]
     {
         let settings = settings.clone();
@@ -57,8 +73,16 @@ fn launch_async(
         let event_name = event_name.to_owned();
         let hook = hook.clone();
         let input = input.to_vec();
+        let working_dir = working_dir.map(str::to_owned);
         thread::spawn(move || {
-            let _ = run_one(&settings, &session_id, &event_name, &hook, &input);
+            let _ = run_one(
+                &settings,
+                &session_id,
+                &event_name,
+                &hook,
+                &input,
+                working_dir.as_deref(),
+            );
         });
         return Ok(());
     }
@@ -155,6 +179,7 @@ fn run_one(
     event_name: &str,
     hook: &HookDefinition,
     input: &[u8],
+    working_dir: Option<&str>,
 ) -> io::Result<()> {
     let timeout = Duration::from_secs(
         hook.timeout_seconds
@@ -171,7 +196,7 @@ fn run_one(
     let _depth = HookDepth::enter(&settings.root, session_id)?;
     let executable = resolve_executable(settings, &hook.script);
     let mut child = match Command::new(executable)
-        .current_dir(&settings.root)
+        .current_dir(resolve_working_dir(settings, working_dir))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -264,6 +289,18 @@ fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
         local
     } else {
         path.to_path_buf()
+    }
+}
+
+fn resolve_working_dir(settings: &Settings, working_dir: Option<&str>) -> std::path::PathBuf {
+    let Some(working_dir) = working_dir else {
+        return settings.root.clone();
+    };
+    let path = std::path::Path::new(working_dir);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        settings.root.join(path)
     }
 }
 
@@ -394,12 +431,21 @@ pub fn monitor(settings: &Settings, args: &[String]) -> io::Result<String> {
     let input = fs::read(&input_path);
     let _ = fs::remove_file(&input_path);
     let input = input?;
+    let session = Store::new(&settings.root)?.load(&id)?;
     let hook = HookDefinition {
         script,
         mode: HookMode::Sync,
         timeout_seconds: timeout,
     };
-    run_one(settings, &id, &event, &hook, &input).map(|_| String::new())
+    run_one(
+        settings,
+        &id,
+        &event,
+        &hook,
+        &input,
+        session.metadata.working_dir.as_deref(),
+    )
+    .map(|_| String::new())
 }
 
 fn value(args: &[String], name: &str) -> Option<String> {

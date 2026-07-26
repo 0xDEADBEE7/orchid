@@ -159,3 +159,28 @@ fn executable_resolution_distinguishes_path_like_and_bare_names() {
         std::path::PathBuf::from("ls")
     );
 }
+
+#[test]
+fn hooks_run_from_session_working_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = settings(dir.path());
+    std::fs::create_dir(dir.path().join("work")).unwrap();
+    script(dir.path(), "pwd.sh", "pwd > cwd");
+    settings.policy.hooks.events.insert(
+        "on-event".into(),
+        vec![HookDefinition {
+            script: "pwd.sh".into(),
+            mode: HookMode::Sync,
+            timeout_seconds: None,
+        }],
+    );
+    let mut session = Session::new(None, Some("work".into()), None);
+    let event = Session::message("user", "hello".into());
+    session.append(event.clone());
+    dispatch(&settings, "on-event", &event, &session).unwrap();
+    let actual = std::fs::read_to_string(dir.path().join("work/cwd")).unwrap();
+    assert_eq!(
+        std::path::Path::new(actual.trim()).canonicalize().unwrap(),
+        dir.path().join("work").canonicalize().unwrap()
+    );
+}
