@@ -1,4 +1,5 @@
 use crate::config::{read_json, Policy, Settings};
+use crate::model::AgentSnapshot;
 use serde::{Deserialize, Serialize};
 use std::{fs, io};
 
@@ -54,6 +55,23 @@ impl Settings {
         })
     }
 
+    pub fn snapshot_agent(&self, name: &str) -> io::Result<AgentSnapshot> {
+        let settings = self.resolve_agent(name)?;
+        Ok(AgentSnapshot {
+            policy: settings.policy,
+            prompt: settings.prompt_name,
+        })
+    }
+
+    pub fn settings_for_snapshot(&self, agent: &AgentSnapshot) -> Settings {
+        Settings {
+            root: self.root.clone(),
+            policy_name: "session".into(),
+            policy: agent.policy.clone(),
+            prompt_name: agent.prompt.clone(),
+            log_level: self.log_level.clone(),
+        }
+    }
     pub fn agent_summaries(&self) -> io::Result<Vec<AgentSummary>> {
         let mut summaries = Vec::new();
         for entry in fs::read_dir(self.root.join("agents"))? {
