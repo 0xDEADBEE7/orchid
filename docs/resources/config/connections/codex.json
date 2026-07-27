@@ -1,0 +1,7 @@
+{
+  "interface": "openai",
+  "base_url": "https://chatgpt.com/backend-api/codex",
+  "model": "gpt-5.6-luna",
+  "params": {},
+  "headers": {}
+}
