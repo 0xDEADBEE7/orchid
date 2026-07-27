@@ -5,6 +5,7 @@ use crate::{
 };
 use serde_json::Value;
 use std::io;
+use tiktoken_rs::o200k_base;
 
 pub fn run(
     provider: &dyn Provider,
@@ -30,7 +31,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
             return Err(io::Error::other("malformed provider content"));
         }
         session.metadata.token_estimate = estimated_request_tokens;
-        record_usage(session, usage);
+        record_usage(session, usage, estimated_request_tokens);
         progress(session);
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
@@ -45,94 +46,37 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     Err(io::Error::other("provider tool loop exceeded safety limit"))
 }
 
-#[allow(dead_code)]
-fn transcript(session: &Session, prompt: &str) -> String {
-    let mut context = String::new();
-    for event in &session.events {
-        match event {
-            Event::Message { role, content, .. } => {
-                // Roles and separators are protocol overhead, not context
-                // content.  The fallback is intentionally only a rough
-                // estimate, so count the text sent for each message.
-                let _ = role;
-                context.push_str(content);
-            }
-            Event::Reasoning { content, .. } => {
-                context.push_str(content);
-            }
-            Event::ToolCall { calls, .. } => {
-                context.push_str(&serde_json::to_string(calls).unwrap_or_default());
-            }
-            Event::ToolResult {
-                call_id: _,
-                content,
-                ..
-            } => {
-                context.push_str(&content.to_string());
-            }
-            Event::Usage { .. } | Event::Termination { .. } | Event::Failure { .. } => {}
-        }
-    }
-    context.push_str(prompt);
-    context
-}
-
 #[derive(serde::Serialize)]
-struct EstimateMessage<'a> {
-    role: &'a str,
+struct PendingMessage<'a> {
+    #[serde(rename = "type")]
+    event_type: &'static str,
+    role: &'static str,
     content: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_calls: Option<&'a [crate::model::ToolCall]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_result: Option<EstimateToolResult<'a>>,
 }
 
-#[derive(serde::Serialize)]
-struct EstimateToolResult<'a> {
-    call_id: &'a str,
-    content: &'a Value,
-}
-
-/// Match the historical vendor-agnostic JSON-size estimate: serialized context / 3.
+/// Count the serialized JSONL transcript, including one newline per event.
 fn estimate_request_tokens(session: &Session, prompt: &str) -> u32 {
-    let mut messages = Vec::new();
+    let tokenizer = match o200k_base() {
+        Ok(tokenizer) => tokenizer,
+        Err(_) => return 0,
+    };
+    let mut tokens = 0usize;
     for event in &session.events {
-        match event {
-            Event::Message { role, content, .. } => messages.push(EstimateMessage {
-                role,
-                content,
-                tool_calls: None,
-                tool_result: None,
-            }),
-            Event::ToolCall { calls, .. } => messages.push(EstimateMessage {
-                role: "assistant",
-                content: "",
-                tool_calls: Some(calls),
-                tool_result: None,
-            }),
-            Event::ToolResult {
-                call_id, content, ..
-            } => messages.push(EstimateMessage {
-                role: "user",
-                content: "",
-                tool_calls: None,
-                tool_result: Some(EstimateToolResult { call_id, content }),
-            }),
-            Event::Reasoning { .. }
-            | Event::Usage { .. }
-            | Event::Termination { .. }
-            | Event::Failure { .. } => {}
-        }
+        let Ok(line) = serde_json::to_string(event) else {
+            return 0;
+        };
+        tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
     }
-    messages.push(EstimateMessage {
+    let pending = PendingMessage {
+        event_type: "message",
         role: "user",
         content: prompt,
-        tool_calls: None,
-        tool_result: None,
-    });
-    serde_json::to_string(&messages)
-        .map(|serialized| (serialized.len() / 3) as u32)
-        .unwrap_or(0)
+    };
+    let Ok(line) = serde_json::to_string(&pending) else {
+        return 0;
+    };
+    tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
+    tokens.min(u32::MAX as usize) as u32
 }
 
 fn malformed(calls: &[(String, Value)]) -> bool {
@@ -153,11 +97,16 @@ fn budget(session: &mut Session, pending: &str, limit: i64) -> io::Result<u32> {
         Ok(estimate)
     }
 }
-fn record_usage(session: &mut Session, usage: Option<Usage>) {
-    let (input, output) = usage
+fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
+    let (input, output, method) = usage
         .as_ref()
-        .map(|tokens| (tokens.input, tokens.output))
-        .unwrap_or((0, 0));
+        .map(|tokens| (tokens.input, tokens.output, "provider_reported"))
+        .unwrap_or((estimate, 0, "local_tokenizer"));
+    session.metadata.token_usage.context_estimate = estimate;
+    session.metadata.token_usage.input_total += u64::from(input);
+    session.metadata.token_usage.output_total += u64::from(output);
+    session.metadata.token_usage.requests += 1;
+    session.metadata.token_usage.method = method.into();
     if usage.is_some() {
         session.append(Event::Usage {
             event_id: uuid::Uuid::new_v4().to_string(),

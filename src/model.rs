@@ -25,12 +25,25 @@ pub struct Metadata {
     pub status: Status,
     pub pid: Option<u32>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
     pub token_estimate: u32,
+    #[serde(default)]
+    pub token_usage: TokenUsage,
     pub termination_reason: Option<String>,
 }
 
 fn default_agent() -> String {
     "default".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TokenUsage {
+    pub context_estimate: u32,
+    pub input_total: u64,
+    pub output_total: u64,
+    pub cached_input_total: u64,
+    pub requests: u64,
+    pub method: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,6 +139,10 @@ impl Session {
                 status: Status::Idle,
                 pid: None,
                 token_estimate: 0,
+                token_usage: TokenUsage {
+                    method: "local_tokenizer".into(),
+                    ..TokenUsage::default()
+                },
                 termination_reason: None,
             },
             events: Vec::new(),
