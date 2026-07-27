@@ -1,3 +1,4 @@
+use crate::config::Policy;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,22 +16,44 @@ pub enum Status {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentSnapshot {
+    pub policy: Policy,
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Metadata {
     pub id: String,
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub created_at: DateTime<Utc>,
     #[serde(default = "default_agent")]
-    pub agent: String,
+    pub agent: AgentSnapshot,
     pub status: Status,
     pub pid: Option<u32>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
     pub token_estimate: u32,
+    #[serde(default)]
+    pub token_usage: TokenUsage,
     pub termination_reason: Option<String>,
 }
 
-fn default_agent() -> String {
-    "default".into()
+fn default_agent() -> AgentSnapshot {
+    AgentSnapshot {
+        policy: Policy::default(),
+        prompt: "default".into(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TokenUsage {
+    pub context_estimate: u32,
+    pub input_total: u64,
+    pub output_total: u64,
+    pub cached_input_total: u64,
+    pub requests: u64,
+    pub method: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,7 +135,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(label: Option<String>, working_dir: Option<String>, agent: Option<String>) -> Self {
+    pub fn new(
+        label: Option<String>,
+        working_dir: Option<String>,
+        agent: Option<AgentSnapshot>,
+    ) -> Self {
         let now = Utc::now();
         let id = Uuid::new_v4().to_string();
         Self {
@@ -122,10 +149,14 @@ impl Session {
                 working_dir,
                 created_at: now,
                 updated_at: now,
-                agent: agent.unwrap_or_else(|| "default".into()),
+                agent: agent.unwrap_or_else(default_agent),
                 status: Status::Idle,
                 pid: None,
                 token_estimate: 0,
+                token_usage: TokenUsage {
+                    method: "local_tokenizer".into(),
+                    ..TokenUsage::default()
+                },
                 termination_reason: None,
             },
             events: Vec::new(),

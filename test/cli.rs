@@ -98,6 +98,36 @@ fn tool_call_persists_result_and_hook_can_invoke_it() {
         .any(|event| event["type"] == "tool_result" && event["call_id"] == "hook-call"));
 }
 
+#[test]
+fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+
+    fs::write(
+        root.join("policies/default.json"),
+        r#"{"max_tokens":120000,"tools":["bash"]}"#,
+    )
+    .unwrap();
+    let created = run(binary, root, &["create"]);
+    assert!(created.status.success());
+    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    fs::write(
+        root.join("policies/default.json"),
+        r#"{"max_tokens":4096,"tools":[]}"#,
+    )
+    .unwrap();
+    let loaded = run(binary, root, &["get", id]);
+    assert!(loaded.status.success());
+    let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
+    assert_eq!(loaded["metadata"]["agent"]["policy"]["max_tokens"], 120000);
+    assert_eq!(loaded["metadata"]["agent"]["policy"]["tools"][0], "bash");
+    assert_eq!(loaded["metadata"]["agent"]["prompt"], "default");
+}
+
 #[cfg(unix)]
 fn set_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;

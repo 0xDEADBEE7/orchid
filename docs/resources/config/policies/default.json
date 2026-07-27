@@ -1,0 +1,7 @@
+{
+  "connections": ["codex"],
+  "max_tokens": -1,
+  "permissions": {
+    "tools": ["bash", "fs_read", "fs_edit"]
+  }
+}

@@ -121,6 +121,9 @@ fn tool_results_are_fed_back_until_text_arrives() {
         .events
         .iter()
         .any(|e| matches!(e, Event::ToolResult { .. })));
+    assert_eq!(session.metadata.token_usage.requests, 2);
+    assert!(session.metadata.token_usage.input_total
+        > u64::from(session.metadata.token_usage.context_estimate));
 }
 
 struct Counted(AtomicUsize);
@@ -178,7 +181,7 @@ fn negative_one_disables_token_threshold() {
 }
 
 #[test]
-fn token_estimate_matches_historical_json_size_model() {
+fn token_estimate_uses_o200k_jsonl_tokens() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -191,7 +194,17 @@ fn token_estimate_matches_historical_json_size_model() {
     let mut session = Session::new(None, None, None);
     session.append(Session::message("user", "123456789".into()));
     run(&NoUsage, &settings, &mut session, "").unwrap();
-    assert_eq!(session.metadata.token_estimate, 22);
+    assert!(session.metadata.token_estimate > 0);
+    assert_eq!(
+        session.metadata.token_usage.context_estimate,
+        session.metadata.token_estimate
+    );
+    assert_eq!(
+        session.metadata.token_usage.input_total,
+        u64::from(session.metadata.token_estimate)
+    );
+    assert_eq!(session.metadata.token_usage.requests, 1);
+    assert_eq!(session.metadata.token_usage.method, "local_tokenizer");
 }
 
 #[test]

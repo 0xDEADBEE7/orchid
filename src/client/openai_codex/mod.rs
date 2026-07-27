@@ -39,10 +39,12 @@ fn consume_stream(
             line_count += 1;
             let data = line.strip_prefix("data: ").unwrap_or("").trim();
             data_line_count += 1;
-            let (done, parsed) = decode_data(data, &mut event_types, &mut malformed_data_count);
+            let (done, protocol_event, parsed) =
+                decode_data(data, &mut event_types, &mut malformed_data_count);
             completed |= done;
             apply_events(
                 parsed,
+                protocol_event,
                 &mut events,
                 &mut received_event,
                 &mut completed,
@@ -101,35 +103,70 @@ fn decode_data(
     data: &str,
     event_types: &mut BTreeMap<String, usize>,
     malformed: &mut usize,
-) -> (bool, Vec<ClientEvent>) {
+) -> (bool, bool, Vec<ClientEvent>) {
     if data == "[DONE]" {
-        return (true, vec![ClientEvent::Done]);
+        return (true, true, vec![ClientEvent::Done]);
     }
     let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
         *malformed += 1;
-        return (false, Vec::new());
+        return (false, false, Vec::new());
     };
     let kind = value["type"].as_str().unwrap_or("").to_owned();
     *event_types.entry(kind).or_default() += 1;
-    (false, parse_sse(data))
+    (false, true, parse_sse(data))
 }
 
 fn apply_events(
     parsed: Vec<ClientEvent>,
+    protocol_event: bool,
     events: &mut Vec<ClientEvent>,
     received_event: &mut bool,
     completed: &mut bool,
     deadline: &mut Instant,
 ) {
-    if parsed.is_empty() {
+    if !protocol_event && parsed.is_empty() {
         return;
     }
-    *received_event = true;
+    // Lifecycle events (for example response.created) are valid stream
+    // activity even though they do not produce a ClientEvent. Otherwise a
+    // healthy stream can be reported as having received no first event.
+    *received_event |= protocol_event;
     *deadline = Instant::now() + STREAM_INACTIVITY_TIMEOUT;
     *completed |= parsed
         .iter()
         .any(|event| matches!(event, ClientEvent::Done));
     events.extend(parsed);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_event_counts_as_stream_activity() {
+        let (done, protocol_event, parsed) = decode_data(
+            r#"{"type":"response.created","response":{"id":"resp-1"}}"#,
+            &mut BTreeMap::new(),
+            &mut 0,
+        );
+        let mut events = Vec::new();
+        let mut received = false;
+        let mut completed = done;
+        let mut deadline = Instant::now();
+
+        apply_events(
+            parsed,
+            protocol_event,
+            &mut events,
+            &mut received,
+            &mut completed,
+            &mut deadline,
+        );
+
+        assert!(received);
+        assert!(!completed);
+        assert!(deadline > Instant::now());
+    }
 }
 
 fn stream_timeout(received_event: bool) -> Result<Vec<ClientEvent>, ClientError> {
