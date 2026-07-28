@@ -97,23 +97,19 @@ fn command_args(args: &[String]) -> io::Result<(String, String)> {
 }
 
 fn configured_provider(settings: &Settings) -> io::Result<Option<super::ClientProvider>> {
-    settings
-        .policy
-        .connections
-        .first()
-        .map(|name| {
-            let resolved = settings.resolve_connection(name)?;
-            let client = crate::client::client_for(resolved.clone())
-                .map_err(|error| io::Error::other(error.to_string()))?;
-            Ok(super::ClientProvider {
-                client,
-                model: resolved.connection.model,
-                system_prompt: settings.prompt()?,
-                tools: settings.policy.tools().to_vec(),
-                params: resolved.params.into_iter().collect(),
-            })
-        })
-        .transpose()
+    let Some(name) = settings.active_connection()? else {
+        return Ok(None);
+    };
+    let resolved = settings.resolve_connection(name)?;
+    let client = crate::client::client_for(resolved.clone())
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(Some(super::ClientProvider {
+        client,
+        model: resolved.connection.model,
+        system_prompt: settings.prompt()?,
+        tools: settings.policy.tools().to_vec(),
+        params: resolved.params.into_iter().collect(),
+    }))
 }
 
 fn finish_success(

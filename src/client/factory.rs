@@ -9,6 +9,7 @@ pub fn client_for(connection: ResolvedConnection) -> Result<Box<dyn Client>, Cli
         Some(crate::config::Credential::Codex { .. })
     );
     match (interface, codex_auth) {
+        ("echo", _) => Ok(Box::new(super::EchoClient)),
         ("codex" | "openai-codex", _) | ("openai", true) => {
             Ok(Box::new(CodexClient::new(connection)))
         }
