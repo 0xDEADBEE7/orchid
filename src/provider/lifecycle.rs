@@ -102,9 +102,9 @@ fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
         .as_ref()
         .map(|tokens| (tokens.input, tokens.output, "provider_reported"))
         .unwrap_or((estimate, 0, "local_tokenizer"));
-    session.metadata.token_usage.context_estimate = estimate;
-    session.metadata.token_usage.input_total += u64::from(input);
-    session.metadata.token_usage.output_total += u64::from(output);
+    session.metadata.token_usage.marginal_input = estimate;
+    session.metadata.token_usage.cumulative_input += u64::from(input);
+    session.metadata.token_usage.cumulative_output += u64::from(output);
     session.metadata.token_usage.requests += 1;
     session.metadata.token_usage.method = method.into();
     if usage.is_some() {
@@ -113,6 +113,7 @@ fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
             timestamp: chrono::Utc::now(),
             input,
             output,
+            token_usage: crate::model::TokenUsage::default(),
         });
     }
 }

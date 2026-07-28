@@ -233,6 +233,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: "cancelled by user".into(),
+            token_usage: orchid::model::TokenUsage::default(),
         },
     )?;
     Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())

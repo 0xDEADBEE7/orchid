@@ -48,10 +48,14 @@ fn default_agent() -> AgentSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct TokenUsage {
-    pub context_estimate: u32,
-    pub input_total: u64,
-    pub output_total: u64,
-    pub cached_input_total: u64,
+    #[serde(alias = "context_estimate")]
+    pub marginal_input: u32,
+    #[serde(alias = "input_total")]
+    pub cumulative_input: u64,
+    #[serde(alias = "output_total")]
+    pub cumulative_output: u64,
+    #[serde(alias = "cached_input_total")]
+    pub cumulative_cached_input: u64,
     pub requests: u64,
     pub method: String,
 }
@@ -64,38 +68,52 @@ pub enum Event {
         timestamp: DateTime<Utc>,
         role: String,
         content: String,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     ToolCall {
         event_id: String,
         timestamp: DateTime<Utc>,
         calls: Vec<ToolCall>,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     ToolResult {
         event_id: String,
         timestamp: DateTime<Utc>,
         call_id: String,
         content: Value,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     Reasoning {
         event_id: String,
         timestamp: DateTime<Utc>,
         content: String,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     Usage {
         event_id: String,
         timestamp: DateTime<Utc>,
         input: u32,
         output: u32,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     Termination {
         event_id: String,
         timestamp: DateTime<Utc>,
         reason: String,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
     Failure {
         event_id: String,
         timestamp: DateTime<Utc>,
         message: String,
+        #[serde(default)]
+        token_usage: TokenUsage,
     },
 }
 
@@ -134,6 +152,20 @@ pub struct Session {
     pub events: Vec<Event>,
 }
 
+impl Event {
+    fn set_token_usage(&mut self, token_usage: TokenUsage) {
+        match self {
+            Self::Message { token_usage: usage, .. }
+            | Self::ToolCall { token_usage: usage, .. }
+            | Self::ToolResult { token_usage: usage, .. }
+            | Self::Reasoning { token_usage: usage, .. }
+            | Self::Usage { token_usage: usage, .. }
+            | Self::Termination { token_usage: usage, .. }
+            | Self::Failure { token_usage: usage, .. } => *usage = token_usage,
+        }
+    }
+}
+
 impl Session {
     pub fn new(
         label: Option<String>,
@@ -163,7 +195,8 @@ impl Session {
         }
     }
 
-    pub fn append(&mut self, event: Event) {
+    pub fn append(&mut self, mut event: Event) {
+        event.set_token_usage(self.metadata.token_usage.clone());
         self.events.push(event);
         let now = Utc::now();
         self.metadata.updated_at = now;
@@ -175,6 +208,7 @@ impl Session {
             timestamp: Utc::now(),
             role: role.into(),
             content,
+            token_usage: TokenUsage::default(),
         }
     }
 }

@@ -122,8 +122,8 @@ fn tool_results_are_fed_back_until_text_arrives() {
         .iter()
         .any(|e| matches!(e, Event::ToolResult { .. })));
     assert_eq!(session.metadata.token_usage.requests, 2);
-    assert!(session.metadata.token_usage.input_total
-        > u64::from(session.metadata.token_usage.context_estimate));
+    assert!(session.metadata.token_usage.cumulative_input
+        > u64::from(session.metadata.token_usage.marginal_input));
 }
 
 struct Counted(AtomicUsize);
@@ -196,11 +196,11 @@ fn token_estimate_uses_o200k_jsonl_tokens() {
     run(&NoUsage, &settings, &mut session, "").unwrap();
     assert!(session.metadata.token_estimate > 0);
     assert_eq!(
-        session.metadata.token_usage.context_estimate,
+        session.metadata.token_usage.marginal_input,
         session.metadata.token_estimate
     );
     assert_eq!(
-        session.metadata.token_usage.input_total,
+        session.metadata.token_usage.cumulative_input,
         u64::from(session.metadata.token_estimate)
     );
     assert_eq!(session.metadata.token_usage.requests, 1);
