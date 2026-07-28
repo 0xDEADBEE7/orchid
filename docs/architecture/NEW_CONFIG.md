@@ -148,27 +148,23 @@ Directory:
 policies/
 ```
 
-A policy contains an ordered list of connection resource names, an optional
-prompt, permissions, token limits, and environment values. The first usable
-connection in that ordered list is selected; there is no separate `routing`
-object in the current policy schema.
+A policy contains an ordered list of connection resource names and an
+`active_connection` zero-based index. The indexed entry is the connection used
+for the session; the list order is not a fallback order.
 
 ```json
 {
-    "connections": ["local-fast", "cloud-smart"],
-    "prompt": "engineering",
+    "active_connection": 0,
+    "connections": ["echo", "codex"],
     "permissions": {
         "tools": ["bash", "fs_read", "fs_edit"],
         "paths": ["/tmp/**"]
-    },
-    "limits": {
-        "token_warn_threshold": 80000,
-        "token_hard_limit": 120000
     }
 }
 ```
 
-Policies are immutable definitions. They are not modified by sessions.
+The index is part of the session's agent policy snapshot, so changing the
+configuration does not change an existing session's active connection.
 
 ---
 
@@ -353,11 +349,13 @@ Changing the global default policy does not affect existing sessions.
 
 ---
 
-# Routing Resolution
+## Routing Resolution
 
-For each run, Orchid resolves the policy's ordered connection candidates and
-creates the first usable provider. The selected provider is used for that run;
-connection candidates are not copied into session state.
+The policy's `active_connection` is a zero-based index into its
+`connections` list. Orchid resolves only that connection for a run. An empty
+list uses the built-in local provider; an out-of-range index is invalid.
+
+The active index is persisted in the session's agent policy snapshot.
 
 ---
 

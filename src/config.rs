@@ -29,6 +29,8 @@ pub struct Policy {
     pub max_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_level: Option<String>,
+    #[serde(default)]
+    pub active_connection: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub connections: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -105,7 +107,9 @@ impl Policy {
 #[serde(deny_unknown_fields)]
 pub struct Connection {
     pub interface: String,
+    #[serde(default)]
     pub base_url: String,
+    #[serde(default)]
     pub model: String,
     #[serde(default)]
     pub api_key: Option<String>,
@@ -149,15 +153,49 @@ pub struct ResolvedConnection {
 }
 
 impl Settings {
+    pub fn active_connection(&self) -> io::Result<Option<&str>> {
+        if self.policy.connections.is_empty() {
+            return Ok(None);
+        }
+        self.policy
+            .connections
+            .get(self.policy.active_connection)
+            .map(String::as_str)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "active connection index is out of range",
+                )
+            })
+            .map(Some)
+    }
+
     pub fn connection(&self, name: &str) -> io::Result<Connection> {
         read_json(&self.root.join("connections").join(format!("{name}.json")))
     }
 
     pub fn resolve_connection(&self, name: &str) -> io::Result<ResolvedConnection> {
+        if name == "echo" {
+            return Ok(ResolvedConnection {
+                connection: Connection {
+                    interface: "echo".into(),
+                    base_url: String::new(),
+                    model: String::new(),
+                    api_key: None,
+                    auth: None,
+                    params: HashMap::new(),
+                    headers: HashMap::new(),
+                },
+                credential: None,
+                params: HashMap::new(),
+                headers: HashMap::new(),
+            });
+        }
         let connection = self.connection(name)?;
-        if connection.interface.is_empty()
-            || connection.base_url.is_empty()
-            || connection.model.is_empty()
+        if connection.interface != "echo"
+            && (connection.interface.is_empty()
+                || connection.base_url.is_empty()
+                || connection.model.is_empty())
         {
             return Err(safe_config_error(
                 "connection requires interface, base_url, and model",
@@ -165,7 +203,7 @@ impl Settings {
         }
         if !matches!(
             connection.interface.as_str(),
-            "local" | "openai" | "anthropic" | "codex"
+            "local" | "openai" | "anthropic" | "codex" | "openai-codex" | "echo"
         ) {
             return Err(safe_config_error("unknown connection interface"));
         }

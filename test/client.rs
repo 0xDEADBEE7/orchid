@@ -20,6 +20,28 @@ fn connection(interface: &str, credential: Option<Credential>) -> ResolvedConnec
 }
 
 #[test]
+fn factory_selects_echo_and_returns_the_latest_message() {
+    let client = client_for(connection("echo", None)).unwrap();
+    let events = client
+        .stream(orchid::client::ClientRequest {
+            model: "ignored".into(),
+            system_prompt: "ignored".into(),
+            messages: vec![orchid::client::Message {
+                role: "user".into(),
+                content: "hello".into(),
+                tool_calls: Vec::new(),
+                tool_result: None,
+            }],
+            tools: Vec::new(),
+            params: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![ClientEvent::TextDelta("hello".into()), ClientEvent::Done]
+    );
+}
+#[test]
 fn factory_selects_codex_for_interface_and_oauth() {
     assert!(client_for(connection(
         "codex",
