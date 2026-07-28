@@ -123,9 +123,18 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     let loaded = run(binary, root, &["get", id]);
     assert!(loaded.status.success());
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(loaded["metadata"]["agent"]["policy"]["max_tokens"], 120000);
-    assert_eq!(loaded["metadata"]["agent"]["policy"]["tools"][0], "bash");
-    assert_eq!(loaded["metadata"]["agent"]["prompt"], "default");
+    assert_eq!(loaded["metadata"]["policy"]["max_tokens"], 120000);
+    assert_eq!(loaded["metadata"]["policy"]["tools"][0], "bash");
+    assert!(loaded["metadata"].get("agent").is_none());
+    fs::write(
+        root.join("prompts/default.txt"),
+        "A changed source prompt.",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("sessions").join(id).join("prompt.md")).unwrap(),
+        "You are a helpful assistant."
+    );
 }
 
 #[cfg(unix)]

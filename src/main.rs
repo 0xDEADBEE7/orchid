@@ -110,9 +110,10 @@ fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Str
     let working_dir = value(args, "--working-dir");
     let agent = value(args, "--agent").unwrap_or_else(|| "default".into());
     let snapshot = settings.snapshot_agent(&agent)?;
+    let prompt = settings.resolve_agent(&agent)?.prompt()?;
     let session = Session::new(label, working_dir, Some(snapshot));
     let id = session.metadata.id.clone();
-    store.create(&session)?;
+    store.create_with_prompt(&session, &prompt)?;
     Ok(serde_json::json!({"id":id,"status":"idle","agent":agent}).to_string())
 }
 
@@ -126,8 +127,11 @@ fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<St
         .first()
         .ok_or_else(|| invalid("session requires an id"))?;
     let agent = value(&args[1..], "--agent").ok_or_else(|| invalid("session requires --agent"))?;
-    let snapshot = settings.snapshot_agent(&agent)?;
-    store.update(id, |session| session.metadata.agent = snapshot.clone())?;
+    let resolved = settings.resolve_agent(&agent)?;
+    let prompt = resolved.prompt()?;
+    store.update_with_prompt(id, &prompt, |session| {
+        session.metadata.policy = resolved.policy.clone();
+    })?;
     Ok(serde_json::json!({"id":id,"agent":agent,"updated":true}).to_string())
 }
 

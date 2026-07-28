@@ -23,7 +23,12 @@ impl Store {
     }
 
     pub fn create(&self, session: &Session) -> io::Result<()> {
-        self.save(session)
+        self.create_with_prompt(session, "")
+    }
+
+    pub fn create_with_prompt(&self, session: &Session, prompt: &str) -> io::Result<()> {
+        let _lock = SessionLock::acquire(&self.path(&session.metadata.id))?;
+        self.save_unlocked_with_prompt(session, Some(prompt))
     }
 
     pub fn load(&self, id: &str) -> io::Result<Session> {
@@ -31,10 +36,7 @@ impl Store {
         let metadata = serde_json::from_slice(&fs::read(dir.join("metadata.json"))?)
             .map_err(io::Error::other)?;
         let events = read_jsonl(&dir.join("events.jsonl"))?;
-        Ok(Session {
-            metadata,
-            events,
-        })
+        Ok(Session { metadata, events })
     }
 
     pub fn reconcile(&self, id: &str) -> io::Result<Session> {
@@ -83,10 +85,20 @@ impl Store {
     }
 
     fn save_unlocked(&self, session: &Session) -> io::Result<()> {
+        self.save_unlocked_with_prompt(session, None)
+    }
+
+    fn save_unlocked_with_prompt(&self, session: &Session, prompt: Option<&str>) -> io::Result<()> {
         let dir = self.path(&session.metadata.id);
         fs::create_dir_all(&dir)?;
         write_json(&dir.join("metadata.json"), &session.metadata)?;
         append_events(&dir.join("events.jsonl"), &session.events)?;
+        let prompt_path = dir.join("prompt.md");
+        if let Some(prompt) = prompt {
+            fs::write(&prompt_path, prompt)?;
+        } else if !prompt_path.exists() {
+            fs::write(&prompt_path, "")?;
+        }
         if !dir.join("logs.jsonl").exists() {
             fs::write(dir.join("logs.jsonl"), "")?;
         }
@@ -141,6 +153,17 @@ impl Store {
         let archive = self.root.join("archive");
         fs::create_dir_all(&archive)?;
         fs::rename(self.path(id), archive.join(id))
+    }
+
+    pub fn update_with_prompt<F>(&self, id: &str, prompt: &str, edit: F) -> io::Result<Session>
+    where
+        F: FnOnce(&mut Session),
+    {
+        let _lock = SessionLock::acquire(&self.path(id))?;
+        let mut session = self.load(id)?;
+        edit(&mut session);
+        self.save_unlocked_with_prompt(&session, Some(prompt))?;
+        Ok(session)
     }
 
     pub fn update<F>(&self, id: &str, edit: F) -> io::Result<Session>
