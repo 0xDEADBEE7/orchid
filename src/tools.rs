@@ -99,12 +99,14 @@ pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
                 name: name.into(),
                 input,
             }],
+            token_usage: crate::model::TokenUsage::default(),
         },
         Event::ToolResult {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             call_id: String::new(),
             content: result,
+            token_usage: crate::model::TokenUsage::default(),
         },
     ]
 }

@@ -37,6 +37,7 @@ pub fn execute_with_ids<
                 name: name.clone(),
                 input: input.clone(),
             }],
+            token_usage: crate::model::TokenUsage::default(),
         });
         progress(session);
         match invoke(settings, session, &name, &input) {
@@ -47,6 +48,7 @@ pub fn execute_with_ids<
                     timestamp: chrono::Utc::now(),
                     call_id,
                     content: value,
+                    token_usage: crate::model::TokenUsage::default(),
                 });
                 progress(session);
             }
@@ -57,6 +59,7 @@ pub fn execute_with_ids<
                     timestamp: chrono::Utc::now(),
                     call_id,
                     content: serde_json::json!({"error":message}),
+                    token_usage: crate::model::TokenUsage::default(),
                 });
                 progress(session);
                 // Tool failures are part of the model interaction, rather than

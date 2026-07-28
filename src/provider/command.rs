@@ -161,12 +161,14 @@ fn finish_failure(
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: message.clone(),
+            token_usage: crate::model::TokenUsage::default(),
         });
     } else {
         session.append(crate::model::Event::Failure {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             message: message.clone(),
+            token_usage: crate::model::TokenUsage::default(),
         });
     }
     store.save(&session)?;
