@@ -132,6 +132,9 @@ pub struct Settings {
 
 impl Settings {
     pub fn prompt(&self) -> io::Result<String> {
+        if let Some(id) = self.prompt_name.strip_prefix("session:") {
+            return fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md"));
+        }
         let name = &self.prompt_name;
         let prompts = self.root.join("prompts");
         let markdown = prompts.join(format!("{name}.md"));

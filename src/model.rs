@@ -27,8 +27,8 @@ pub struct Metadata {
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub created_at: DateTime<Utc>,
-    #[serde(default = "default_agent")]
-    pub agent: AgentSnapshot,
+    #[serde(default)]
+    pub policy: Policy,
     pub status: Status,
     pub pid: Option<u32>,
     pub updated_at: DateTime<Utc>,
@@ -37,13 +37,6 @@ pub struct Metadata {
     #[serde(default)]
     pub token_usage: TokenUsage,
     pub termination_reason: Option<String>,
-}
-
-fn default_agent() -> AgentSnapshot {
-    AgentSnapshot {
-        policy: Policy::default(),
-        prompt: "default".into(),
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -155,13 +148,27 @@ pub struct Session {
 impl Event {
     fn set_token_usage(&mut self, token_usage: TokenUsage) {
         match self {
-            Self::Message { token_usage: usage, .. }
-            | Self::ToolCall { token_usage: usage, .. }
-            | Self::ToolResult { token_usage: usage, .. }
-            | Self::Reasoning { token_usage: usage, .. }
-            | Self::Usage { token_usage: usage, .. }
-            | Self::Termination { token_usage: usage, .. }
-            | Self::Failure { token_usage: usage, .. } => *usage = token_usage,
+            Self::Message {
+                token_usage: usage, ..
+            }
+            | Self::ToolCall {
+                token_usage: usage, ..
+            }
+            | Self::ToolResult {
+                token_usage: usage, ..
+            }
+            | Self::Reasoning {
+                token_usage: usage, ..
+            }
+            | Self::Usage {
+                token_usage: usage, ..
+            }
+            | Self::Termination {
+                token_usage: usage, ..
+            }
+            | Self::Failure {
+                token_usage: usage, ..
+            } => *usage = token_usage,
         }
     }
 }
@@ -181,7 +188,7 @@ impl Session {
                 working_dir,
                 created_at: now,
                 updated_at: now,
-                agent: agent.unwrap_or_else(default_agent),
+                policy: agent.map(|snapshot| snapshot.policy).unwrap_or_default(),
                 status: Status::Idle,
                 pid: None,
                 token_estimate: 0,

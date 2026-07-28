@@ -29,7 +29,7 @@ pub fn run_command(
             return Err(error);
         }
     };
-    let settings = settings.settings_for_snapshot(&session.metadata.agent);
+    let settings = settings.settings_for_session(&id, &session.metadata.policy);
     let configured = configured_provider(&settings)?;
     if !settings.policy.connections.is_empty() && configured.is_none() {
         return finish_failure(

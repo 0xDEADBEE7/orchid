@@ -63,12 +63,12 @@ impl Settings {
         })
     }
 
-    pub fn settings_for_snapshot(&self, agent: &AgentSnapshot) -> Settings {
+    pub fn settings_for_session(&self, id: &str, policy: &Policy) -> Settings {
         Settings {
             root: self.root.clone(),
             policy_name: "session".into(),
-            policy: agent.policy.clone(),
-            prompt_name: agent.prompt.clone(),
+            policy: policy.clone(),
+            prompt_name: format!("session:{id}"),
             log_level: self.log_level.clone(),
         }
     }
