@@ -138,6 +138,15 @@ fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<St
 fn list(store: &Store) -> io::Result<String> {
     let mut sessions = store.list()?;
     sessions.sort_by_key(|s| s.metadata.created_at);
+    let sessions: Vec<_> = sessions
+        .into_iter()
+        .map(|session| {
+            serde_json::json!({
+                "id": session.metadata.id,
+                "label": session.metadata.label,
+            })
+        })
+        .collect();
     serde_json::to_string(&serde_json::json!({"sessions":sessions})).map_err(io::Error::other)
 }
 

@@ -137,6 +137,32 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     );
 }
 
+#[test]
+fn list_returns_only_session_ids_and_labels() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+
+    let first = run(binary, root, &["create", "--label", "first"]);
+    assert!(first.status.success());
+    let first: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    let first_id = first["id"].as_str().unwrap();
+
+    let second = run(binary, root, &["create"]);
+    assert!(second.status.success());
+    let second: serde_json::Value = serde_json::from_slice(&second.stdout).unwrap();
+    let second_id = second["id"].as_str().unwrap();
+
+    let listed = run(binary, root, &["list"]);
+    assert!(listed.status.success());
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let sessions = listed["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert_eq!(sessions[0], serde_json::json!({"id": first_id, "label": "first"}));
+    assert_eq!(sessions[1], serde_json::json!({"id": second_id, "label": null}));
+}
+
 #[cfg(unix)]
 fn set_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
