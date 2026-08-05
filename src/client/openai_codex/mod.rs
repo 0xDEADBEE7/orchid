@@ -7,11 +7,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
 use uuid::Uuid;
-
-const FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
-const STREAM_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct CodexClient {
     connection: ResolvedConnection,
@@ -29,28 +25,27 @@ fn consume_stream(
     let mut data_line_count = 0usize;
     let mut malformed_data_count = 0usize;
     let mut event_types = BTreeMap::<String, usize>::new();
-    let mut deadline = Instant::now() + FIRST_EVENT_TIMEOUT;
     loop {
-        let remaining = time_left(deadline, received_event)?;
-        let Some(line) = receive_line(&receiver, remaining, received_event)? else {
+        let Some(line) = receive_line(&receiver)? else {
             break;
         };
-        {
-            line_count += 1;
-            let data = line.strip_prefix("data: ").unwrap_or("").trim();
-            data_line_count += 1;
-            let (done, protocol_event, parsed) =
-                decode_data(data, &mut event_types, &mut malformed_data_count);
-            completed |= done;
-            apply_events(
-                parsed,
-                protocol_event,
-                &mut events,
-                &mut received_event,
-                &mut completed,
-                &mut deadline,
-            );
-        }
+        line_count += 1;
+        // SSE uses blank lines to delimit events and may use colon-prefixed
+        // comments as keepalives. Neither is application data.
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        data_line_count += 1;
+        let (done, protocol_event, parsed) =
+            decode_data(data.trim(), &mut event_types, &mut malformed_data_count);
+        completed |= done;
+        apply_events(
+            parsed,
+            protocol_event,
+            &mut events,
+            &mut received_event,
+            &mut completed,
+        );
     }
     finish_stream(
         events,
@@ -85,17 +80,14 @@ fn finish_stream(
 
 fn receive_line(
     receiver: &mpsc::Receiver<Result<String, String>>,
-    timeout: Duration,
-    received_event: bool,
 ) -> Result<Option<String>, ClientError> {
-    match receiver.recv_timeout(timeout) {
+    match receiver.recv() {
         Ok(Ok(line)) => Ok(Some(line)),
         Ok(Err(error)) => Err(ClientError::new(
             ClientErrorKind::Transport,
             format!("Codex stream read failed: {error}"),
         )),
-        Err(mpsc::RecvTimeoutError::Timeout) => stream_timeout(received_event).map(|_| None),
-        Err(mpsc::RecvTimeoutError::Disconnected) => Ok(None),
+        Err(mpsc::RecvError) => Ok(None),
     }
 }
 
@@ -122,7 +114,6 @@ fn apply_events(
     events: &mut Vec<ClientEvent>,
     received_event: &mut bool,
     completed: &mut bool,
-    deadline: &mut Instant,
 ) {
     if !protocol_event && parsed.is_empty() {
         return;
@@ -131,7 +122,6 @@ fn apply_events(
     // activity even though they do not produce a ClientEvent. Otherwise a
     // healthy stream can be reported as having received no first event.
     *received_event |= protocol_event;
-    *deadline = Instant::now() + STREAM_INACTIVITY_TIMEOUT;
     *completed |= parsed
         .iter()
         .any(|event| matches!(event, ClientEvent::Done));
@@ -143,57 +133,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lifecycle_event_counts_as_stream_activity() {
-        let (done, protocol_event, parsed) = decode_data(
-            r#"{"type":"response.created","response":{"id":"resp-1"}}"#,
-            &mut BTreeMap::new(),
-            &mut 0,
+    fn accepts_keepalives_and_waits_for_completion() {
+        let (sender, receiver) = mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            sender.send(Ok(": ping\n".into())).unwrap();
+            sender.send(Ok("\n".into())).unwrap();
+            sender
+                .send(Ok("data: {\"type\":\"response.created\"}\n".into()))
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            sender
+                .send(Ok("data: {\"type\":\"response.completed\"}\n".into()))
+                .unwrap();
+        });
+
+        assert_eq!(
+            consume_stream(receiver, "text/event-stream".into(), "missing".into()).unwrap(),
+            vec![ClientEvent::Done]
         );
-        let mut events = Vec::new();
-        let mut received = false;
-        let mut completed = done;
-        let mut deadline = Instant::now();
-
-        apply_events(
-            parsed,
-            protocol_event,
-            &mut events,
-            &mut received,
-            &mut completed,
-            &mut deadline,
-        );
-
-        assert!(received);
-        assert!(!completed);
-        assert!(deadline > Instant::now());
+        producer.join().unwrap();
     }
-}
-
-fn stream_timeout(received_event: bool) -> Result<Vec<ClientEvent>, ClientError> {
-    let phase = if received_event {
-        "stream inactivity"
-    } else {
-        "first event"
-    };
-    Err(ClientError::new(
-        ClientErrorKind::Transport,
-        format!(
-            "Codex {phase} timeout after {}s",
-            if received_event {
-                STREAM_INACTIVITY_TIMEOUT.as_secs()
-            } else {
-                FIRST_EVENT_TIMEOUT.as_secs()
-            }
-        ),
-    ))
-}
-
-fn time_left(deadline: Instant, received_event: bool) -> Result<Duration, ClientError> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return stream_timeout(received_event).map(|_| remaining);
-    }
-    Ok(remaining)
 }
 impl CodexClient {
     pub fn new(connection: ResolvedConnection) -> Self {
@@ -232,7 +191,10 @@ impl Client for CodexClient {
         );
         let http = reqwest::blocking::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
-            .timeout(std::time::Duration::from_secs(120))
+            // A streamed Codex turn can legitimately be quiet for more than a
+            // few minutes while the model reasons or waits on a tool. Keep the
+            // connection timeout, but do not impose a whole-request deadline.
+            .timeout(None)
             .build()
             .map_err(|e| ClientError::new(ClientErrorKind::Transport, e.to_string()))?;
         let mut call = http

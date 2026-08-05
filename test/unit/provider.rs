@@ -122,8 +122,10 @@ fn tool_results_are_fed_back_until_text_arrives() {
         .iter()
         .any(|e| matches!(e, Event::ToolResult { .. })));
     assert_eq!(session.metadata.token_usage.requests, 2);
-    assert!(session.metadata.token_usage.cumulative_input
-        > u64::from(session.metadata.token_usage.marginal_input));
+    assert!(
+        session.metadata.token_usage.cumulative_input
+            > u64::from(session.metadata.token_usage.marginal_input)
+    );
 }
 
 struct Counted(AtomicUsize);
@@ -178,6 +180,11 @@ fn negative_one_disables_token_threshold() {
         "should not arrive"
     );
     assert!(session.metadata.token_estimate > 0);
+}
+
+#[test]
+fn absent_token_limit_does_not_add_a_fallback_limit() {
+    assert_eq!(orchid::config::Policy::default().max_tokens(), None);
 }
 
 #[test]

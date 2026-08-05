@@ -23,7 +23,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     prompt: &str,
     mut progress: F,
 ) -> io::Result<String> {
-    for _ in 0..100 {
+    loop {
         let estimated_request_tokens = budget(session, prompt, settings.policy.max_tokens())?;
         progress(session);
         let (answer, usage, calls) = collect(provider.stream(prompt, session)?);
@@ -43,7 +43,6 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         }
         dispatch::execute(settings, session, calls, &mut progress)?;
     }
-    Err(io::Error::other("provider tool loop exceeded safety limit"))
 }
 
 #[derive(serde::Serialize)]
@@ -84,11 +83,11 @@ fn malformed(calls: &[(String, Value)]) -> bool {
         .first()
         .is_some_and(|(name, _)| name == "__malformed__")
 }
-fn budget(session: &mut Session, pending: &str, limit: i64) -> io::Result<u32> {
+fn budget(session: &mut Session, pending: &str, limit: Option<i64>) -> io::Result<u32> {
     let estimate = estimate_request_tokens(session, pending);
-    if limit == -1 {
+    let Some(limit) = limit.filter(|limit| *limit != -1) else {
         return Ok(estimate);
-    }
+    };
     if i64::from(estimate) > limit {
         session.metadata.termination_reason =
             Some("token threshold exceeded before provider request".into());

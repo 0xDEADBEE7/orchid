@@ -98,8 +98,8 @@ impl Policy {
             &self.permissions.paths
         }
     }
-    pub fn max_tokens(&self) -> i64 {
-        self.max_tokens.unwrap_or(4096)
+    pub fn max_tokens(&self) -> Option<i64> {
+        self.max_tokens
     }
 }
 
