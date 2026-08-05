@@ -1,9 +1,20 @@
-use crate::hook_state::HookState;
+mod hook_depth;
+#[path = "hook_events.rs"]
+mod hook_events;
+mod hook_logging;
+mod hook_paths;
+
 use crate::{
     config::{HookDefinition, HookMode, Settings},
     model::{Event, Session},
     store::Store,
 };
+use crate::{
+    hook_state::HookState,
+    hooks::hook_depth::{depth as hook_depth, HookDepth},
+};
+use hook_logging::{format_mode, log_lifecycle};
+use hook_paths::{executable, working_dir as resolve_working_dir};
 use serde::Serialize;
 use serde_json::json;
 use std::{
@@ -31,7 +42,7 @@ pub fn dispatch(
     };
     let input = serde_json::to_vec(&Envelope {
         version: 1,
-        event: json!({"name": name, "event_id": event_id(trigger), "event_type": event_type(trigger)}),
+        event: json!({"name": name, "event_id": hook_events::id(trigger), "event_type": hook_events::kind(trigger)}),
         session,
     }).map_err(io::Error::other)?;
     for hook in hooks {
@@ -95,31 +106,27 @@ pub fn append(
     if hook_depth(&settings.root, &session.metadata.id) >= 8 {
         return Ok(());
     }
-    let mut names = vec!["on-event"];
     if first {
-        names.push("on-init");
+        dispatch(settings, "on-init", &event, session)?;
     }
-    match &event {
-        Event::ToolCall { .. } => names.push("on-tool-call"),
-        Event::ToolResult { .. } => names.push("on-tool-result"),
-        Event::Failure { .. } | Event::Termination { .. } => names.push("on-error"),
-        _ => {}
-    }
-    for name in names {
+    for name in hook_names(&event) {
         dispatch(settings, name, &event, session)?;
     }
     Ok(())
 }
+
+fn hook_names(event: &Event) -> impl Iterator<Item = &'static str> {
+    std::iter::once("on-event").chain(match event {
+        Event::ToolCall { .. } => Some("on-tool-call"),
+        Event::ToolResult { .. } => Some("on-tool-result"),
+        Event::Failure { .. } | Event::Termination { .. } => Some("on-error"),
+        _ => None,
+    })
+}
+
 pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> io::Result<()> {
     for event in session.events.iter().skip(from) {
-        let mut names = vec!["on-event"];
-        match event {
-            Event::ToolCall { .. } => names.push("on-tool-call"),
-            Event::ToolResult { .. } => names.push("on-tool-result"),
-            Event::Failure { .. } | Event::Termination { .. } => names.push("on-error"),
-            _ => {}
-        }
-        for name in names {
+        for name in hook_names(event) {
             dispatch(settings, name, event, session)?;
         }
     }
@@ -145,38 +152,46 @@ fn run_one(
         "info",
         json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
     );
-    let _depth = HookDepth::enter(&settings.root, session_id)?;
-    let _hook_state = if matches!(hook.mode, HookMode::Sync)
-        && settings
-            .root
-            .join("sessions")
-            .join(session_id)
-            .join("metadata.json")
-            .exists()
-    {
-        Some(HookState::enter(settings, session_id)?)
-    } else {
-        None
-    };
-    let executable = resolve_executable(settings, &hook.script);
+    let mut running = spawn_hook(settings, session_id, event_name, hook, working_dir)?;
+    running
+        .child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("hook stdin unavailable"))?
+        .write_all(input)?;
+    wait_for_hook(
+        settings,
+        session_id,
+        event_name,
+        hook,
+        &mut running,
+        timeout,
+    )
+}
+
+struct RunningHook {
+    child: std::process::Child,
+    stdout: Option<thread::JoinHandle<Vec<u8>>>,
+    stderr: Option<thread::JoinHandle<Vec<u8>>>,
+    _depth: HookDepth,
+    _hook_state: Option<HookState>,
+}
+
+fn spawn_hook(
+    settings: &Settings,
+    session_id: &str,
+    event_name: &str,
+    hook: &HookDefinition,
+    working_dir: Option<&str>,
+) -> io::Result<RunningHook> {
+    let depth = HookDepth::enter(&settings.root, session_id)?;
+    let hook_state = enter_hook_state(settings, session_id, hook)?;
     let token_path = settings
         .root
         .join("sessions")
         .join(session_id)
         .join(".hook-token");
-    let mut child = match Command::new(executable)
-        .current_dir(resolve_working_dir(settings, working_dir))
-        .env("ORCHID_SESSION_ID", session_id)
-        .env(
-            "ORCHID_HOOK_TOKEN",
-            fs::read_to_string(&token_path).unwrap_or_default().trim(),
-        )
-        .env("ORCHID_HOOK_TOKEN_FILE", &token_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    let mut child = match start_process(settings, session_id, hook, working_dir, &token_path) {
         Ok(child) => child,
         Err(error) => {
             log_lifecycle(
@@ -197,53 +212,79 @@ fn run_one(
         .stderr
         .take()
         .ok_or_else(|| io::Error::other("hook stderr unavailable"))?;
-    let stdout_reader = thread::spawn(move || {
+    Ok(RunningHook {
+        child,
+        stdout: Some(capture_output(stdout)),
+        stderr: Some(capture_output(stderr)),
+        _depth: depth,
+        _hook_state: hook_state,
+    })
+}
+
+fn enter_hook_state(
+    settings: &Settings,
+    session_id: &str,
+    hook: &HookDefinition,
+) -> io::Result<Option<HookState>> {
+    let active = matches!(hook.mode, HookMode::Sync)
+        && settings
+            .root
+            .join("sessions")
+            .join(session_id)
+            .join("metadata.json")
+            .exists();
+    active
+        .then(|| HookState::enter(settings, session_id))
+        .transpose()
+}
+
+fn start_process(
+    settings: &Settings,
+    session_id: &str,
+    hook: &HookDefinition,
+    working_dir: Option<&str>,
+    token_path: &std::path::Path,
+) -> io::Result<std::process::Child> {
+    Command::new(executable(settings, &hook.script))
+        .current_dir(resolve_working_dir(settings, working_dir))
+        .env("ORCHID_SESSION_ID", session_id)
+        .env(
+            "ORCHID_HOOK_TOKEN",
+            fs::read_to_string(token_path).unwrap_or_default().trim(),
+        )
+        .env("ORCHID_HOOK_TOKEN_FILE", token_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
+fn capture_output<R: Read + Send + 'static>(reader: R) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = stdout.take(1024 * 1024).read_to_end(&mut bytes);
+        let _ = reader.take(1024 * 1024).read_to_end(&mut bytes);
         bytes
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = stderr.take(1024 * 1024).read_to_end(&mut bytes);
-        bytes
-    });
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| io::Error::other("hook stdin unavailable"))?
-        .write_all(input)?;
+    })
+}
+
+fn wait_for_hook(
+    settings: &Settings,
+    session_id: &str,
+    event_name: &str,
+    hook: &HookDefinition,
+    running: &mut RunningHook,
+    timeout: Duration,
+) -> io::Result<()> {
     let started = Instant::now();
     loop {
-        if let Some(status) = child.try_wait()? {
-            let stdout =
-                String::from_utf8_lossy(&stdout_reader.join().unwrap_or_default()).into_owned();
-            let stderr =
-                String::from_utf8_lossy(&stderr_reader.join().unwrap_or_default()).into_owned();
-            if status.success() {
-                log_lifecycle(
-                    settings,
-                    session_id,
-                    "hook completed",
-                    "info",
-                    json!({"event":event_name,"script":hook.script,"status":status.code(),"stdout":stdout,"stderr":stderr}),
-                );
-                return Ok(());
-            }
-            let error = io::Error::other(format!("hook exited with status {status}"));
-            log_lifecycle(
-                settings,
-                session_id,
-                "hook failed",
-                "error",
-                json!({"event":event_name,"script":hook.script,"error":error.to_string(),"stdout":stdout,"stderr":stderr}),
-            );
-            return Err(error);
+        if let Some(status) = running.child.try_wait()? {
+            return finish_hook(settings, session_id, event_name, hook, running, status);
         }
         if started.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+            let _ = running.child.kill();
+            let _ = running.child.wait();
+            let _ = running.stdout.take().and_then(|reader| reader.join().ok());
+            let _ = running.stderr.take().and_then(|reader| reader.join().ok());
             log_lifecycle(
                 settings,
                 session_id,
@@ -257,123 +298,53 @@ fn run_one(
     }
 }
 
-pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
-    let path = std::path::Path::new(script);
-    let local = settings.root.join(path);
-    if path.is_absolute() || path.components().count() > 1 || is_executable(&local) {
-        local.canonicalize().unwrap_or(local)
-    } else {
-        path.to_path_buf()
-    }
-}
-fn resolve_working_dir(settings: &Settings, working_dir: Option<&str>) -> std::path::PathBuf {
-    let Some(working_dir) = working_dir else {
-        return settings.root.clone();
-    };
-    let path = std::path::Path::new(working_dir);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        settings.root.join(path)
-    }
-}
-fn is_executable(path: &std::path::Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata()
-            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
-}
-fn hook_depth(root: &std::path::Path, session_id: &str) -> u32 {
-    fs::read_to_string(root.join("sessions").join(session_id).join(".hook-depth"))
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0)
-}
-struct HookDepth {
-    path: std::path::PathBuf,
-}
-impl HookDepth {
-    fn enter(root: &std::path::Path, session_id: &str) -> io::Result<Self> {
-        let dir = root.join("sessions").join(session_id);
-        fs::create_dir_all(&dir)?;
-        let path = dir.join(".hook-depth");
-        let depth = hook_depth(root, session_id) + 1;
-        fs::write(&path, depth.to_string())?;
-        Ok(Self { path })
-    }
-}
-impl Drop for HookDepth {
-    fn drop(&mut self) {
-        let depth = fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(1);
-        if depth <= 1 {
-            let _ = fs::remove_file(&self.path);
-        } else {
-            let _ = fs::write(&self.path, (depth - 1).to_string());
-        }
-    }
-}
-fn format_mode(mode: &HookMode) -> &'static str {
-    match mode {
-        HookMode::Sync => "sync",
-        HookMode::Async => "async",
-    }
-}
-fn log_lifecycle(
+fn finish_hook(
     settings: &Settings,
     session_id: &str,
-    message: &str,
-    level: &str,
-    fields: serde_json::Value,
-) {
-    let Ok(store) = Store::new(&settings.root) else {
-        return;
-    };
-    let _ = store.log_both(
+    event_name: &str,
+    hook: &HookDefinition,
+    running: &mut RunningHook,
+    status: std::process::ExitStatus,
+) -> io::Result<()> {
+    let stdout = String::from_utf8_lossy(
+        &running
+            .stdout
+            .take()
+            .and_then(|reader| reader.join().ok())
+            .unwrap_or_default(),
+    )
+    .into_owned();
+    let stderr = String::from_utf8_lossy(
+        &running
+            .stderr
+            .take()
+            .and_then(|reader| reader.join().ok())
+            .unwrap_or_default(),
+    )
+    .into_owned();
+    if status.success() {
+        log_lifecycle(
+            settings,
+            session_id,
+            "hook completed",
+            "info",
+            json!({"event":event_name,"script":hook.script,"status":status.code(),"stdout":stdout,"stderr":stderr}),
+        );
+        return Ok(());
+    }
+    let error = io::Error::other(format!("hook exited with status {status}"));
+    log_lifecycle(
+        settings,
         session_id,
-        &crate::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: level.into(),
-            message: message.into(),
-            fields,
-        },
-        &settings.log_level,
+        "hook failed",
+        "error",
+        json!({"event":event_name,"script":hook.script,"error":error.to_string(),"stdout":stdout,"stderr":stderr}),
     );
+    Err(error)
 }
-fn event_id(event: &Event) -> &str {
-    match event {
-        Event::Message { event_id, .. }
-        | Event::ToolCall { event_id, .. }
-        | Event::ToolResult { event_id, .. }
-        | Event::Reasoning { event_id, .. }
-        | Event::Usage { event_id, .. }
-        | Event::Termination { event_id, .. }
-        | Event::Failure { event_id, .. } => event_id,
-    }
-}
-fn event_type(event: &Event) -> &'static str {
-    match event {
-        Event::Message { .. } => "message",
-        Event::ToolCall { .. } => "tool_call",
-        Event::ToolResult { .. } => "tool_result",
-        Event::Reasoning { .. } => "reasoning",
-        Event::Usage { .. } => "usage",
-        Event::Termination { .. } => "termination",
-        Event::Failure { .. } => "failure",
-    }
+
+pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
+    executable(settings, script)
 }
 pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()> {
     let store = crate::store::Store::new(&settings.root)?;

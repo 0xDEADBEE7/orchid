@@ -233,6 +233,23 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
     }
 
     let mut session = store.load(id)?;
+    for call_id in session.pending_tool_call_ids() {
+        orchid::hooks::append(
+            store,
+            settings,
+            &mut session,
+            orchid::model::Event::ToolResult {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now(),
+                call_id,
+                content: serde_json::json!({
+                    "status": "terminated",
+                    "error": "tool call terminated because the session was cancelled"
+                }),
+                token_usage: orchid::model::TokenUsage::default(),
+            },
+        )?;
+    }
     orchid::hooks::append(
         store,
         settings,

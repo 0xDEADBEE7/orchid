@@ -27,6 +27,14 @@ impl Transport {
         body: &Value,
         streaming: bool,
     ) -> io::Result<Response> {
+        let request = self.request_for(provider, body);
+        if streaming {
+            return request.send().map_err(io::Error::other).and_then(status);
+        }
+        self.send_with_retries(request)
+    }
+
+    fn request_for(&self, provider: &HttpProvider, body: &Value) -> reqwest::blocking::RequestBuilder {
         let url = if matches!(self.credential, Some(Credential::Codex { .. }))
             && provider.connection.base_url.ends_with("/codex")
         {
@@ -57,9 +65,10 @@ impl Transport {
         for (name, value) in &provider.headers {
             request = request.header(name, value);
         }
-        if streaming {
-            return request.send().map_err(io::Error::other).and_then(status);
-        }
+        request
+    }
+
+    fn send_with_retries(&self, request: reqwest::blocking::RequestBuilder) -> io::Result<Response> {
         for attempt in 0..=RETRIES {
             let response = request
                 .try_clone()

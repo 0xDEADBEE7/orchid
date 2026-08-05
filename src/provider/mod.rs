@@ -32,6 +32,11 @@ fn usage(value: &Value) -> Option<Usage> {
             .pointer("/usage/completion_tokens")
             .or_else(|| value.pointer("/usage/output_tokens"))?
             .as_u64()? as u32,
+        cached_input: value
+            .pointer("/usage/prompt_tokens_details/cached_tokens")
+            .or_else(|| value.pointer("/usage/input_tokens_details/cached_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32,
     })
 }
 
@@ -73,78 +78,87 @@ impl Provider for ClientProvider {
             .collect())
     }
     fn stream(&self, prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
-        let mut messages = session
-            .events
-            .iter()
-            .filter_map(|event| match event {
-                crate::model::Event::Message { role, content, .. } => {
-                    Some(crate::client::Message {
-                        role: role.clone(),
-                        content: content.clone(),
-                        tool_calls: Vec::new(),
-                        tool_result: None,
-                    })
-                }
-                crate::model::Event::ToolCall { calls, .. } => Some(crate::client::Message {
-                    role: "assistant".into(),
-                    content: String::new(),
-                    tool_calls: calls.clone(),
-                    tool_result: None,
-                }),
-                crate::model::Event::ToolResult {
-                    call_id, content, ..
-                } => Some(crate::client::Message {
-                    role: "tool".into(),
-                    content: content.to_string(),
-                    tool_calls: Vec::new(),
-                    tool_result: Some((call_id.clone(), content.clone())),
-                }),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let mut messages = messages(session);
         messages.push(crate::client::Message {
             role: "user".into(),
             content: prompt.into(),
             tool_calls: Vec::new(),
             tool_result: None,
         });
-        let tools = defs::tools(&self.tools)
-            .into_iter()
-            .filter_map(|tool| {
-                Some(crate::client::ToolDefinition {
-                    name: tool["function"]["name"].as_str()?.into(),
-                    description: tool["function"]["description"].as_str()?.into(),
-                    parameters: tool["function"]["parameters"].clone(),
-                })
-            })
-            .collect();
         self.client
-            .stream(crate::client::ClientRequest {
-                model: self.model.clone(),
-                system_prompt: self.system_prompt.clone(),
-                messages,
-                tools,
-                params: self.params.clone(),
-            })
+            .stream(request(self, messages))
             .map_err(|error| io::Error::other(error.to_string()))
-            .map(|events| {
-                events
-                    .into_iter()
-                    .filter_map(|event| match event {
-                        crate::client::ClientEvent::TextDelta(text) => {
-                            Some(StreamEvent::Text(text))
-                        }
-                        crate::client::ClientEvent::ToolCall(call) => Some(StreamEvent::ToolCall {
-                            name: call.name,
-                            input: call.input,
-                        }),
-                        crate::client::ClientEvent::Usage(usage) => Some(StreamEvent::Usage(usage)),
-                        crate::client::ClientEvent::Done => Some(StreamEvent::Done),
-                        crate::client::ClientEvent::ReasoningDelta(_) => None,
-                    })
-                    .collect()
-            })
+            .map(stream_events)
     }
+}
+
+pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
+    session
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            crate::model::Event::Message { role, content, .. } => Some(crate::client::Message {
+                role: role.clone(),
+                content: content.clone(),
+                tool_calls: Vec::new(),
+                tool_result: None,
+            }),
+            crate::model::Event::ToolCall { calls, .. } => Some(crate::client::Message {
+                role: "assistant".into(),
+                content: String::new(),
+                tool_calls: calls.clone(),
+                tool_result: None,
+            }),
+            crate::model::Event::ToolResult {
+                call_id, content, ..
+            } => Some(crate::client::Message {
+                role: "tool".into(),
+                content: content.to_string(),
+                tool_calls: Vec::new(),
+                tool_result: Some((call_id.clone(), content.clone())),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn request(
+    provider: &ClientProvider,
+    messages: Vec<crate::client::Message>,
+) -> crate::client::ClientRequest {
+    let tools = defs::tools(&provider.tools)
+        .into_iter()
+        .filter_map(|tool| {
+            Some(crate::client::ToolDefinition {
+                name: tool["function"]["name"].as_str()?.into(),
+                description: tool["function"]["description"].as_str()?.into(),
+                parameters: tool["function"]["parameters"].clone(),
+            })
+        })
+        .collect();
+    crate::client::ClientRequest {
+        model: provider.model.clone(),
+        system_prompt: provider.system_prompt.clone(),
+        messages,
+        tools,
+        params: provider.params.clone(),
+    }
+}
+
+fn stream_events(events: Vec<crate::client::ClientEvent>) -> Vec<StreamEvent> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            crate::client::ClientEvent::TextDelta(text) => Some(StreamEvent::Text(text)),
+            crate::client::ClientEvent::ToolCall(call) => Some(StreamEvent::ToolCall {
+                name: call.name,
+                input: call.input,
+            }),
+            crate::client::ClientEvent::Usage(usage) => Some(StreamEvent::Usage(usage)),
+            crate::client::ClientEvent::Done => Some(StreamEvent::Done),
+            crate::client::ClientEvent::ReasoningDelta(_) => None,
+        })
+        .collect()
 }
 pub fn tool_allowed(settings: &Settings, name: &str) -> bool {
     settings.policy.tools().iter().any(|tool| tool == name)
