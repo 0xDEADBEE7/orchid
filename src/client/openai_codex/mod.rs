@@ -2,12 +2,15 @@ pub mod auth;
 
 use super::{Client, ClientError, ClientErrorKind, ClientEvent, ClientRequest};
 use crate::config::ResolvedConnection;
-use crate::model::ToolCall;
+use crate::model::{ToolCall, Usage};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc;
 use uuid::Uuid;
+
+type LineReceiver = mpsc::Receiver<Result<String, String>>;
+type StreamLines = (LineReceiver, String, String);
 
 pub struct CodexClient {
     connection: ResolvedConnection,
@@ -25,10 +28,7 @@ fn consume_stream(
     let mut data_line_count = 0usize;
     let mut malformed_data_count = 0usize;
     let mut event_types = BTreeMap::<String, usize>::new();
-    loop {
-        let Some(line) = receive_line(&receiver)? else {
-            break;
-        };
+    while let Some(line) = receive_line(&receiver)? {
         line_count += 1;
         // SSE uses blank lines to delimit events and may use colon-prefixed
         // comments as keepalives. Neither is application data.
@@ -128,32 +128,6 @@ fn apply_events(
     events.extend(parsed);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_keepalives_and_waits_for_completion() {
-        let (sender, receiver) = mpsc::channel();
-        let producer = std::thread::spawn(move || {
-            sender.send(Ok(": ping\n".into())).unwrap();
-            sender.send(Ok("\n".into())).unwrap();
-            sender
-                .send(Ok("data: {\"type\":\"response.created\"}\n".into()))
-                .unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            sender
-                .send(Ok("data: {\"type\":\"response.completed\"}\n".into()))
-                .unwrap();
-        });
-
-        assert_eq!(
-            consume_stream(receiver, "text/event-stream".into(), "missing".into()).unwrap(),
-            vec![ClientEvent::Done]
-        );
-        producer.join().unwrap();
-    }
-}
 impl CodexClient {
     pub fn new(connection: ResolvedConnection) -> Self {
         Self { connection }
@@ -168,100 +142,118 @@ impl Client for CodexClient {
             )
         })?;
         let (token, account) = auth::CodexAuth::present(credential)?;
-        let mut body = json!({
-            "model": request.model,
-            "instructions": request.system_prompt,
-            "input": request.messages.iter().flat_map(|m| {
-                if !m.tool_calls.is_empty() {
-                    return m.tool_calls.iter().map(|call| json!({"type":"function_call","call_id":call.call_id,"name":call.name,"arguments":call.input.to_string()})).collect::<Vec<_>>();
-                }
-                if let Some((call_id, content)) = &m.tool_result {
-                    return vec![json!({"type":"function_call_output","call_id":call_id,"output":content.to_string()})];
-                }
-                vec![json!({"role":m.role,"content":[{"type":if m.role == "assistant" {"output_text"} else {"input_text"},"text":m.content}]})]
-            }).collect::<Vec<_>>(),
-            "tools": request.tools.iter().map(|tool| json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.parameters})).collect::<Vec<_>>(),
-            "store": false,
-            "stream": true
-        });
+        let mut body = request_body(&request);
         merge_params(&mut body, request.params);
-        let url = format!(
-            "{}/responses",
-            self.connection.connection.base_url.trim_end_matches('/')
-        );
-        let http = reqwest::blocking::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
-            // A streamed Codex turn can legitimately be quiet for more than a
-            // few minutes while the model reasons or waits on a tool. Keep the
-            // connection timeout, but do not impose a whole-request deadline.
-            .timeout(None)
-            .build()
-            .map_err(|e| ClientError::new(ClientErrorKind::Transport, e.to_string()))?;
-        let mut call = http
-            .post(url)
-            .bearer_auth(token)
-            .header("ChatGPT-Account-ID", account)
-            .header("originator", "codex_cli_rs")
-            .header("openai-beta", "responses=experimental")
-            .header("Version", "0.144.4")
-            .header("Session_Id", Uuid::new_v4().to_string())
-            .header("User-Agent", "codex_cli_rs/0.144.4 (orchid)")
-            .header("Accept", "text/event-stream")
-            .header("Content-Type", "application/json")
-            .json(&body);
-        for (name, value) in &self.connection.headers {
-            call = call.header(name, value);
-        }
-        let response = call.send().map_err(|e| {
-            ClientError::new(
-                ClientErrorKind::Transport,
-                format!("Codex request dispatch failed: {e}"),
-            )
-        })?;
-        let status = response.status();
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("missing")
-            .to_owned();
-        let content_length = response
-            .headers()
-            .get(reqwest::header::CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("missing")
-            .to_owned();
-        if !status.is_success() {
-            return Err(ClientError::new(
-                if status.as_u16() == 401 || status.as_u16() == 403 {
-                    ClientErrorKind::Authentication
-                } else {
-                    ClientErrorKind::Http
-                },
-                format!("Codex HTTP response status {}", status.as_u16()),
-            ));
-        }
-
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(response);
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) if sender.send(Ok(line.clone())).is_err() => break,
-                    Err(error) => {
-                        let _ = sender.send(Err(error.to_string()));
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        });
-
+        let response = send_request(&self.connection, token, account, &body)?;
+        let (receiver, content_type, content_length) = stream_lines(response)?;
         consume_stream(receiver, content_type, content_length)
     }
+}
+
+fn request_body(request: &ClientRequest) -> serde_json::Value {
+    json!({
+        "model": request.model,
+        "instructions": request.system_prompt,
+        "input": request.messages.iter().flat_map(|m| {
+            if !m.tool_calls.is_empty() {
+                return m.tool_calls.iter().map(|call| json!({"type":"function_call","call_id":call.call_id,"name":call.name,"arguments":call.input.to_string()})).collect::<Vec<_>>();
+            }
+            if let Some((call_id, content)) = &m.tool_result {
+                return vec![json!({"type":"function_call_output","call_id":call_id,"output":content.to_string()})];
+            }
+            vec![json!({"role":m.role,"content":[{"type":if m.role == "assistant" {"output_text"} else {"input_text"},"text":m.content}]})]
+        }).collect::<Vec<_>>(),
+        "tools": request.tools.iter().map(|tool| json!({"type":"function","name":tool.name,"description":tool.description,"parameters":tool.parameters})).collect::<Vec<_>>(),
+        "store": false,
+        "stream": true
+    })
+}
+
+fn send_request(
+    connection: &ResolvedConnection,
+    token: &str,
+    account: &str,
+    body: &serde_json::Value,
+) -> Result<reqwest::blocking::Response, ClientError> {
+    let url = format!(
+        "{}/responses",
+        connection.connection.base_url.trim_end_matches('/')
+    );
+    let http = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(None)
+        .build()
+        .map_err(|e| ClientError::new(ClientErrorKind::Transport, e.to_string()))?;
+    let mut call = http
+        .post(url)
+        .bearer_auth(token)
+        .header("ChatGPT-Account-ID", account)
+        .header("originator", "codex_cli_rs")
+        .header("openai-beta", "responses=experimental")
+        .header("Version", "0.144.4")
+        .header("Session_Id", Uuid::new_v4().to_string())
+        .header("User-Agent", "codex_cli_rs/0.144.4 (orchid)")
+        .header("Accept", "text/event-stream")
+        .header("Content-Type", "application/json")
+        .json(body);
+    for (name, value) in &connection.headers {
+        call = call.header(name, value);
+    }
+    call.send().map_err(|e| {
+        ClientError::new(
+            ClientErrorKind::Transport,
+            format!("Codex request dispatch failed: {e}"),
+        )
+    })
+}
+
+fn stream_lines(response: reqwest::blocking::Response) -> Result<StreamLines, ClientError> {
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing")
+        .to_owned();
+    let content_length = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing")
+        .to_owned();
+    validate_status(status)?;
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(response);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) if sender.send(Ok(line.clone())).is_err() => break,
+                Err(error) => {
+                    let _ = sender.send(Err(error.to_string()));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+    Ok((receiver, content_type, content_length))
+}
+
+fn validate_status(status: reqwest::StatusCode) -> Result<(), ClientError> {
+    if status.is_success() {
+        return Ok(());
+    }
+    Err(ClientError::new(
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            ClientErrorKind::Authentication
+        } else {
+            ClientErrorKind::Http
+        },
+        format!("Codex HTTP response status {}", status.as_u16()),
+    ))
 }
 
 fn merge_params(body: &mut serde_json::Value, params: serde_json::Map<String, serde_json::Value>) {
@@ -296,6 +288,9 @@ fn parse_payload(line: &str) -> Vec<ClientEvent> {
         return Vec::new();
     };
     let mut events = text_events(&value);
+    if let Some(usage) = completed_usage(&value) {
+        events.push(ClientEvent::Usage(usage));
+    }
     if value["type"] == "response.completed" || value["type"] == "response.output_text.done" {
         events.push(ClientEvent::Done);
     }
@@ -303,6 +298,23 @@ fn parse_payload(line: &str) -> Vec<ClientEvent> {
         events.push(ClientEvent::ToolCall(call));
     }
     events
+}
+
+/// The Responses stream reports final authoritative usage on `response.completed`
+/// under `response.usage`. The fallback `/usage` also supports compatible
+/// gateways which flatten the completed response.
+fn completed_usage(value: &serde_json::Value) -> Option<Usage> {
+    let usage = value
+        .pointer("/response/usage")
+        .or_else(|| value.get("usage"))?;
+    Some(Usage {
+        input: usage.get("input_tokens")?.as_u64()? as u32,
+        output: usage.get("output_tokens")?.as_u64()? as u32,
+        cached_input: usage
+            .pointer("/input_tokens_details/cached_tokens")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as u32,
+    })
 }
 
 fn text_events(value: &serde_json::Value) -> Vec<ClientEvent> {
@@ -338,4 +350,31 @@ fn tool_call(value: &serde_json::Value) -> Option<ToolCall> {
         name: name.into(),
         input: serde_json::from_str(arguments).ok()?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_keepalives_and_waits_for_completion() {
+        let (sender, receiver) = mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            sender.send(Ok(": ping\n".into())).unwrap();
+            sender.send(Ok("\n".into())).unwrap();
+            sender
+                .send(Ok("data: {\"type\":\"response.created\"}\n".into()))
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            sender
+                .send(Ok("data: {\"type\":\"response.completed\"}\n".into()))
+                .unwrap();
+        });
+
+        assert_eq!(
+            consume_stream(receiver, "text/event-stream".into(), "missing".into()).unwrap(),
+            vec![ClientEvent::Done]
+        );
+        producer.join().unwrap();
+    }
 }

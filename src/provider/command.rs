@@ -9,33 +9,53 @@ pub fn run_command(
     args: &[String],
 ) -> io::Result<String> {
     let (id, message) = command_args(args)?;
-    let record = || crate::model::LogRecord {
+    let session = load_session(store, settings, &id)?;
+    let settings = settings.settings_for_session(&id, &session.metadata.policy);
+    run_session(store, &settings, &id, session, &message)
+}
+
+fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> io::Result<Session> {
+    let record = worker_record(
+        "info",
+        "worker started",
+        serde_json::json!({"pid":std::process::id(),"session_id":id}),
+    );
+    let _ = store.log_both(id, &record, &settings.log_level);
+    log(store, settings, id, "debug", "worker loading session");
+    store.load(id).map_err(|error| {
+        let record = worker_record(
+            "error",
+            "worker failed to load session",
+            serde_json::json!({"error":error.to_string()}),
+        );
+        let _ = store.log_both(id, &record, &settings.log_level);
+        error
+    })
+}
+
+fn worker_record(level: &str, message: &str, fields: serde_json::Value) -> crate::model::LogRecord {
+    crate::model::LogRecord {
         event_id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now(),
-        level: "info".into(),
-        message: "worker started".into(),
-        fields: serde_json::json!({"pid":std::process::id(),"session_id":id}),
-    };
-    let _ = store.log_both(&id, &record(), &settings.log_level);
-    log(store, settings, &id, "debug", "worker loading session");
-    let mut session = match store.load(&id) {
-        Ok(session) => session,
-        Err(error) => {
-            let mut failure = record();
-            failure.level = "error".into();
-            failure.message = "worker failed to load session".into();
-            failure.fields = serde_json::json!({"error":error.to_string()});
-            let _ = store.log_both(&id, &failure, &settings.log_level);
-            return Err(error);
-        }
-    };
-    let settings = settings.settings_for_session(&id, &session.metadata.policy);
-    let configured = configured_provider(&settings)?;
+        level: level.into(),
+        message: message.into(),
+        fields,
+    }
+}
+
+fn run_session(
+    store: &crate::store::Store,
+    settings: &Settings,
+    id: &str,
+    session: Session,
+    message: &str,
+) -> io::Result<String> {
+    let configured = configured_provider(settings)?;
     if !settings.policy.connections.is_empty() && configured.is_none() {
         return finish_failure(
             store,
             &settings,
-            &id,
+            id,
             session,
             io::Error::other("configured connection unavailable"),
         );
@@ -44,8 +64,8 @@ pub fn run_command(
     let provider: &dyn Provider = configured.as_ref().map_or(&local, |provider| provider);
     log(
         store,
-        &settings,
-        &id,
+        settings,
+        id,
         "debug",
         if configured.is_some() {
             "client selected"
@@ -53,30 +73,41 @@ pub fn run_command(
             "local client selected"
         },
     );
-    log(store, &settings, &id, "debug", "client request prepared");
-    log(store, &settings, &id, "debug", "client run started");
-    log(store, &settings, &id, "debug", "client request dispatched");
-    let _ = crate::hooks::run(&settings, "on-turn-start", &id);
+    log(store, settings, id, "debug", "client request prepared");
+    log(store, settings, id, "debug", "client run started");
+    log(store, settings, id, "debug", "client request dispatched");
+    let _ = crate::hooks::run(settings, "on-turn-start", id);
+    run_provider(store, settings, id, session, message, provider)
+}
+
+fn run_provider(
+    store: &crate::store::Store,
+    settings: &Settings,
+    id: &str,
+    mut session: Session,
+    message: &str,
+    provider: &dyn Provider,
+) -> io::Result<String> {
     let mut dispatched = session.events.len();
-    match run_with_progress(provider, &settings, &mut session, &message, |session| {
+    match run_with_progress(provider, settings, &mut session, message, |session| {
         if store.save(session).is_ok() {
-            let _ = crate::hooks::dispatch_events(&settings, session, dispatched);
+            let _ = crate::hooks::dispatch_events(settings, session, dispatched);
             dispatched = session.events.len();
         }
     }) {
         Ok(reply) => {
-            log(store, &settings, &id, "debug", "client stream completed");
-            finish_success(store, &settings, &id, session, reply)
+            log(store, settings, id, "debug", "client stream completed");
+            finish_success(store, settings, id, session, reply)
         }
         Err(error) => {
             log(
                 store,
-                &settings,
-                &id,
+                settings,
+                id,
                 "error",
                 &format!("client stream failed: {error}"),
             );
-            finish_failure(store, &settings, &id, session, error)
+            finish_failure(store, settings, id, session, error)
         }
     }
 }

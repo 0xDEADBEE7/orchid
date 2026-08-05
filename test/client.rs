@@ -70,7 +70,16 @@ fn codex_sse_maps_text_tool_call_and_done() {
 #[test]
 fn codex_sse_maps_extracted_json_payload() {
     assert_eq!(
-        orchid::client::openai_codex::parse_sse(r#"{"type":"response.completed"}"#),
-        vec![ClientEvent::Done]
+        orchid::client::openai_codex::parse_sse(
+            r#"{"type":"response.completed","response":{"usage":{"input_tokens":123,"output_tokens":45,"input_tokens_details":{"cached_tokens":100}}}}"#
+        ),
+        vec![
+            ClientEvent::Usage(orchid::model::Usage {
+                input: 123,
+                output: 45,
+                cached_input: 100,
+            }),
+            ClientEvent::Done,
+        ]
     );
 }

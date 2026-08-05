@@ -2,6 +2,7 @@ use crate::config::Policy;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,6 +138,8 @@ pub struct Reply {
 pub struct Usage {
     pub input: u32,
     pub output: u32,
+    #[serde(default)]
+    pub cached_input: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -174,6 +177,28 @@ impl Event {
 }
 
 impl Session {
+    pub fn pending_tool_call_ids(&self) -> Vec<String> {
+        let completed = self
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Event::ToolResult { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        self.events
+            .iter()
+            .flat_map(|event| match event {
+                Event::ToolCall { calls, .. } => calls
+                    .iter()
+                    .filter(|call| !completed.contains(call.call_id.as_str()))
+                    .map(|call| call.call_id.clone())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
     pub fn new(
         label: Option<String>,
         working_dir: Option<String>,

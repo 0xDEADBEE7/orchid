@@ -1,7 +1,7 @@
 use super::{dispatch, Provider, StreamEvent};
 use crate::{
     config::Settings,
-    model::{Event, Session, Usage},
+    model::{Session, Usage},
 };
 use serde_json::Value;
 use std::io;
@@ -30,7 +30,9 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         if malformed(&calls) {
             return Err(io::Error::other("malformed provider content"));
         }
-        session.metadata.token_estimate = estimated_request_tokens;
+        session.metadata.token_estimate = usage
+            .as_ref()
+            .map_or(estimated_request_tokens, |tokens| tokens.input);
         record_usage(session, usage, estimated_request_tokens);
         progress(session);
         if !answer.is_empty() {
@@ -60,8 +62,11 @@ fn estimate_request_tokens(session: &Session, prompt: &str) -> u32 {
         Err(_) => return 0,
     };
     let mut tokens = 0usize;
-    for event in &session.events {
-        let Ok(line) = serde_json::to_string(event) else {
+    // Estimate the same filtered transcript sent to clients. Internal event
+    // metadata (timestamps, IDs, token usage, and usage-only events) is not
+    // conversation context and must not inflate the fallback estimate.
+    for message in super::messages(session) {
+        let Ok(line) = serde_json::to_string(&message) else {
             return 0;
         };
         tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
@@ -97,24 +102,25 @@ fn budget(session: &mut Session, pending: &str, limit: Option<i64>) -> io::Resul
     }
 }
 fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
-    let (input, output, method) = usage
+    let (input, output, cached_input, method) = usage
         .as_ref()
-        .map(|tokens| (tokens.input, tokens.output, "provider_reported"))
-        .unwrap_or((estimate, 0, "local_tokenizer"));
-    session.metadata.token_usage.marginal_input = estimate;
+        .map(|tokens| {
+            (
+                tokens.input,
+                tokens.output,
+                tokens.cached_input,
+                "provider_reported",
+            )
+        })
+        .unwrap_or((estimate, 0, 0, "local_tokenizer"));
+    // Keep the local estimate separately in `metadata.token_estimate`; when a
+    // provider reports usage, the per-request token-usage value is authoritative.
+    session.metadata.token_usage.marginal_input = input;
     session.metadata.token_usage.cumulative_input += u64::from(input);
     session.metadata.token_usage.cumulative_output += u64::from(output);
+    session.metadata.token_usage.cumulative_cached_input += u64::from(cached_input);
     session.metadata.token_usage.requests += 1;
     session.metadata.token_usage.method = method.into();
-    if usage.is_some() {
-        session.append(Event::Usage {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            input,
-            output,
-            token_usage: crate::model::TokenUsage::default(),
-        });
-    }
 }
 fn collect(events: Vec<StreamEvent>) -> (String, Option<Usage>, Vec<(String, Value)>) {
     events

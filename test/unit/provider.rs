@@ -215,6 +215,44 @@ fn token_estimate_uses_o200k_jsonl_tokens() {
 }
 
 #[test]
+fn provider_reported_usage_beats_local_estimate_and_tracks_cached_input() {
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    let settings = Settings::load(dir.path()).unwrap();
+    struct Reported;
+    impl Provider for Reported {
+        fn reply(&self, _: &str, _: &Session) -> io::Result<String> {
+            unreachable!()
+        }
+        fn stream(&self, _: &str, _: &Session) -> io::Result<Vec<StreamEvent>> {
+            Ok(vec![
+                StreamEvent::Usage(orchid::model::Usage {
+                    input: 120,
+                    output: 30,
+                    cached_input: 80,
+                }),
+                StreamEvent::Text("done".into()),
+            ])
+        }
+    }
+    let mut session = Session::new(None, None, None);
+    assert_eq!(
+        run(&Reported, &settings, &mut session, "x").unwrap(),
+        "done"
+    );
+    assert_eq!(session.metadata.token_usage.marginal_input, 120);
+    assert_eq!(session.metadata.token_estimate, 120);
+    assert_eq!(session.metadata.token_usage.cumulative_input, 120);
+    assert_eq!(session.metadata.token_usage.cumulative_output, 30);
+    assert_eq!(session.metadata.token_usage.cumulative_cached_input, 80);
+    assert_eq!(session.metadata.token_usage.method, "provider_reported");
+    assert!(!session
+        .events
+        .iter()
+        .any(|event| matches!(event, Event::Usage { .. })));
+}
+
+#[test]
 fn tool_failure_persists_correlated_error_result() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();

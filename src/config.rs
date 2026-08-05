@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod auth_command;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credential {
     ApiKey(String),
@@ -180,60 +182,37 @@ impl Settings {
     pub fn resolve_connection(&self, name: &str) -> io::Result<ResolvedConnection> {
         if name == "echo" {
             return Ok(ResolvedConnection {
-                connection: Connection {
-                    interface: "echo".into(),
-                    base_url: String::new(),
-                    model: String::new(),
-                    api_key: None,
-                    auth: None,
-                    params: HashMap::new(),
-                    headers: HashMap::new(),
-                },
+                connection: echo_connection(),
                 credential: None,
                 params: HashMap::new(),
                 headers: HashMap::new(),
             });
         }
         let connection = self.connection(name)?;
-        if connection.interface != "echo"
-            && (connection.interface.is_empty()
-                || connection.base_url.is_empty()
-                || connection.model.is_empty())
-        {
-            return Err(safe_config_error(
-                "connection requires interface, base_url, and model",
-            ));
-        }
-        if !matches!(
-            connection.interface.as_str(),
-            "local" | "openai" | "anthropic" | "codex" | "openai-codex" | "echo"
-        ) {
-            return Err(safe_config_error("unknown connection interface"));
-        }
-        let credential = if connection.interface == "local" {
-            None
-        } else if let Some(auth) = connection.auth.as_deref() {
-            self.resolve_auth(auth)?
-        } else {
-            connection
-                .api_key
-                .as_deref()
-                .map(resolve_secret)
-                .transpose()?
-                .map(Credential::ApiKey)
-        };
-        let headers = connection
-            .headers
-            .iter()
-            .map(|(name, value)| resolve_inline(value).map(|value| (name.clone(), value)))
-            .collect::<io::Result<HashMap<_, _>>>()?;
-        let params = connection.params.clone();
+        validate_connection(&connection)?;
+        let credential = self.resolve_credential(&connection)?;
+        let headers = resolve_headers(&connection.headers)?;
         Ok(ResolvedConnection {
+            params: connection.params.clone(),
             connection,
             credential,
-            params,
             headers,
         })
+    }
+
+    fn resolve_credential(&self, connection: &Connection) -> io::Result<Option<Credential>> {
+        if connection.interface == "local" {
+            return Ok(None);
+        }
+        if let Some(auth) = connection.auth.as_deref() {
+            return self.resolve_auth(auth);
+        }
+        connection
+            .api_key
+            .as_deref()
+            .map(resolve_secret)
+            .transpose()
+            .map(|key| key.map(Credential::ApiKey))
     }
 
     fn resolve_auth(&self, name: &str) -> io::Result<Option<Credential>> {
@@ -263,6 +242,43 @@ impl Settings {
     }
 }
 
+fn echo_connection() -> Connection {
+    Connection {
+        interface: "echo".into(),
+        base_url: String::new(),
+        model: String::new(),
+        api_key: None,
+        auth: None,
+        params: HashMap::new(),
+        headers: HashMap::new(),
+    }
+}
+
+fn validate_connection(connection: &Connection) -> io::Result<()> {
+    if connection.interface.is_empty()
+        || connection.base_url.is_empty()
+        || connection.model.is_empty()
+    {
+        return Err(safe_config_error(
+            "connection requires interface, base_url, and model",
+        ));
+    }
+    if matches!(
+        connection.interface.as_str(),
+        "local" | "openai" | "anthropic" | "codex" | "openai-codex" | "echo"
+    ) {
+        Ok(())
+    } else {
+        Err(safe_config_error("unknown connection interface"))
+    }
+}
+
+fn resolve_headers(headers: &HashMap<String, String>) -> io::Result<HashMap<String, String>> {
+    headers
+        .iter()
+        .map(|(name, value)| resolve_inline(value).map(|value| (name.clone(), value)))
+        .collect()
+}
 fn resolve_inline(reference: &str) -> io::Result<String> {
     if reference.starts_with("env.") {
         return resolve_secret(reference);
@@ -361,66 +377,5 @@ pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
 }
 
 pub fn auth(settings: &Settings, args: &[String]) -> io::Result<String> {
-    match args.first().map(String::as_str) {
-        None | Some("list") => auth_list(settings),
-        Some("validate") => auth_validate(settings, args.get(1)),
-        Some("login") => auth_login(settings, args.get(1)),
-        Some(_) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "unknown auth command",
-        )),
-    }
-}
-
-fn auth_list(settings: &Settings) -> io::Result<String> {
-    let names = fs::read_dir(settings.root.join("auth"))?
-        .filter_map(Result::ok)
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect::<Vec<_>>();
-    serde_json::to_string(&serde_json::json!({"auth":names})).map_err(io::Error::other)
-}
-
-fn auth_validate(settings: &Settings, name: Option<&String>) -> io::Result<String> {
-    let name = name.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "auth validate requires a name")
-    })?;
-    if settings
-        .root
-        .join("auth/tokens")
-        .join(format!("{name}.json"))
-        .exists()
-    {
-        let _ = crate::client::openai_codex::auth::access_token(&settings.root, name).map_err(
-            |_| io::Error::new(io::ErrorKind::InvalidData, "Codex credential unavailable"),
-        )?;
-        return Ok(serde_json::json!({"valid":true,"type":"openai_codex_oauth"}).to_string());
-    }
-    let _: Value = read_json(&settings.root.join("auth").join(format!("{name}.json")))?;
-    Ok(serde_json::json!({"valid":true}).to_string())
-}
-
-fn auth_login(settings: &Settings, name: Option<&String>) -> io::Result<String> {
-    let name = name
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "auth login requires a name"))?;
-    if name == "codex"
-        || settings
-            .root
-            .join("auth/tokens")
-            .join(format!("{name}.json"))
-            .exists()
-    {
-        return crate::client::openai_codex::auth::login(&settings.root, name)
-            .map_err(io::Error::other)
-            .map(|value| value.to_string());
-    }
-    let key = std::env::var("ORCHID_API_KEY")
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "ORCHID_API_KEY is required"))?;
-    let body = serde_json::to_vec(&serde_json::json!({"type":"api_key","value":key}))
-        .map_err(io::Error::other)?;
-    fs::create_dir_all(settings.root.join("auth"))?;
-    fs::write(
-        settings.root.join("auth").join(format!("{name}.json")),
-        body,
-    )?;
-    Ok(serde_json::json!({"name":name}).to_string())
+    auth_command::run(settings, args)
 }

@@ -126,11 +126,7 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     assert_eq!(loaded["metadata"]["policy"]["max_tokens"], 120000);
     assert_eq!(loaded["metadata"]["policy"]["tools"][0], "bash");
     assert!(loaded["metadata"].get("agent").is_none());
-    fs::write(
-        root.join("prompts/default.txt"),
-        "A changed source prompt.",
-    )
-    .unwrap();
+    fs::write(root.join("prompts/default.txt"), "A changed source prompt.").unwrap();
     assert_eq!(
         fs::read_to_string(root.join("sessions").join(id).join("prompt.md")).unwrap(),
         "You are a helpful assistant."
@@ -159,8 +155,14 @@ fn list_returns_only_session_ids_and_labels() {
     let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
     let sessions = listed["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 2);
-    assert_eq!(sessions[0], serde_json::json!({"id": first_id, "label": "first"}));
-    assert_eq!(sessions[1], serde_json::json!({"id": second_id, "label": null}));
+    assert_eq!(
+        sessions[0],
+        serde_json::json!({"id": first_id, "label": "first"})
+    );
+    assert_eq!(
+        sessions[1],
+        serde_json::json!({"id": second_id, "label": null})
+    );
 }
 
 #[cfg(unix)]
@@ -182,7 +184,11 @@ fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
         serde_json::from_slice(&fs::read(&metadata_path).unwrap()).unwrap();
     metadata["status"] = serde_json::json!("running");
     metadata["pid"] = serde_json::json!(worker.id());
-    fs::write(&metadata_path, serde_json::to_vec_pretty(&metadata).unwrap()).unwrap();
+    fs::write(
+        &metadata_path,
+        serde_json::to_vec_pretty(&metadata).unwrap(),
+    )
+    .unwrap();
 
     let stopped = run(binary, root, &["kill", id]);
     assert!(
@@ -200,7 +206,10 @@ fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
     assert_eq!(loaded["metadata"]["status"], "idle");
     assert_eq!(loaded["metadata"]["pid"], serde_json::Value::Null);
-    assert_eq!(loaded["metadata"]["termination_reason"], "cancelled by user");
+    assert_eq!(
+        loaded["metadata"]["termination_reason"],
+        "cancelled by user"
+    );
     let events = fs::read_to_string(root.join("sessions").join(id).join("events.jsonl")).unwrap();
     assert!(events.lines().any(|line| {
         serde_json::from_str::<serde_json::Value>(line)
