@@ -164,6 +164,60 @@ fn list_returns_only_session_ids_and_labels() {
 }
 
 #[cfg(unix)]
+#[test]
+fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+
+    let created = run(binary, root, &["create"]);
+    assert!(created.status.success());
+    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let id = created["id"].as_str().unwrap();
+
+    let mut worker = Command::new("sleep").arg("30").spawn().unwrap();
+    let metadata_path = root.join("sessions").join(id).join("metadata.json");
+    let mut metadata: serde_json::Value =
+        serde_json::from_slice(&fs::read(&metadata_path).unwrap()).unwrap();
+    metadata["status"] = serde_json::json!("running");
+    metadata["pid"] = serde_json::json!(worker.id());
+    fs::write(&metadata_path, serde_json::to_vec_pretty(&metadata).unwrap()).unwrap();
+
+    let stopped = run(binary, root, &["kill", id]);
+    assert!(
+        stopped.status.success(),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&stopped.stderr),
+        String::from_utf8_lossy(&stopped.stdout)
+    );
+    let stopped: serde_json::Value = serde_json::from_slice(&stopped.stdout).unwrap();
+    assert_eq!(stopped["status"], "idle");
+    assert!(worker.try_wait().unwrap().is_some());
+
+    let loaded = run(binary, root, &["get", id]);
+    assert!(loaded.status.success());
+    let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
+    assert_eq!(loaded["metadata"]["status"], "idle");
+    assert_eq!(loaded["metadata"]["pid"], serde_json::Value::Null);
+    assert_eq!(loaded["metadata"]["termination_reason"], "cancelled by user");
+    let events = fs::read_to_string(root.join("sessions").join(id).join("events.jsonl")).unwrap();
+    assert!(events.lines().any(|line| {
+        serde_json::from_str::<serde_json::Value>(line)
+            .unwrap()
+            .get("type")
+            == Some(&serde_json::json!("termination"))
+    }));
+
+    let follow_up = run(binary, root, &["send", "--no-run", "--id", id, "follow-up"]);
+    assert!(
+        follow_up.status.success(),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&follow_up.stderr),
+        String::from_utf8_lossy(&follow_up.stdout)
+    );
+}
+#[cfg(unix)]
 fn set_executable(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = fs::metadata(path).unwrap().permissions();

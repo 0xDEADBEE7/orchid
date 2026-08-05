@@ -229,15 +229,10 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
     if let Some(pid) = session.metadata.pid {
-        let _ = Command::new("kill")
-            .arg("-TERM")
-            .arg(pid.to_string())
-            .status();
+        terminate_worker(pid);
     }
+
     let mut session = store.load(id)?;
-    session.metadata.status = Status::Cancelled;
-    session.metadata.pid = None;
-    session.metadata.termination_reason = Some("cancelled by user".into());
     orchid::hooks::append(
         store,
         settings,
@@ -249,7 +244,35 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
             token_usage: orchid::model::TokenUsage::default(),
         },
     )?;
-    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
+    store.update(id, |session| {
+        session.metadata.status = Status::Idle;
+        session.metadata.pid = None;
+        session.metadata.termination_reason = Some("cancelled by user".into());
+    })?;
+    Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
+}
+
+fn terminate_worker(pid: u32) {
+    let _ = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while process_alive(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    if process_alive(pid) {
+        let _ = Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status();
+    }
+}
+
+fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn positional(args: &[String]) -> Vec<String> {
