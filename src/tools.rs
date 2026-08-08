@@ -99,6 +99,7 @@ pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
                 name: name.into(),
                 input,
             }],
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         },
         Event::ToolResult {
@@ -106,6 +107,7 @@ pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
             timestamp: chrono::Utc::now(),
             call_id: String::new(),
             content: result,
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         },
     ]

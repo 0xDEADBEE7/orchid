@@ -62,6 +62,7 @@ impl Store {
                     event_id: uuid::Uuid::new_v4().to_string(),
                     timestamp: chrono::Utc::now(),
                     message: "worker process disappeared".into(),
+                    connection: None,
                     token_usage: crate::model::TokenUsage::default(),
                 });
                 self.save_unlocked(&session)?;

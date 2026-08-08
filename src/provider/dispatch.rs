@@ -63,6 +63,7 @@ fn append_call(session: &mut Session, call_id: &str, name: &str, input: &Value) 
             name: name.into(),
             input: input.clone(),
         }],
+        connection: None,
         token_usage: crate::model::TokenUsage::default(),
     });
 }
@@ -73,6 +74,7 @@ fn append_result(session: &mut Session, call_id: String, content: Value) {
         timestamp: chrono::Utc::now(),
         call_id,
         content,
+        connection: None,
         token_usage: crate::model::TokenUsage::default(),
     });
 }

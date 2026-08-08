@@ -192,6 +192,7 @@ fn finish_failure(
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: message.clone(),
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         });
     } else {
@@ -199,6 +200,7 @@ fn finish_failure(
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             message: message.clone(),
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         });
     }

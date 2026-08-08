@@ -51,6 +51,54 @@ fn event_stream_only_grows_on_save() {
 }
 
 #[test]
+fn events_capture_the_active_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    session.metadata.policy.connections = vec!["cheap".into(), "premium".into()];
+    session.metadata.policy.active_connection = 1;
+    session.append(Session::message("user", "hello".into()));
+    store.create(&session).unwrap();
+
+    let line = std::fs::read_to_string(
+        dir.path()
+            .join("sessions")
+            .join(&session.metadata.id)
+            .join("events.jsonl"),
+    )
+    .unwrap();
+    let event: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(event["connection"], "premium");
+}
+
+#[test]
+fn legacy_events_without_a_connection_still_deserialize() {
+    let event: orchid::model::Event = serde_json::from_value(serde_json::json!({
+        "type": "message",
+        "event_id": "legacy",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "role": "user",
+        "content": "hello",
+        "token_usage": {
+            "marginal_input": 0,
+            "cumulative_input": 0,
+            "cumulative_output": 0,
+            "cumulative_cached_input": 0,
+            "requests": 0,
+            "method": ""
+        }
+    }))
+    .unwrap();
+    assert!(matches!(
+        event,
+        orchid::model::Event::Message {
+            connection: None,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn debug_logs_are_filtered_by_configured_level() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();

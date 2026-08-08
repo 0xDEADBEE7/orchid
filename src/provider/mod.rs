@@ -77,14 +77,8 @@ impl Provider for ClientProvider {
             })
             .collect())
     }
-    fn stream(&self, prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
-        let mut messages = messages(session);
-        messages.push(crate::client::Message {
-            role: "user".into(),
-            content: prompt.into(),
-            tool_calls: Vec::new(),
-            tool_result: None,
-        });
+    fn stream(&self, _prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
+        let messages = messages(session);
         self.client
             .stream(request(self, messages))
             .map_err(|error| io::Error::other(error.to_string()))

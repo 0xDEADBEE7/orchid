@@ -246,6 +246,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
                     "status": "terminated",
                     "error": "tool call terminated because the session was cancelled"
                 }),
+                connection: None,
                 token_usage: orchid::model::TokenUsage::default(),
             },
         )?;
@@ -258,6 +259,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: "cancelled by user".into(),
+            connection: None,
             token_usage: orchid::model::TokenUsage::default(),
         },
     )?;

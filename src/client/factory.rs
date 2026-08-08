@@ -1,3 +1,4 @@
+use super::openai_chat::OpenAiChatClient;
 use super::openai_codex::CodexClient;
 use super::{Client, ClientError, ClientErrorKind};
 use crate::config::ResolvedConnection;
@@ -10,6 +11,7 @@ pub fn client_for(connection: ResolvedConnection) -> Result<Box<dyn Client>, Cli
     );
     match (interface, codex_auth) {
         ("echo", _) => Ok(Box::new(super::EchoClient)),
+        ("local", _) | ("openai", false) => Ok(Box::new(OpenAiChatClient::new(connection))),
         ("codex" | "openai-codex", _) | ("openai", true) => {
             Ok(Box::new(CodexClient::new(connection)))
         }
