@@ -1,5 +1,29 @@
-use orchid::model::Session;
-use orchid::Store;
+use orchid::{model::Session, Store};
+
+#[test]
+fn worker_save_does_not_restore_an_externally_edited_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+
+    store
+        .update(&id, |session| {
+            session.metadata.policy.max_tokens = Some(120_000)
+        })
+        .unwrap();
+
+    let mut stale = store.load(&id).unwrap();
+    stale.metadata.policy.max_tokens = Some(1);
+    stale.metadata.token_estimate = 60_000;
+    store.save(&stale).unwrap();
+
+    assert_eq!(
+        store.load(&id).unwrap().metadata.policy.max_tokens,
+        Some(120_000)
+    );
+}
 
 #[test]
 fn round_trips_and_archives_sessions() {

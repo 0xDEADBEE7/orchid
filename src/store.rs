@@ -86,7 +86,22 @@ impl Store {
     }
 
     fn save_unlocked(&self, session: &Session) -> io::Result<()> {
-        self.save_unlocked_with_prompt(session, None)
+        let mut session = session.clone();
+        self.preserve_external_policy(&mut session)?;
+        self.save_unlocked_with_prompt(&session, None)
+    }
+
+    fn preserve_external_policy(&self, session: &mut Session) -> io::Result<()> {
+        let path = self.path(&session.metadata.id).join("metadata.json");
+        if !path.exists() {
+            return Ok(());
+        }
+        let current: crate::model::Metadata =
+            serde_json::from_slice(&fs::read(path)?).map_err(io::Error::other)?;
+        if current.policy != session.metadata.policy {
+            session.metadata.policy = current.policy;
+        }
+        Ok(())
     }
 
     fn save_unlocked_with_prompt(&self, session: &Session, prompt: Option<&str>) -> io::Result<()> {
@@ -174,7 +189,7 @@ impl Store {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
         edit(&mut session);
-        self.save_unlocked(&session)?;
+        self.save_unlocked_with_prompt(&session, None)?;
         Ok(session)
     }
 
