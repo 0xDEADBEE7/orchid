@@ -151,11 +151,47 @@ fn token_threshold_stops_before_provider_request() {
     let settings = Settings::load(dir.path()).unwrap();
     let provider = Counted(AtomicUsize::new(0));
     let mut session = Session::new(None, None, None);
+    session.metadata.token_estimate = 2;
     let error = run(&provider, &settings, &mut session, "a long pending request").unwrap_err();
-    assert!(error.to_string().contains("token threshold"));
+    assert_eq!(error.to_string(), "token threshold exceeded: 2 > 1");
     assert_eq!(provider.0.load(Ordering::SeqCst), 0);
-    assert_eq!(session.metadata.token_estimate, 0);
+    assert_eq!(session.metadata.token_estimate, 2);
     assert!(session.metadata.termination_reason.is_some());
+}
+
+#[test]
+fn cumulative_usage_does_not_count_toward_the_token_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("policies/default.json"),
+        r#"{"max_tokens":120000}"#,
+    )
+    .unwrap();
+    let settings = Settings::load(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    session.metadata.token_estimate = 58_441;
+    session.metadata.token_usage.marginal_input = 58_441;
+    session.metadata.token_usage.cumulative_input = 1_134_441;
+    struct Reported;
+    impl Provider for Reported {
+        fn reply(&self, _: &str, _: &Session) -> io::Result<String> {
+            unreachable!()
+        }
+        fn stream(&self, _: &str, _: &Session) -> io::Result<Vec<StreamEvent>> {
+            Ok(vec![
+                StreamEvent::Usage(orchid::model::Usage {
+                    input: 58_441,
+                    output: 1,
+                    cached_input: 0,
+                }),
+                StreamEvent::Text("allowed".into()),
+            ])
+        }
+    }
+    let answer = run(&Reported, &settings, &mut session, "continue").unwrap();
+    assert_eq!(answer, "allowed");
+    assert_eq!(session.metadata.token_estimate, 58_441);
 }
 
 #[test]
@@ -169,6 +205,7 @@ fn negative_one_disables_token_threshold() {
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
+    session.metadata.token_estimate = u32::MAX;
     assert_eq!(
         run(
             &Counted(AtomicUsize::new(0)),
