@@ -1,8 +1,10 @@
+//! Provides the dispatch functionality.
 use super::Settings;
 use crate::model::{Event, Session};
 use serde_json::Value;
 use std::io;
 
+/// Executes requested tool calls.
 pub fn execute<F: FnMut(&Session)>(
     settings: &Settings,
     session: &mut Session,
@@ -17,6 +19,7 @@ pub fn execute<F: FnMut(&Session)>(
     )
 }
 
+/// Performs the execute with ids operation.
 pub fn execute_with_ids<
     F: FnMut(&Session),
     I: IntoIterator<Item = (String, Value, Option<String>)>,
@@ -54,6 +57,7 @@ pub fn execute_with_ids<
     Ok(output.join("\n"))
 }
 
+/// Performs the append call operation.
 fn append_call(session: &mut Session, call_id: &str, name: &str, input: &Value) {
     session.append(Event::ToolCall {
         event_id: uuid::Uuid::new_v4().to_string(),
@@ -68,6 +72,7 @@ fn append_call(session: &mut Session, call_id: &str, name: &str, input: &Value) 
     });
 }
 
+/// Performs the append result operation.
 fn append_result(session: &mut Session, call_id: String, content: Value) {
     session.append(Event::ToolResult {
         event_id: uuid::Uuid::new_v4().to_string(),
@@ -79,6 +84,7 @@ fn append_result(session: &mut Session, call_id: String, content: Value) {
     });
 }
 
+/// Invokes a named tool.
 fn invoke(settings: &Settings, session: &Session, name: &str, input: &Value) -> io::Result<Value> {
     match name {
         "bash" => crate::tools::bash_in(
@@ -105,6 +111,7 @@ fn invoke(settings: &Settings, session: &Session, name: &str, input: &Value) -> 
     }
 }
 
+/// Resolves the working directory.
 fn working_dir<'a>(settings: &'a Settings, session: &'a Session) -> &'a std::path::Path {
     session
         .metadata
@@ -114,6 +121,7 @@ fn working_dir<'a>(settings: &'a Settings, session: &'a Session) -> &'a std::pat
         .unwrap_or(&settings.root)
 }
 
+/// Extracts paths from input.
 fn paths(input: &Value) -> Vec<String> {
     input
         .get("paths")

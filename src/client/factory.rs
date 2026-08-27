@@ -1,8 +1,10 @@
+//! Provides the factory functionality.
 use super::openai_chat::OpenAiChatClient;
 use super::openai_codex::CodexClient;
 use super::{Client, ClientError, ClientErrorKind};
 use crate::config::ResolvedConnection;
 
+/// Performs the client for operation.
 pub fn client_for(connection: ResolvedConnection) -> Result<Box<dyn Client>, ClientError> {
     let interface = connection.connection.interface.as_str();
     let codex_auth = matches!(

@@ -1,3 +1,4 @@
+//! Provides the mod functionality.
 use crate::{
     config::Settings,
     model::{Session, Usage},
@@ -16,12 +17,14 @@ pub use lifecycle::{run, run_with_progress};
 pub use sse::parse as parse_sse;
 
 pub trait Provider {
+    /// Performs the reply operation.
     fn reply(&self, prompt: &str, session: &Session) -> io::Result<String>;
     fn stream(&self, prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
         Ok(vec![StreamEvent::Text(self.reply(prompt, session)?)])
     }
 }
 
+/// Performs the usage operation.
 fn usage(value: &Value) -> Option<Usage> {
     Some(Usage {
         input: value
@@ -49,6 +52,7 @@ pub enum StreamEvent {
     Malformed(String),
 }
 
+/// Performs the LocalProvider operation.
 pub struct LocalProvider;
 impl Provider for LocalProvider {
     fn reply(&self, prompt: &str, _session: &Session) -> io::Result<String> {
@@ -56,6 +60,7 @@ impl Provider for LocalProvider {
     }
 }
 
+/// Performs the ClientProvider operation.
 pub struct ClientProvider {
     pub client: Box<dyn crate::client::Client>,
     pub model: String,
@@ -64,6 +69,7 @@ pub struct ClientProvider {
     pub params: serde_json::Map<String, Value>,
 }
 impl Provider for ClientProvider {
+    /// Performs the reply operation.
     fn reply(&self, prompt: &str, session: &Session) -> io::Result<String> {
         let events = self.stream(prompt, session)?;
         Ok(events
@@ -77,6 +83,7 @@ impl Provider for ClientProvider {
             })
             .collect())
     }
+    /// Streams events for a request.
     fn stream(&self, _prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
         let messages = messages(session);
         self.client
@@ -86,6 +93,7 @@ impl Provider for ClientProvider {
     }
 }
 
+/// Performs the messages operation.
 pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
     session
         .events
@@ -116,6 +124,7 @@ pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
         .collect()
 }
 
+/// Builds and validates a request.
 fn request(
     provider: &ClientProvider,
     messages: Vec<crate::client::Message>,
@@ -139,6 +148,7 @@ fn request(
     }
 }
 
+/// Performs the stream events operation.
 fn stream_events(events: Vec<crate::client::ClientEvent>) -> Vec<StreamEvent> {
     events
         .into_iter()
@@ -154,9 +164,11 @@ fn stream_events(events: Vec<crate::client::ClientEvent>) -> Vec<StreamEvent> {
         })
         .collect()
 }
+/// Performs the tool allowed operation.
 pub fn tool_allowed(settings: &Settings, name: &str) -> bool {
     settings.policy.tools().iter().any(|tool| tool == name)
 }
+/// Performs the tool result operation.
 pub fn tool_result(value: impl Into<Value>) -> Value {
     value.into()
 }

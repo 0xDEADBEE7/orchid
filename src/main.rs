@@ -1,3 +1,4 @@
+//! Provides the main functionality.
 mod cli_send;
 mod cli_tool_call;
 
@@ -13,6 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Performs the main operation.
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
         Ok(output) => {
@@ -31,6 +33,7 @@ fn main() -> ExitCode {
     }
 }
 
+/// Runs the requested operation.
 fn run(args: Vec<String>) -> io::Result<String> {
     let (root, args) = root_arg(args);
     init(&root)?;
@@ -72,6 +75,7 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("session", |a, s, c| session(s, c, a)),
 ];
 
+/// Dispatches the requested hook or command.
 fn dispatch(
     command: Option<&str>,
     args: &[String],
@@ -94,6 +98,7 @@ fn dispatch(
         )
 }
 
+/// Performs the root arg operation.
 fn root_arg(mut args: Vec<String>) -> (PathBuf, Vec<String>) {
     let mut root = default_root();
     if let Some(i) = args.iter().position(|x| x == "--config") {
@@ -105,6 +110,7 @@ fn root_arg(mut args: Vec<String>) -> (PathBuf, Vec<String>) {
     (root, args)
 }
 
+/// Performs the create operation.
 fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let label = value(args, "--label");
     let working_dir = value(args, "--working-dir");
@@ -117,11 +123,13 @@ fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Str
     Ok(serde_json::json!({"id":id,"status":"idle","agent":agent}).to_string())
 }
 
+/// Performs the agent operation.
 fn agent(settings: &Settings) -> io::Result<String> {
     serde_json::to_string(&serde_json::json!({"agents": settings.agent_summaries()?}))
         .map_err(io::Error::other)
 }
 
+/// Performs the session operation.
 fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args
         .first()
@@ -135,6 +143,7 @@ fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<St
     Ok(serde_json::json!({"id":id,"agent":agent,"updated":true}).to_string())
 }
 
+/// Lists the available entries.
 fn list(store: &Store) -> io::Result<String> {
     let mut sessions = store.list()?;
     sessions.sort_by_key(|s| s.metadata.created_at);
@@ -150,6 +159,7 @@ fn list(store: &Store) -> io::Result<String> {
     serde_json::to_string(&serde_json::json!({"sessions":sessions})).map_err(io::Error::other)
 }
 
+/// Performs the get operation.
 fn get(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("get requires an id"))?;
     let session = store.load(id)?;
@@ -161,6 +171,7 @@ fn get(store: &Store, args: &[String]) -> io::Result<String> {
     serde_json::to_string(&session).map_err(io::Error::other)
 }
 
+/// Performs the set operation.
 fn set(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args
         .first()
@@ -179,6 +190,7 @@ fn set(store: &Store, args: &[String]) -> io::Result<String> {
     Ok(serde_json::json!({"id":id,"updated":true}).to_string())
 }
 
+/// Performs the delete operation.
 fn delete(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args
         .first()
@@ -187,6 +199,7 @@ fn delete(store: &Store, args: &[String]) -> io::Result<String> {
     Ok(serde_json::json!({"id":id,"archived":true}).to_string())
 }
 
+/// Performs the await sessions operation.
 fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     if args.is_empty() {
         return Err(invalid("await requires at least one id"));
@@ -225,6 +238,7 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
     }
 }
 
+/// Performs the stop operation.
 fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
@@ -271,6 +285,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
     Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
 }
 
+/// Performs the terminate worker operation.
 fn terminate_worker(pid: u32) {
     let _ = Command::new("kill")
         .args(["-TERM", &pid.to_string()])
@@ -286,6 +301,7 @@ fn terminate_worker(pid: u32) {
     }
 }
 
+/// Performs the process alive operation.
 fn process_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", &pid.to_string()])
@@ -294,6 +310,7 @@ fn process_alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
+/// Performs the positional operation.
 fn positional(args: &[String]) -> Vec<String> {
     let value_flags = [
         "--id",
@@ -322,6 +339,7 @@ fn positional(args: &[String]) -> Vec<String> {
     result
 }
 
+/// Returns the named argument value, if present.
 fn value(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|w| w[0] == name)
@@ -331,9 +349,11 @@ fn value(args: &[String], name: &str) -> Option<String> {
                 .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
         })
 }
+/// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
+/// Returns command-line help text.
 fn help() -> String {
     "orchid <create|list|get|set|delete|send|tool-call|agent|session>\n  --config DIR  configuration/session root".into()
 }

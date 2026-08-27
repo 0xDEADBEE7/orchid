@@ -1,3 +1,4 @@
+//! Provides the mod functionality.
 pub mod base;
 mod echo;
 pub mod factory;

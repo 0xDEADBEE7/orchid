@@ -1,6 +1,8 @@
+//! Provides the hook paths functionality.
 use crate::config::Settings;
 use std::path::{Path, PathBuf};
 
+/// Performs the executable operation.
 pub(super) fn executable(settings: &Settings, script: &str) -> PathBuf {
     let path = Path::new(script);
     let local = settings.root.join(path);
@@ -11,6 +13,7 @@ pub(super) fn executable(settings: &Settings, script: &str) -> PathBuf {
     }
 }
 
+/// Resolves the working directory.
 pub(super) fn working_dir(settings: &Settings, value: Option<&str>) -> PathBuf {
     let Some(value) = value else {
         return settings.root.clone();
@@ -23,6 +26,7 @@ pub(super) fn working_dir(settings: &Settings, value: Option<&str>) -> PathBuf {
     }
 }
 
+/// Performs the is executable operation.
 fn is_executable(path: &Path) -> bool {
     if !path.is_file() {
         return false;

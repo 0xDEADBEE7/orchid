@@ -1,3 +1,4 @@
+//! Provides the cli send functionality.
 use orchid::{
     config::Settings,
     model::{Session, Status},
@@ -10,6 +11,7 @@ use std::{
     process::{Command, Stdio},
 };
 
+/// Performs the send operation.
 pub fn send(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let (id, message) = request(args)?;
     run_send(
@@ -21,6 +23,7 @@ pub fn send(store: &Store, settings: &Settings, args: &[String]) -> io::Result<S
     )
 }
 
+/// Performs the run send operation.
 fn run_send(
     store: &Store,
     settings: &Settings,
@@ -49,6 +52,7 @@ fn run_send(
     start_worker(store, settings, id, message, &mut session)
 }
 
+/// Performs the start worker operation.
 fn start_worker(
     store: &Store,
     settings: &Settings,
@@ -87,6 +91,7 @@ fn start_worker(
     Ok(serde_json::json!({"id":id,"status":Status::Running,"pid":child.id()}).to_string())
 }
 
+/// Builds and validates a request.
 fn request(args: &[String]) -> io::Result<(String, String)> {
     if args.iter().any(|arg| arg == "--await") {
         return Err(invalid("send does not support --await; use await <ID>"));
@@ -99,6 +104,7 @@ fn request(args: &[String]) -> io::Result<(String, String)> {
     Ok((id, message))
 }
 
+/// Records a lifecycle message.
 fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str) {
     let _ = store.log_both(
         id,
@@ -113,6 +119,7 @@ fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str)
     );
 }
 
+/// Performs the spawn worker operation.
 fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std::process::Child> {
     let stderr_path = settings
         .root
@@ -136,6 +143,7 @@ fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std:
         .spawn()
 }
 
+/// Performs the positional operation.
 fn positional(args: &[String]) -> Vec<String> {
     let flags = [
         "--id",
@@ -163,6 +171,7 @@ fn positional(args: &[String]) -> Vec<String> {
     result
 }
 
+/// Returns the named argument value, if present.
 fn value(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|w| w[0] == name)
@@ -173,6 +182,7 @@ fn value(args: &[String], name: &str) -> Option<String> {
         })
 }
 
+/// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }

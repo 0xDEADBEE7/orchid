@@ -1,3 +1,4 @@
+//! Provides the mod functionality.
 pub mod auth;
 
 use super::{Client, ClientError, ClientErrorKind, ClientEvent, ClientRequest};
@@ -12,10 +13,12 @@ use uuid::Uuid;
 type LineReceiver = mpsc::Receiver<Result<String, String>>;
 type StreamLines = (LineReceiver, String, String);
 
+/// Performs the CodexClient operation.
 pub struct CodexClient {
     connection: ResolvedConnection,
 }
 
+/// Performs the consume stream operation.
 fn consume_stream(
     receiver: mpsc::Receiver<Result<String, String>>,
     content_type: String,
@@ -61,6 +64,7 @@ fn consume_stream(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Performs the finish stream operation.
 fn finish_stream(
     events: Vec<ClientEvent>,
     completed: bool,
@@ -78,6 +82,7 @@ fn finish_stream(
     Ok(events)
 }
 
+/// Performs the receive line operation.
 fn receive_line(
     receiver: &mpsc::Receiver<Result<String, String>>,
 ) -> Result<Option<String>, ClientError> {
@@ -91,6 +96,7 @@ fn receive_line(
     }
 }
 
+/// Performs the decode data operation.
 fn decode_data(
     data: &str,
     event_types: &mut BTreeMap<String, usize>,
@@ -108,6 +114,7 @@ fn decode_data(
     (false, true, parse_sse(data))
 }
 
+/// Performs the apply events operation.
 fn apply_events(
     parsed: Vec<ClientEvent>,
     protocol_event: bool,
@@ -129,11 +136,13 @@ fn apply_events(
 }
 
 impl CodexClient {
+    /// Creates a new value.
     pub fn new(connection: ResolvedConnection) -> Self {
         Self { connection }
     }
 }
 impl Client for CodexClient {
+    /// Streams events for a request.
     fn stream(&self, request: ClientRequest) -> Result<Vec<ClientEvent>, ClientError> {
         let credential = self.connection.credential.as_ref().ok_or_else(|| {
             ClientError::new(
@@ -150,6 +159,7 @@ impl Client for CodexClient {
     }
 }
 
+/// Performs the request body operation.
 fn request_body(request: &ClientRequest) -> serde_json::Value {
     json!({
         "model": request.model,
@@ -169,6 +179,7 @@ fn request_body(request: &ClientRequest) -> serde_json::Value {
     })
 }
 
+/// Performs the send request operation.
 fn send_request(
     connection: &ResolvedConnection,
     token: &str,
@@ -207,6 +218,7 @@ fn send_request(
     })
 }
 
+/// Performs the stream lines operation.
 fn stream_lines(response: reqwest::blocking::Response) -> Result<StreamLines, ClientError> {
     let status = response.status();
     let content_type = response
@@ -242,6 +254,7 @@ fn stream_lines(response: reqwest::blocking::Response) -> Result<StreamLines, Cl
     Ok((receiver, content_type, content_length))
 }
 
+/// Performs the validate status operation.
 fn validate_status(status: reqwest::StatusCode) -> Result<(), ClientError> {
     if status.is_success() {
         return Ok(());
@@ -256,12 +269,14 @@ fn validate_status(status: reqwest::StatusCode) -> Result<(), ClientError> {
     ))
 }
 
+/// Performs the merge params operation.
 fn merge_params(body: &mut serde_json::Value, params: serde_json::Map<String, serde_json::Value>) {
     if let Some(object) = body.as_object_mut() {
         object.extend(params);
     }
 }
 
+/// Parses server-sent events into client events.
 pub fn parse_sse(input: &str) -> Vec<ClientEvent> {
     payloads(input)
         .into_iter()
@@ -269,6 +284,7 @@ pub fn parse_sse(input: &str) -> Vec<ClientEvent> {
         .collect()
 }
 
+/// Performs the payloads operation.
 fn payloads(input: &str) -> Vec<&str> {
     if input.trim_start().starts_with('{') {
         vec![input.trim()]
@@ -280,6 +296,7 @@ fn payloads(input: &str) -> Vec<&str> {
     }
 }
 
+/// Performs the parse payload operation.
 fn parse_payload(line: &str) -> Vec<ClientEvent> {
     if line == "[DONE]" {
         return vec![ClientEvent::Done];
@@ -317,6 +334,7 @@ fn completed_usage(value: &serde_json::Value) -> Option<Usage> {
     })
 }
 
+/// Performs the text events operation.
 fn text_events(value: &serde_json::Value) -> Vec<ClientEvent> {
     let mut events = Vec::new();
     if let Some(text) = value["delta"].as_str().filter(|_| {
@@ -334,6 +352,7 @@ fn text_events(value: &serde_json::Value) -> Vec<ClientEvent> {
     events
 }
 
+/// Performs the tool call operation.
 fn tool_call(value: &serde_json::Value) -> Option<ToolCall> {
     if value["type"] != "response.output_item.done"
         || value.pointer("/item/type").and_then(|v| v.as_str()) != Some("function_call")

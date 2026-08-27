@@ -7,3 +7,5 @@
 /config/
 **/target
 .test-config/
+
+.stash/

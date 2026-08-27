@@ -1,3 +1,4 @@
+//! Provides the model functionality.
 use crate::config::Policy;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -163,6 +164,7 @@ pub struct Session {
 }
 
 impl Event {
+    /// Performs the set connection operation.
     fn set_connection(&mut self, connection: Option<String>) {
         match self {
             Self::Message {
@@ -189,6 +191,7 @@ impl Event {
         }
     }
 
+    /// Performs the set token usage operation.
     fn set_token_usage(&mut self, token_usage: TokenUsage) {
         match self {
             Self::Message {
@@ -217,6 +220,7 @@ impl Event {
 }
 
 impl Session {
+    /// Performs the pending tool call ids operation.
     pub fn pending_tool_call_ids(&self) -> Vec<String> {
         let completed = self
             .events
@@ -239,6 +243,7 @@ impl Session {
             .collect()
     }
 
+    /// Creates a new value.
     pub fn new(
         label: Option<String>,
         working_dir: Option<String>,
@@ -281,6 +286,7 @@ impl Session {
         self.metadata.updated_at = now;
     }
 
+    /// Performs the message operation.
     pub fn message(role: &str, content: String) -> Event {
         Event::Message {
             event_id: Uuid::new_v4().to_string(),

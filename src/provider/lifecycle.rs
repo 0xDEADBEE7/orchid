@@ -1,3 +1,4 @@
+//! Provides the lifecycle functionality.
 use super::{dispatch, Provider, StreamEvent};
 use crate::{
     config::Settings,
@@ -7,6 +8,7 @@ use serde_json::Value;
 use std::io;
 use tiktoken_rs::o200k_base;
 
+/// Runs the requested operation.
 pub fn run(
     provider: &dyn Provider,
     settings: &Settings,
@@ -16,6 +18,7 @@ pub fn run(
     run_with_progress(provider, settings, session, prompt, |_| {})
 }
 
+/// Performs the run with progress operation.
 pub fn run_with_progress<F: FnMut(&Session)>(
     provider: &dyn Provider,
     settings: &Settings,
@@ -78,6 +81,7 @@ fn estimate_request_tokens(session: &Session, system_prompt: &str) -> u32 {
     tokens.min(u32::MAX as usize) as u32
 }
 
+/// Performs the malformed operation.
 fn malformed(calls: &[(String, Value)]) -> bool {
     calls
         .first()
@@ -96,6 +100,7 @@ fn enforce_token_limit(session: &mut Session, limit: Option<i64>) -> io::Result<
     session.metadata.termination_reason = Some(reason.clone());
     Err(io::Error::other(reason))
 }
+/// Performs the record usage operation.
 fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
     let (input, output, cached_input, method) = usage
         .as_ref()
@@ -116,6 +121,7 @@ fn record_usage(session: &mut Session, usage: Option<Usage>, estimate: u32) {
     session.metadata.token_usage.requests += 1;
     session.metadata.token_usage.method = method.into();
 }
+/// Performs the collect operation.
 fn collect(events: Vec<StreamEvent>) -> (String, Option<Usage>, Vec<(String, Value)>) {
     events
         .into_iter()

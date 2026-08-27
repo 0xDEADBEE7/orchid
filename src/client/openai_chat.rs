@@ -1,3 +1,4 @@
+//! Provides the openai chat functionality.
 use super::{Client, ClientError, ClientErrorKind, ClientEvent, ClientRequest};
 use crate::{
     config::{Credential, ResolvedConnection},
@@ -11,12 +12,14 @@ pub struct OpenAiChatClient {
 }
 
 impl OpenAiChatClient {
+    /// Creates a new value.
     pub fn new(connection: ResolvedConnection) -> Self {
         Self { connection }
     }
 }
 
 impl Client for OpenAiChatClient {
+    /// Streams events for a request.
     fn stream(&self, request: ClientRequest) -> Result<Vec<ClientEvent>, ClientError> {
         let mut call = reqwest::blocking::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
@@ -58,6 +61,7 @@ impl Client for OpenAiChatClient {
     }
 }
 
+/// Builds the API endpoint URL.
 fn endpoint(base_url: &str) -> String {
     let base = base_url.trim_end_matches('/');
     if base.ends_with("/chat/completions") {
@@ -67,6 +71,7 @@ fn endpoint(base_url: &str) -> String {
     }
 }
 
+/// Performs the request body operation.
 fn request_body(request: ClientRequest) -> Value {
     let mut messages = Vec::new();
     if !request.system_prompt.is_empty() {
@@ -114,6 +119,7 @@ struct PendingCall {
     arguments: String,
 }
 
+/// Parses server-sent events into client events.
 pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
     let mut events = Vec::new();
     let mut calls: BTreeMap<u64, PendingCall> = BTreeMap::new();
@@ -179,6 +185,7 @@ pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
     Ok(events)
 }
 
+/// Performs the u32 value operation.
 fn u32_value(value: Option<&Value>) -> u32 {
     value
         .and_then(Value::as_u64)

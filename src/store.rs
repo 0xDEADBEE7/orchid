@@ -1,3 +1,4 @@
+//! Provides the store functionality.
 use crate::model::{LogRecord, Session};
 use std::{
     fs, io,
@@ -7,11 +8,13 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
+/// Performs the Store operation.
 pub struct Store {
     root: PathBuf,
 }
 
 impl Store {
+    /// Creates a new value.
     pub fn new(root: impl Into<PathBuf>) -> io::Result<Self> {
         let root = root.into();
         fs::create_dir_all(root.join("sessions"))?;
@@ -22,15 +25,18 @@ impl Store {
         Ok(Self { root })
     }
 
+    /// Performs the create operation.
     pub fn create(&self, session: &Session) -> io::Result<()> {
         self.create_with_prompt(session, "")
     }
 
+    /// Performs the create with prompt operation.
     pub fn create_with_prompt(&self, session: &Session, prompt: &str) -> io::Result<()> {
         let _lock = SessionLock::acquire(&self.path(&session.metadata.id))?;
         self.save_unlocked_with_prompt(session, Some(prompt))
     }
 
+    /// Loads data from persistent storage.
     pub fn load(&self, id: &str) -> io::Result<Session> {
         let dir = self.path(id);
         let metadata = serde_json::from_slice(&fs::read(dir.join("metadata.json"))?)
@@ -39,6 +45,7 @@ impl Store {
         Ok(Session { metadata, events })
     }
 
+    /// Performs the reconcile operation.
     pub fn reconcile(&self, id: &str) -> io::Result<Session> {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
@@ -71,11 +78,13 @@ impl Store {
         Ok(session)
     }
 
+    /// Persists data to storage.
     pub fn save(&self, session: &Session) -> io::Result<()> {
         let _lock = SessionLock::acquire(&self.path(&session.metadata.id))?;
         self.save_unlocked(session)
     }
 
+    /// Performs the append event operation.
     pub fn append_event(&self, id: &str, event: crate::model::Event) -> io::Result<Session> {
         let dir = self.path(id);
         let _lock = SessionLock::acquire(&dir)?;
@@ -85,12 +94,14 @@ impl Store {
         Ok(session)
     }
 
+    /// Performs the save unlocked operation.
     fn save_unlocked(&self, session: &Session) -> io::Result<()> {
         let mut session = session.clone();
         self.preserve_external_policy(&mut session)?;
         self.save_unlocked_with_prompt(&session, None)
     }
 
+    /// Performs the preserve external policy operation.
     fn preserve_external_policy(&self, session: &mut Session) -> io::Result<()> {
         let path = self.path(&session.metadata.id).join("metadata.json");
         if !path.exists() {
@@ -104,6 +115,7 @@ impl Store {
         Ok(())
     }
 
+    /// Performs the save unlocked with prompt operation.
     fn save_unlocked_with_prompt(&self, session: &Session, prompt: Option<&str>) -> io::Result<()> {
         let dir = self.path(&session.metadata.id);
         fs::create_dir_all(&dir)?;
@@ -121,14 +133,17 @@ impl Store {
         Ok(())
     }
 
+    /// Records a lifecycle message.
     pub fn log(&self, id: &str, record: &LogRecord) -> io::Result<()> {
         append_log(&self.path(id).join("logs.jsonl"), record)
     }
 
+    /// Performs the log global operation.
     pub fn log_global(&self, record: &LogRecord) -> io::Result<()> {
         append_log(&self.root.join("logs.jsonl"), record)
     }
 
+    /// Performs the log both operation.
     pub fn log_both(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
         if level_rank(&record.level) < level_rank(configured) {
             return Ok(());
@@ -137,6 +152,7 @@ impl Store {
         self.log_global(record)
     }
 
+    /// Performs the log filtered operation.
     pub fn log_filtered(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
         if level_rank(&record.level) >= level_rank(configured) {
             self.log(id, record)
@@ -145,6 +161,7 @@ impl Store {
         }
     }
 
+    /// Lists the available entries.
     pub fn list(&self) -> io::Result<Vec<Session>> {
         let sessions = fs::read_dir(self.root.join("sessions"))?
             .filter_map(|entry| {
@@ -165,12 +182,14 @@ impl Store {
         Ok(sessions)
     }
 
+    /// Performs the archive operation.
     pub fn archive(&self, id: &str) -> io::Result<()> {
         let archive = self.root.join("archive");
         fs::create_dir_all(&archive)?;
         fs::rename(self.path(id), archive.join(id))
     }
 
+    /// Performs the update with prompt operation.
     pub fn update_with_prompt<F>(&self, id: &str, prompt: &str, edit: F) -> io::Result<Session>
     where
         F: FnOnce(&mut Session),
@@ -182,6 +201,7 @@ impl Store {
         Ok(session)
     }
 
+    /// Performs the update operation.
     pub fn update<F>(&self, id: &str, edit: F) -> io::Result<Session>
     where
         F: FnOnce(&mut Session),
@@ -193,16 +213,19 @@ impl Store {
         Ok(session)
     }
 
+    /// Performs the path operation.
     fn path(&self, id: &str) -> PathBuf {
         self.root.join("sessions").join(id)
     }
 }
 
+/// Performs the SessionLock operation.
 struct SessionLock {
     path: PathBuf,
 }
 
 impl SessionLock {
+    /// Performs the acquire operation.
     fn acquire(dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
         let path = dir.join(".lock");
@@ -230,11 +253,13 @@ impl SessionLock {
 }
 
 impl Drop for SessionLock {
+    /// Releases resources and restores associated state.
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
     }
 }
 
+/// Performs the append events operation.
 fn append_events<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Result<()> {
     if !path.exists() {
         fs::File::create(path)?;
@@ -249,10 +274,12 @@ fn append_events<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Result<(
     append_serialized(path, &events[existing..])
 }
 
+/// Performs the event count operation.
 fn event_count(path: &Path) -> io::Result<usize> {
     read_jsonl::<serde_json::Value>(path).map(|events| events.len())
 }
 
+/// Performs the append serialized operation.
 fn append_serialized<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Result<()> {
     use std::io::Write;
     let mut file = fs::OpenOptions::new()
@@ -269,6 +296,7 @@ fn append_serialized<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Resu
     Ok(())
 }
 
+/// Performs the append log operation.
 fn append_log(path: &Path, record: &LogRecord) -> io::Result<()> {
     let mut line = serde_json::to_string(record).map_err(io::Error::other)?;
     line.push('\n');
@@ -280,6 +308,7 @@ fn append_log(path: &Path, record: &LogRecord) -> io::Result<()> {
         .write_all(line.as_bytes())
 }
 
+/// Performs the level rank operation.
 fn level_rank(level: &str) -> u8 {
     match level {
         "debug" => 0,
@@ -290,11 +319,13 @@ fn level_rank(level: &str) -> u8 {
     }
 }
 
+/// Performs the write json operation.
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
     fs::write(path, bytes)
 }
 
+/// Performs the read jsonl operation.
 fn read_jsonl<T: serde::de::DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
     let text = fs::read_to_string(path)?;
     text.lines()
@@ -303,6 +334,7 @@ fn read_jsonl<T: serde::de::DeserializeOwned>(path: &Path) -> io::Result<Vec<T>>
         .collect()
 }
 
+/// Performs the default root operation.
 pub fn default_root() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)

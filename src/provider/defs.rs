@@ -1,5 +1,7 @@
+//! Provides the defs functionality.
 use serde_json::{json, Value};
 
+/// Builds definitions for enabled tools.
 pub fn tools(enabled: &[String]) -> Vec<Value> {
     enabled.iter().filter_map(|name| {
         let (description, properties) = match name.as_str() {
