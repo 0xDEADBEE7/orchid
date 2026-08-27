@@ -1,8 +1,10 @@
+//! Provides the command functionality.
 use super::{run_with_progress, Provider};
 use crate::config::Settings;
 use crate::model::Session;
 use std::io;
 
+/// Performs the run command operation.
 pub fn run_command(
     store: &crate::store::Store,
     settings: &Settings,
@@ -14,6 +16,7 @@ pub fn run_command(
     run_session(store, &settings, &id, session, &message)
 }
 
+/// Performs the load session operation.
 fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> io::Result<Session> {
     let record = worker_record(
         "info",
@@ -33,6 +36,7 @@ fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> i
     })
 }
 
+/// Performs the worker record operation.
 fn worker_record(level: &str, message: &str, fields: serde_json::Value) -> crate::model::LogRecord {
     crate::model::LogRecord {
         event_id: uuid::Uuid::new_v4().to_string(),
@@ -43,6 +47,7 @@ fn worker_record(level: &str, message: &str, fields: serde_json::Value) -> crate
     }
 }
 
+/// Performs the run session operation.
 fn run_session(
     store: &crate::store::Store,
     settings: &Settings,
@@ -80,6 +85,7 @@ fn run_session(
     run_provider(store, settings, id, session, message, provider)
 }
 
+/// Performs the run provider operation.
 fn run_provider(
     store: &crate::store::Store,
     settings: &Settings,
@@ -112,6 +118,7 @@ fn run_provider(
     }
 }
 
+/// Performs the command args operation.
 fn command_args(args: &[String]) -> io::Result<(String, String)> {
     let id = args
         .windows(2)
@@ -127,6 +134,7 @@ fn command_args(args: &[String]) -> io::Result<(String, String)> {
     Ok((id, message))
 }
 
+/// Performs the configured provider operation.
 fn configured_provider(settings: &Settings) -> io::Result<Option<super::ClientProvider>> {
     let Some(name) = settings.active_connection()? else {
         return Ok(None);
@@ -143,6 +151,7 @@ fn configured_provider(settings: &Settings) -> io::Result<Option<super::ClientPr
     }))
 }
 
+/// Performs the finish success operation.
 fn finish_success(
     store: &crate::store::Store,
     settings: &Settings,
@@ -171,6 +180,7 @@ fn finish_success(
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }
 
+/// Performs the finish failure operation.
 fn finish_failure(
     store: &crate::store::Store,
     settings: &Settings,
@@ -192,6 +202,7 @@ fn finish_failure(
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             reason: message.clone(),
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         });
     } else {
@@ -199,6 +210,7 @@ fn finish_failure(
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
             message: message.clone(),
+            connection: None,
             token_usage: crate::model::TokenUsage::default(),
         });
     }
@@ -221,6 +233,7 @@ fn finish_failure(
     Err(error)
 }
 
+/// Records a lifecycle message.
 fn log(store: &crate::store::Store, settings: &Settings, id: &str, level: &str, message: &str) {
     let _ = store.log_both(
         id,

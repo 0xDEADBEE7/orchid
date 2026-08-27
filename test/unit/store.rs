@@ -1,5 +1,29 @@
-use orchid::model::Session;
-use orchid::Store;
+use orchid::{model::Session, Store};
+
+#[test]
+fn worker_save_does_not_restore_an_externally_edited_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+
+    store
+        .update(&id, |session| {
+            session.metadata.policy.max_tokens = Some(120_000)
+        })
+        .unwrap();
+
+    let mut stale = store.load(&id).unwrap();
+    stale.metadata.policy.max_tokens = Some(1);
+    stale.metadata.token_estimate = 60_000;
+    store.save(&stale).unwrap();
+
+    assert_eq!(
+        store.load(&id).unwrap().metadata.policy.max_tokens,
+        Some(120_000)
+    );
+}
 
 #[test]
 fn round_trips_and_archives_sessions() {
@@ -48,6 +72,54 @@ fn event_stream_only_grows_on_save() {
     session.append(Session::message("assistant", "two".into()));
     store.save(&session).unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 2);
+}
+
+#[test]
+fn events_capture_the_active_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    session.metadata.policy.connections = vec!["cheap".into(), "premium".into()];
+    session.metadata.policy.active_connection = 1;
+    session.append(Session::message("user", "hello".into()));
+    store.create(&session).unwrap();
+
+    let line = std::fs::read_to_string(
+        dir.path()
+            .join("sessions")
+            .join(&session.metadata.id)
+            .join("events.jsonl"),
+    )
+    .unwrap();
+    let event: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(event["connection"], "premium");
+}
+
+#[test]
+fn legacy_events_without_a_connection_still_deserialize() {
+    let event: orchid::model::Event = serde_json::from_value(serde_json::json!({
+        "type": "message",
+        "event_id": "legacy",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "role": "user",
+        "content": "hello",
+        "token_usage": {
+            "marginal_input": 0,
+            "cumulative_input": 0,
+            "cumulative_output": 0,
+            "cumulative_cached_input": 0,
+            "requests": 0,
+            "method": ""
+        }
+    }))
+    .unwrap();
+    assert!(matches!(
+        event,
+        orchid::model::Event::Message {
+            connection: None,
+            ..
+        }
+    ));
 }
 
 #[test]

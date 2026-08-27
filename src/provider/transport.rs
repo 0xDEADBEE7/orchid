@@ -1,3 +1,4 @@
+//! Provides the transport functionality.
 use super::{Credential, HttpProvider};
 use reqwest::blocking::{Client, Response};
 use serde_json::Value;
@@ -5,12 +6,14 @@ use std::{io, time::Duration};
 
 const RETRIES: usize = 2;
 
+/// Performs the Transport operation.
 pub struct Transport {
     client: Client,
     credential: Option<Credential>,
 }
 
 impl Transport {
+    /// Creates a new value.
     pub fn new(credential: Option<Credential>, _log_level: String) -> io::Result<Self> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(15))
@@ -21,6 +24,7 @@ impl Transport {
         Ok(Self { client, credential })
     }
 
+    /// Builds and validates a request.
     pub fn request(
         &self,
         provider: &HttpProvider,
@@ -34,6 +38,7 @@ impl Transport {
         self.send_with_retries(request)
     }
 
+    /// Performs the request for operation.
     fn request_for(&self, provider: &HttpProvider, body: &Value) -> reqwest::blocking::RequestBuilder {
         let url = if matches!(self.credential, Some(Credential::Codex { .. }))
             && provider.connection.base_url.ends_with("/codex")
@@ -68,6 +73,7 @@ impl Transport {
         request
     }
 
+    /// Performs the send with retries operation.
     fn send_with_retries(&self, request: reqwest::blocking::RequestBuilder) -> io::Result<Response> {
         for attempt in 0..=RETRIES {
             let response = request
@@ -88,6 +94,7 @@ impl Transport {
     }
 }
 
+/// Validates an HTTP response status.
 fn status(response: Response) -> io::Result<Response> {
     if response.status().is_success() {
         return Ok(response);

@@ -1,8 +1,10 @@
+//! Provides the hook depth functionality.
 use std::{
     fs, io,
     path::{Path, PathBuf},
 };
 
+/// Returns the current hook nesting depth.
 pub(super) fn depth(root: &Path, session_id: &str) -> u32 {
     fs::read_to_string(root.join("sessions").join(session_id).join(".hook-depth"))
         .ok()
@@ -10,11 +12,13 @@ pub(super) fn depth(root: &Path, session_id: &str) -> u32 {
         .unwrap_or(0)
 }
 
+/// Performs the HookDepth operation.
 pub(super) struct HookDepth {
     path: PathBuf,
 }
 
 impl HookDepth {
+    /// Enters the associated scoped state.
     pub(super) fn enter(root: &Path, session_id: &str) -> io::Result<Self> {
         let dir = root.join("sessions").join(session_id);
         fs::create_dir_all(&dir)?;
@@ -25,6 +29,7 @@ impl HookDepth {
 }
 
 impl Drop for HookDepth {
+    /// Releases resources and restores associated state.
     fn drop(&mut self) {
         let depth = fs::read_to_string(&self.path)
             .ok()

@@ -1,6 +1,9 @@
-use orchid::client::{client_for, ClientEvent};
+use orchid::client::{client_for, Client, ClientError, ClientEvent, ClientRequest};
 use orchid::config::{Connection, Credential, ResolvedConnection};
+use orchid::model::Session;
+use orchid::provider::{ClientProvider, Provider};
 use serde_json::json;
+use std::sync::{Arc, Mutex};
 
 fn connection(interface: &str, credential: Option<Credential>) -> ResolvedConnection {
     ResolvedConnection {
@@ -51,7 +54,58 @@ fn factory_selects_codex_for_interface_and_oauth() {
         })
     ))
     .is_ok());
-    assert!(client_for(connection("openai", None)).is_err());
+    assert!(client_for(connection("openai", None)).is_ok());
+    assert!(client_for(connection("local", None)).is_ok());
+}
+
+#[test]
+fn openai_chat_sse_maps_text_usage_tool_call_and_done() {
+    let first = json!({"choices":[{"delta":{"content":"hello","tool_calls":[{"index":0,"id":"call-1","function":{"name":"bash","arguments":"{\"cmd\":"}}]}}]});
+    let second = json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"pwd\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":3}});
+    let input = format!("data: {first}\ndata: {second}\ndata: [DONE]\n");
+    let events = orchid::client::openai_chat::parse_sse(&input).unwrap();
+    assert!(events.contains(&ClientEvent::TextDelta("hello".into())));
+    assert!(events.contains(&ClientEvent::Usage(orchid::model::Usage {
+        input: 12,
+        output: 3,
+        cached_input: 0,
+    })));
+    assert!(matches!(
+        events.iter().find(|event| matches!(event, ClientEvent::ToolCall(_))),
+        Some(ClientEvent::ToolCall(call)) if call.call_id == "call-1" && call.name == "bash" && call.input == json!({"cmd":"pwd"})
+    ));
+    assert_eq!(events.last(), Some(&ClientEvent::Done));
+}
+
+struct CapturingClient(Arc<Mutex<Vec<ClientRequest>>>);
+
+impl Client for CapturingClient {
+    fn stream(&self, request: ClientRequest) -> Result<Vec<ClientEvent>, ClientError> {
+        self.0.lock().unwrap().push(request);
+        Ok(vec![ClientEvent::Done])
+    }
+}
+
+#[test]
+fn configured_provider_sends_persisted_user_message_once() {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let provider = ClientProvider {
+        client: Box::new(CapturingClient(requests.clone())),
+        model: "test-model".into(),
+        system_prompt: "system".into(),
+        tools: Vec::new(),
+        params: Default::default(),
+    };
+    let mut session = Session::new(None, None, None);
+    session.append(Session::message("user", "only once".into()));
+
+    provider.stream("only once", &session).unwrap();
+
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].messages.len(), 1);
+    assert_eq!(requests[0].messages[0].role, "user");
+    assert_eq!(requests[0].messages[0].content, "only once");
 }
 
 #[test]

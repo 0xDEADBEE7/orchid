@@ -1,8 +1,10 @@
+//! Provides the stream functionality.
 use super::{parse_sse, HttpProvider, Session, StreamEvent};
 use crate::provider::{defs::codex_tools, tool_definitions};
 use serde_json::{json, Value};
 use std::io::{self, Read};
 
+/// Runs the requested operation.
 pub fn run(
     provider: &HttpProvider,
     prompt: &str,
@@ -30,6 +32,7 @@ pub fn run(
     Ok(parse_sse(&raw))
 }
 
+/// Performs the merge params operation.
 fn merge_params(body: &mut Value, params: &std::collections::HashMap<String, Value>) {
     if let Some(object) = body.as_object_mut() {
         for (name, value) in params {
@@ -38,6 +41,7 @@ fn merge_params(body: &mut Value, params: &std::collections::HashMap<String, Val
     }
 }
 
+/// Performs the codex input operation.
 fn codex_input(session: &Session, prompt: &str) -> Vec<Value> {
     let mut input = Vec::new();
     for event in &session.events {

@@ -1,7 +1,9 @@
+//! Provides the auth command functionality.
 use super::{read_json, Settings};
 use serde_json::Value;
 use std::{fs, io};
 
+/// Runs the requested operation.
 pub(super) fn run(settings: &Settings, args: &[String]) -> io::Result<String> {
     match args.first().map(String::as_str) {
         None | Some("list") => list(settings),
@@ -14,6 +16,7 @@ pub(super) fn run(settings: &Settings, args: &[String]) -> io::Result<String> {
     }
 }
 
+/// Lists the available entries.
 fn list(settings: &Settings) -> io::Result<String> {
     let names = fs::read_dir(settings.root.join("auth"))?
         .filter_map(Result::ok)
@@ -22,6 +25,7 @@ fn list(settings: &Settings) -> io::Result<String> {
     serde_json::to_string(&serde_json::json!({"auth":names})).map_err(io::Error::other)
 }
 
+/// Validates the requested configuration.
 fn validate(settings: &Settings, name: Option<&String>) -> io::Result<String> {
     let name = name.ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "auth validate requires a name")
@@ -41,6 +45,7 @@ fn validate(settings: &Settings, name: Option<&String>) -> io::Result<String> {
     Ok(serde_json::json!({"valid":true}).to_string())
 }
 
+/// Starts the authentication flow.
 fn login(settings: &Settings, name: Option<&String>) -> io::Result<String> {
     let name = name
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "auth login requires a name"))?;

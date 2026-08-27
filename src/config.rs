@@ -1,3 +1,4 @@
+//! Provides the config functionality.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -81,11 +82,13 @@ pub struct Permissions {
     pub paths: Vec<String>,
 }
 
+/// Performs the is default operation.
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     value == &T::default()
 }
 
 impl Policy {
+    /// Builds definitions for enabled tools.
     pub fn tools(&self) -> &[String] {
         if self.permissions.tools.is_empty() {
             &self.tools
@@ -93,6 +96,7 @@ impl Policy {
             &self.permissions.tools
         }
     }
+    /// Extracts paths from input.
     pub fn paths(&self) -> &[String] {
         if self.permissions.paths.is_empty() {
             &self.paths
@@ -100,6 +104,7 @@ impl Policy {
             &self.permissions.paths
         }
     }
+    /// Performs the max tokens operation.
     pub fn max_tokens(&self) -> Option<i64> {
         self.max_tokens
     }
@@ -133,6 +138,7 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Performs the prompt operation.
     pub fn prompt(&self) -> io::Result<String> {
         if let Some(id) = self.prompt_name.strip_prefix("session:") {
             return fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md"));
@@ -158,6 +164,7 @@ pub struct ResolvedConnection {
 }
 
 impl Settings {
+    /// Performs the active connection operation.
     pub fn active_connection(&self) -> io::Result<Option<&str>> {
         if self.policy.connections.is_empty() {
             return Ok(None);
@@ -175,10 +182,12 @@ impl Settings {
             .map(Some)
     }
 
+    /// Performs the connection operation.
     pub fn connection(&self, name: &str) -> io::Result<Connection> {
         read_json(&self.root.join("connections").join(format!("{name}.json")))
     }
 
+    /// Performs the resolve connection operation.
     pub fn resolve_connection(&self, name: &str) -> io::Result<ResolvedConnection> {
         if name == "echo" {
             return Ok(ResolvedConnection {
@@ -200,6 +209,7 @@ impl Settings {
         })
     }
 
+    /// Performs the resolve credential operation.
     fn resolve_credential(&self, connection: &Connection) -> io::Result<Option<Credential>> {
         if connection.interface == "local" {
             return Ok(None);
@@ -215,6 +225,7 @@ impl Settings {
             .map(|key| key.map(Credential::ApiKey))
     }
 
+    /// Performs the resolve auth operation.
     fn resolve_auth(&self, name: &str) -> io::Result<Option<Credential>> {
         let profile = self.root.join("auth").join(format!("{name}.json"));
         if profile.exists() {
@@ -230,6 +241,7 @@ impl Settings {
         Ok(Some(self.codex_credential(name)?))
     }
 
+    /// Performs the codex credential operation.
     fn codex_credential(&self, name: &str) -> io::Result<Credential> {
         let tokens = crate::client::openai_codex::auth::access_token(&self.root, name)
             .map_err(|_| safe_config_error("Codex credential unavailable"))?;
@@ -242,6 +254,7 @@ impl Settings {
     }
 }
 
+/// Performs the echo connection operation.
 fn echo_connection() -> Connection {
     Connection {
         interface: "echo".into(),
@@ -254,6 +267,7 @@ fn echo_connection() -> Connection {
     }
 }
 
+/// Performs the validate connection operation.
 fn validate_connection(connection: &Connection) -> io::Result<()> {
     if connection.interface.is_empty()
         || connection.base_url.is_empty()
@@ -273,12 +287,14 @@ fn validate_connection(connection: &Connection) -> io::Result<()> {
     }
 }
 
+/// Performs the resolve headers operation.
 fn resolve_headers(headers: &HashMap<String, String>) -> io::Result<HashMap<String, String>> {
     headers
         .iter()
         .map(|(name, value)| resolve_inline(value).map(|value| (name.clone(), value)))
         .collect()
 }
+/// Performs the resolve inline operation.
 fn resolve_inline(reference: &str) -> io::Result<String> {
     if reference.starts_with("env.") {
         return resolve_secret(reference);
@@ -286,6 +302,7 @@ fn resolve_inline(reference: &str) -> io::Result<String> {
     Ok(reference.to_owned())
 }
 
+/// Performs the resolve secret operation.
 fn resolve_secret(reference: &str) -> io::Result<String> {
     let value = if let Some(name) = reference.strip_prefix("env.") {
         std::env::var(name).map_err(|_| safe_config_error("required credential is unavailable"))?
@@ -303,11 +320,13 @@ fn resolve_secret(reference: &str) -> io::Result<String> {
     }
 }
 
+/// Performs the safe config error operation.
 fn safe_config_error(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 impl Settings {
+    /// Loads data from persistent storage.
     pub fn load(root: impl Into<PathBuf>) -> io::Result<Self> {
         let root = root.into();
         let config: Config = read_json(&root.join("config.json"))?;
@@ -353,6 +372,7 @@ pub fn init(root: &Path) -> io::Result<()> {
     )
 }
 
+/// Performs the write default operation.
 fn write_default(path: &Path, content: &[u8]) -> io::Result<()> {
     if !path.exists() {
         fs::write(path, content)?;
@@ -360,6 +380,7 @@ fn write_default(path: &Path, content: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Performs the empty env operation.
 pub fn empty_env() -> HashMap<String, String> {
     HashMap::new()
 }

@@ -1,6 +1,8 @@
+//! Provides the hook state functionality.
 use crate::{config::Settings, model::Status, store::Store};
 use std::{fs, io, path::PathBuf};
 
+/// Performs the HookState operation.
 pub struct HookState {
     store: Store,
     id: String,
@@ -9,6 +11,7 @@ pub struct HookState {
 }
 
 impl HookState {
+    /// Enters the associated scoped state.
     pub fn enter(settings: &Settings, id: &str) -> io::Result<Self> {
         let store = Store::new(&settings.root)?;
         let mut session = store.load(id)?;
@@ -27,6 +30,7 @@ impl HookState {
 }
 
 impl Drop for HookState {
+    /// Releases resources and restores associated state.
     fn drop(&mut self) {
         if let Ok(mut session) = self.store.load(&self.id) {
             if session.metadata.status == Status::HookRunning {

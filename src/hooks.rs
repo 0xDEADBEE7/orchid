@@ -1,3 +1,4 @@
+//! Provides the hooks functionality.
 mod hook_depth;
 #[path = "hook_events.rs"]
 mod hook_events;
@@ -26,11 +27,13 @@ use std::{
 };
 
 #[derive(Debug, Serialize)]
+/// Performs the Envelope operation.
 struct Envelope<'a> {
     version: u8,
     event: serde_json::Value,
     session: &'a Session,
 }
+/// Dispatches the requested hook or command.
 pub fn dispatch(
     settings: &Settings,
     name: &str,
@@ -67,6 +70,7 @@ pub fn dispatch(
     }
     Ok(())
 }
+/// Performs the launch async operation.
 fn launch_async(
     settings: &Settings,
     session_id: &str,
@@ -115,6 +119,7 @@ pub fn append(
     Ok(())
 }
 
+/// Performs the hook names operation.
 fn hook_names(event: &Event) -> impl Iterator<Item = &'static str> {
     std::iter::once("on-event").chain(match event {
         Event::ToolCall { .. } => Some("on-tool-call"),
@@ -124,6 +129,7 @@ fn hook_names(event: &Event) -> impl Iterator<Item = &'static str> {
     })
 }
 
+/// Performs the dispatch events operation.
 pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> io::Result<()> {
     for event in session.events.iter().skip(from) {
         for name in hook_names(event) {
@@ -132,6 +138,7 @@ pub fn dispatch_events(settings: &Settings, session: &Session, from: usize) -> i
     }
     Ok(())
 }
+/// Performs the run one operation.
 fn run_one(
     settings: &Settings,
     session_id: &str,
@@ -169,6 +176,7 @@ fn run_one(
     )
 }
 
+/// Performs the RunningHook operation.
 struct RunningHook {
     child: std::process::Child,
     stdout: Option<thread::JoinHandle<Vec<u8>>>,
@@ -177,6 +185,7 @@ struct RunningHook {
     _hook_state: Option<HookState>,
 }
 
+/// Performs the spawn hook operation.
 fn spawn_hook(
     settings: &Settings,
     session_id: &str,
@@ -221,6 +230,7 @@ fn spawn_hook(
     })
 }
 
+/// Performs the enter hook state operation.
 fn enter_hook_state(
     settings: &Settings,
     session_id: &str,
@@ -238,6 +248,7 @@ fn enter_hook_state(
         .transpose()
 }
 
+/// Performs the start process operation.
 fn start_process(
     settings: &Settings,
     session_id: &str,
@@ -259,6 +270,7 @@ fn start_process(
         .spawn()
 }
 
+/// Performs the capture output operation.
 fn capture_output<R: Read + Send + 'static>(reader: R) -> thread::JoinHandle<Vec<u8>> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -267,6 +279,7 @@ fn capture_output<R: Read + Send + 'static>(reader: R) -> thread::JoinHandle<Vec
     })
 }
 
+/// Performs the wait for hook operation.
 fn wait_for_hook(
     settings: &Settings,
     session_id: &str,
@@ -298,6 +311,7 @@ fn wait_for_hook(
     }
 }
 
+/// Performs the finish hook operation.
 fn finish_hook(
     settings: &Settings,
     session_id: &str,
@@ -343,9 +357,11 @@ fn finish_hook(
     Err(error)
 }
 
+/// Performs the resolve executable operation.
 pub fn resolve_executable(settings: &Settings, script: &str) -> std::path::PathBuf {
     executable(settings, script)
 }
+/// Runs the requested operation.
 pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()> {
     let store = crate::store::Store::new(&settings.root)?;
     let session = store.load(session_id)?;
@@ -356,6 +372,7 @@ pub fn run(settings: &Settings, event: &str, session_id: &str) -> io::Result<()>
     dispatch(settings, event, trigger, &session)
 }
 
+/// Performs the monitor operation.
 pub fn monitor(settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = value(args, "--id").ok_or_else(|| invalid("__hook-run requires --id"))?;
     let event = value(args, "--event").ok_or_else(|| invalid("__hook-run requires --event"))?;
@@ -383,12 +400,14 @@ pub fn monitor(settings: &Settings, args: &[String]) -> io::Result<String> {
     .map(|_| String::new())
 }
 
+/// Returns the named argument value, if present.
 fn value(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|pair| pair[0] == name)
         .map(|pair| pair[1].clone())
 }
 
+/// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }

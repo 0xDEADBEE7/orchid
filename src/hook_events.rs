@@ -1,5 +1,7 @@
+//! Provides the hook events functionality.
 use crate::model::Event;
 
+/// Returns the event identifier.
 pub fn id(event: &Event) -> &str {
     match event {
         Event::Message { event_id, .. }
@@ -12,6 +14,7 @@ pub fn id(event: &Event) -> &str {
     }
 }
 
+/// Returns the event kind.
 pub fn kind(event: &Event) -> &'static str {
     match event {
         Event::Message { .. } => "message",

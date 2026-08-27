@@ -1,3 +1,4 @@
+//! Provides the cli tool call functionality.
 use orchid::{
     config::Settings,
     model::{Session, Status},
@@ -7,6 +8,7 @@ use orchid::{
 use serde_json::Value;
 use std::{env, io};
 
+/// Performs the tool call operation.
 pub fn tool_call(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = value(args, "--id").ok_or_else(|| invalid("tool-call requires --id"))?;
     let raw = value(args, "--input").ok_or_else(|| invalid("tool-call requires --input"))?;
@@ -44,6 +46,7 @@ pub fn tool_call(store: &Store, settings: &Settings, args: &[String]) -> io::Res
     result.map(|_| String::new())
 }
 
+/// Performs the authorize operation.
 fn authorize(session: &Session, id: &str) -> io::Result<()> {
     match session.metadata.status {
         Status::Idle | Status::Failed => Ok(()),
@@ -73,6 +76,7 @@ fn authorize(session: &Session, id: &str) -> io::Result<()> {
     }
 }
 
+/// Returns the named argument value, if present.
 fn value(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|pair| pair[0] == name)
@@ -83,6 +87,7 @@ fn value(args: &[String], name: &str) -> Option<String> {
         })
 }
 
+/// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }

@@ -1,3 +1,4 @@
+//! Provides the auth functionality.
 use super::{ClientError, ClientErrorKind};
 use crate::config::Credential;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -15,6 +16,7 @@ const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Performs the CodexTokens operation.
 pub struct CodexTokens {
     pub access_token: String,
     pub refresh_token: String,
@@ -22,10 +24,12 @@ pub struct CodexTokens {
     pub account_id: String,
 }
 
+/// Performs the token path operation.
 fn token_path(root: &Path, name: &str) -> std::path::PathBuf {
     root.join("auth/tokens").join(format!("{name}.json"))
 }
 
+/// Performs the account id operation.
 fn account_id(value: &serde_json::Value) -> Option<String> {
     value["account_id"].as_str().map(str::to_owned).or_else(|| {
         let token = value["id_token"].as_str()?;
@@ -38,6 +42,7 @@ fn account_id(value: &serde_json::Value) -> Option<String> {
     })
 }
 
+/// Loads data from persistent storage.
 pub fn load(root: &Path, name: &str) -> Result<CodexTokens, String> {
     serde_json::from_slice(
         &std::fs::read(token_path(root, name))
@@ -46,6 +51,7 @@ pub fn load(root: &Path, name: &str) -> Result<CodexTokens, String> {
     .map_err(|_| "invalid Codex OAuth token file".into())
 }
 
+/// Persists data to storage.
 pub fn save(root: &Path, name: &str, tokens: &CodexTokens) -> Result<(), String> {
     let path = token_path(root, name);
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
@@ -63,6 +69,7 @@ pub fn save(root: &Path, name: &str, tokens: &CodexTokens) -> Result<(), String>
     Ok(())
 }
 
+/// Performs the access token operation.
 pub fn access_token(root: &Path, name: &str) -> Result<CodexTokens, String> {
     let mut tokens = load(root, name)?;
     if tokens.expires_at > chrono::Utc::now().timestamp() + 60 {
@@ -101,6 +108,7 @@ pub fn access_token(root: &Path, name: &str) -> Result<CodexTokens, String> {
     Ok(tokens)
 }
 
+/// Starts the authentication flow.
 pub fn login(root: &Path, name: &str) -> Result<serde_json::Value, String> {
     let flow = OAuthFlow::start()?;
     let (mut stream, code) = flow.wait_for_callback()?;
@@ -111,6 +119,7 @@ pub fn login(root: &Path, name: &str) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({"status":"ok","name":name}))
 }
 
+/// Performs the OAuthFlow operation.
 struct OAuthFlow {
     state: String,
     verifier: String,
@@ -118,6 +127,7 @@ struct OAuthFlow {
     listener: TcpListener,
 }
 impl OAuthFlow {
+    /// Performs the start operation.
     fn start() -> Result<Self, String> {
         let mut random = [0u8; 32];
         getrandom::getrandom(&mut random).map_err(|e| e.to_string())?;
@@ -138,6 +148,7 @@ impl OAuthFlow {
             listener,
         })
     }
+    /// Performs the wait for callback operation.
     fn wait_for_callback(&self) -> Result<(std::net::TcpStream, String), String> {
         let (mut stream, _) = self.listener.accept().map_err(|e| e.to_string())?;
         let mut buf = [0u8; 8192];
@@ -168,6 +179,7 @@ impl OAuthFlow {
             code.ok_or("OAuth callback did not contain an authorization code")?,
         ))
     }
+    /// Performs the exchange operation.
     fn exchange(&self, code: &str) -> Result<serde_json::Value, String> {
         let response = reqwest::blocking::Client::new()
             .post(TOKEN_URL)
@@ -191,6 +203,7 @@ impl OAuthFlow {
             .map_err(|_| "invalid OAuth token response".into())
     }
 }
+/// Performs the save tokens operation.
 fn save_tokens(root: &Path, name: &str, value: &serde_json::Value) -> Result<(), String> {
     let account = account_id(value).ok_or("OAuth response missing account ID")?;
     save(
@@ -212,9 +225,11 @@ fn save_tokens(root: &Path, name: &str, value: &serde_json::Value) -> Result<(),
     )
 }
 
+/// Performs the CodexAuth operation.
 pub struct CodexAuth;
 
 impl CodexAuth {
+    /// Performs the present operation.
     pub fn present(credential: &Credential) -> Result<(&str, &str), ClientError> {
         match credential {
             Credential::Codex {

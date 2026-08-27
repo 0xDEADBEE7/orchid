@@ -1,6 +1,8 @@
+//! Provides the sse functionality.
 use super::{usage, StreamEvent};
 use serde_json::Value;
 
+/// Performs the parse operation.
 pub fn parse(input: &str) -> Vec<StreamEvent> {
     let mut events = Vec::new();
     let mut calls = Vec::new();
@@ -20,6 +22,7 @@ pub fn parse(input: &str) -> Vec<StreamEvent> {
     events
 }
 
+/// Performs the handle operation.
 fn handle(value: &Value, events: &mut Vec<StreamEvent>, calls: &mut Vec<(String, String)>) {
     if let Some(tokens) = usage(value) {
         events.push(StreamEvent::Usage(tokens));
@@ -36,6 +39,7 @@ fn handle(value: &Value, events: &mut Vec<StreamEvent>, calls: &mut Vec<(String,
     }
 }
 
+/// Performs the collect chat call operation.
 fn collect_chat_call(value: &Value, calls: &mut Vec<(String, String)>) -> bool {
     let Some(items) = value
         .pointer("/choices/0/delta/tool_calls")
@@ -60,6 +64,7 @@ fn append(target: &mut String, value: Option<&Value>) {
     }
 }
 
+/// Performs the completed codex call operation.
 fn completed_codex_call(value: &Value) -> Option<StreamEvent> {
     if value["type"] != "response.output_item.done"
         || value.pointer("/item/type").and_then(Value::as_str) != Some("function_call")
@@ -73,6 +78,7 @@ fn completed_codex_call(value: &Value) -> Option<StreamEvent> {
     })
 }
 
+/// Performs the text delta operation.
 fn text_delta(value: &Value) -> Option<String> {
     value["delta"]
         .as_str()
@@ -94,6 +100,7 @@ fn text_delta(value: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Performs the flush operation.
 fn flush(events: &mut Vec<StreamEvent>, calls: &mut Vec<(String, String)>) {
     for (name, arguments) in calls.drain(..) {
         if let Ok(input) = serde_json::from_str(&arguments) {

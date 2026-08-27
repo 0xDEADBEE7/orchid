@@ -1,3 +1,4 @@
+//! Provides the model functionality.
 use crate::config::Policy;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -63,12 +64,16 @@ pub enum Event {
         role: String,
         content: String,
         #[serde(default)]
+        connection: Option<String>,
+        #[serde(default)]
         token_usage: TokenUsage,
     },
     ToolCall {
         event_id: String,
         timestamp: DateTime<Utc>,
         calls: Vec<ToolCall>,
+        #[serde(default)]
+        connection: Option<String>,
         #[serde(default)]
         token_usage: TokenUsage,
     },
@@ -78,12 +83,16 @@ pub enum Event {
         call_id: String,
         content: Value,
         #[serde(default)]
+        connection: Option<String>,
+        #[serde(default)]
         token_usage: TokenUsage,
     },
     Reasoning {
         event_id: String,
         timestamp: DateTime<Utc>,
         content: String,
+        #[serde(default)]
+        connection: Option<String>,
         #[serde(default)]
         token_usage: TokenUsage,
     },
@@ -93,6 +102,8 @@ pub enum Event {
         input: u32,
         output: u32,
         #[serde(default)]
+        connection: Option<String>,
+        #[serde(default)]
         token_usage: TokenUsage,
     },
     Termination {
@@ -100,12 +111,16 @@ pub enum Event {
         timestamp: DateTime<Utc>,
         reason: String,
         #[serde(default)]
+        connection: Option<String>,
+        #[serde(default)]
         token_usage: TokenUsage,
     },
     Failure {
         event_id: String,
         timestamp: DateTime<Utc>,
         message: String,
+        #[serde(default)]
+        connection: Option<String>,
         #[serde(default)]
         token_usage: TokenUsage,
     },
@@ -149,6 +164,34 @@ pub struct Session {
 }
 
 impl Event {
+    /// Performs the set connection operation.
+    fn set_connection(&mut self, connection: Option<String>) {
+        match self {
+            Self::Message {
+                connection: active, ..
+            }
+            | Self::ToolCall {
+                connection: active, ..
+            }
+            | Self::ToolResult {
+                connection: active, ..
+            }
+            | Self::Reasoning {
+                connection: active, ..
+            }
+            | Self::Usage {
+                connection: active, ..
+            }
+            | Self::Termination {
+                connection: active, ..
+            }
+            | Self::Failure {
+                connection: active, ..
+            } => *active = connection,
+        }
+    }
+
+    /// Performs the set token usage operation.
     fn set_token_usage(&mut self, token_usage: TokenUsage) {
         match self {
             Self::Message {
@@ -177,6 +220,7 @@ impl Event {
 }
 
 impl Session {
+    /// Performs the pending tool call ids operation.
     pub fn pending_tool_call_ids(&self) -> Vec<String> {
         let completed = self
             .events
@@ -199,6 +243,7 @@ impl Session {
             .collect()
     }
 
+    /// Creates a new value.
     pub fn new(
         label: Option<String>,
         working_dir: Option<String>,
@@ -228,18 +273,27 @@ impl Session {
     }
 
     pub fn append(&mut self, mut event: Event) {
+        let connection = self
+            .metadata
+            .policy
+            .connections
+            .get(self.metadata.policy.active_connection)
+            .cloned();
+        event.set_connection(connection);
         event.set_token_usage(self.metadata.token_usage.clone());
         self.events.push(event);
         let now = Utc::now();
         self.metadata.updated_at = now;
     }
 
+    /// Performs the message operation.
     pub fn message(role: &str, content: String) -> Event {
         Event::Message {
             event_id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             role: role.into(),
             content,
+            connection: None,
             token_usage: TokenUsage::default(),
         }
     }
