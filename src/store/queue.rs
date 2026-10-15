@@ -23,6 +23,7 @@ impl Store {
         if run {
             session.metadata.status = Status::Running;
             session.metadata.pid = Some(std::process::id());
+            session.metadata.termination_reason = None;
         }
         self.save_unlocked(&session)?;
         self.clear_queue(id);

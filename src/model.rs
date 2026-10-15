@@ -24,6 +24,9 @@ pub struct Metadata {
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// The session that created this one (e.g. an orchestrator), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     /// The agent this session was created from, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_name: Option<String>,
@@ -277,6 +280,7 @@ impl Session {
                 working_dir,
                 created_at: now,
                 updated_at: now,
+                parent: None,
                 agent_name: None,
                 agent: agent.unwrap_or_default(),
                 policy: None,

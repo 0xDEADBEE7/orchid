@@ -15,8 +15,8 @@ git -C "$REPO" worktree add \
   -b "orchid/$TASK" "$HOME/.worktrees/$REPO_NAME/$TASK" main
 ```
 
-Give each worker its own `--working-dir`, launch independent sessions, then
-await their IDs together. Parallelize only when workers cannot conflict through
+Give each worker its own `--working-dir`, launch independent sessions, and end
+your turn; each worker reports back as it finishes. Parallelize only when workers cannot conflict through
 shared files, generated outputs, services, or branches.
 
 Validate every branch before merging. Choose a merge order, merge one branch,

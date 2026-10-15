@@ -309,6 +309,9 @@ fn read_jsonl<T: serde::de::DeserializeOwned>(path: &Path) -> io::Result<Vec<T>>
 
 /// Performs the default root operation.
 pub fn default_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("ORCHID_CONFIG") {
+        return PathBuf::from(root);
+    }
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| home.join(".config").join("orchid"))

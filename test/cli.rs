@@ -106,7 +106,7 @@ fn list_returns_only_session_ids_and_labels() {
 
 #[cfg(unix)]
 #[test]
-fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
+fn stop_kills_worker_marks_session_cancelled_and_allows_follow_up() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     orchid::config::init(root).unwrap();
@@ -137,13 +137,13 @@ fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
         String::from_utf8_lossy(&stopped.stdout)
     );
     let stopped: serde_json::Value = serde_json::from_slice(&stopped.stdout).unwrap();
-    assert_eq!(stopped["status"], "idle");
+    assert_eq!(stopped["status"], "cancelled");
     assert!(worker.try_wait().unwrap().is_some());
 
     let loaded = run(binary, root, &["get", id]);
     assert!(loaded.status.success());
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(loaded["metadata"]["status"], "idle");
+    assert_eq!(loaded["metadata"]["status"], "cancelled");
     assert_eq!(loaded["metadata"]["pid"], serde_json::Value::Null);
     assert_eq!(
         loaded["metadata"]["termination_reason"],
@@ -193,9 +193,11 @@ fn worker_setup_error_fails_the_session_with_the_reason() {
     assert!(run(binary, root, &["send", "--id", id, "hi"])
         .status
         .success());
-    assert!(run(binary, root, &["await", id, "--timeout", "10"])
-        .status
-        .success());
+    // await exits 1 for a failed session and reports the reason.
+    let awaited = run(binary, root, &["await", id, "--timeout", "10"]);
+    assert_eq!(awaited.status.code(), Some(1));
+    let awaited: serde_json::Value = serde_json::from_slice(&awaited.stdout).unwrap();
+    assert_eq!(awaited["sessions"][0]["status"], "failed");
     let session: serde_json::Value =
         serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap();
     assert_eq!(session["metadata"]["status"], "failed");

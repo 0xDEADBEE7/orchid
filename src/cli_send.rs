@@ -8,6 +8,7 @@ use std::{
     env,
     fs::OpenOptions,
     io,
+    os::unix::process::CommandExt,
     process::{Command, Stdio},
 };
 
@@ -132,8 +133,10 @@ fn spawn_worker(settings: &Settings, id: &str) -> io::Result<std::process::Child
         .arg("__run")
         .arg("--id")
         .arg(id)
-        // A worker's turn is a fresh root for hook nesting.
+        // A worker's turn is a fresh root for hook nesting, and it leads its own
+        // process group so `stop` can end its tool commands too.
         .env_remove("ORCHID_HOOK_DEPTH")
+        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr)
@@ -152,10 +155,15 @@ fn positional(args: &[String]) -> Vec<String> {
     ];
     let mut result = Vec::new();
     let mut skip = false;
-    for arg in args {
+    for (index, arg) in args.iter().enumerate() {
         if skip {
             skip = false;
             continue;
+        }
+        if arg == "--" {
+            // Everything after `--` is literal, e.g. a message starting with '-'.
+            result.extend(args[index + 1..].iter().cloned());
+            break;
         }
         if flags.contains(&arg.as_str()) {
             skip = true;

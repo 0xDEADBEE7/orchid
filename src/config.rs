@@ -96,6 +96,19 @@ impl Settings {
         global.chain(self.agent.hooks.get(event).into_iter().flatten())
     }
 
+    /// Environment for tool commands and hooks, so they can call back into
+    /// orchid (`$ORCHID_BIN`) for the right configuration and session.
+    pub fn child_env(&self) -> Vec<(&'static str, std::ffi::OsString)> {
+        let mut env = vec![("ORCHID_CONFIG", self.root.clone().into_os_string())];
+        if let Ok(bin) = std::env::current_exe() {
+            env.push(("ORCHID_BIN", bin.into_os_string()));
+        }
+        if let Some(id) = &self.session {
+            env.push(("ORCHID_SESSION_ID", id.into()));
+        }
+        env
+    }
+
     /// Settings for acting on a session: its own agent copy and prompt. Every
     /// path that touches a session uses this, so all of them see the same hooks.
     pub fn for_session(&self, session: &Session) -> Settings {

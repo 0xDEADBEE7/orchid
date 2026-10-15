@@ -1,16 +1,17 @@
 # Interruption and termination
 
-`await` observes. `stop` controls a running session:
+Worker reports and `get` observe. `stop` controls a running session (it ends the
+worker and its tool commands, and marks the session `cancelled`):
 
 ```bash
-orchid --config ./config stop "$ID"
+"$ORCHID_BIN" stop "$ID"
 ```
 
 Stopping an agent does not authorize deleting its worktree or branch. Preserve
 partial work and inspect it:
 
 ```bash
-orchid --config ./config get "$ID" --conversation
+"$ORCHID_BIN" get "$ID" --conversation
 git -C "$WORKTREE" status --short
 git -C "$WORKTREE" diff
 git -C "$WORKTREE" log --oneline --decorate -n 10

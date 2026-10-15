@@ -125,6 +125,10 @@ fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Str
     let prompt = settings.prompt_text(&agent.prompt)?;
     let mut session = Session::new(label, working_dir, Some(agent));
     session.metadata.agent_name = Some(name.clone());
+    // Sessions created from another session's tools or hooks record it as
+    // their parent, which the notify-parent hook reports back to.
+    session.metadata.parent =
+        value(args, "--parent").or_else(|| env::var("ORCHID_SESSION_ID").ok());
     let id = session.metadata.id.clone();
     store.create_with_prompt(&session, &prompt)?;
     Ok(serde_json::json!({"id":id,"status":"idle","agent":name}).to_string())
@@ -172,11 +176,19 @@ fn get(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("get requires an id"))?;
     let session = store.load(id)?;
     if args.iter().any(|x| x == "--last-message") {
-        return Ok(
-            serde_json::json!({"id":id,"last_message":session.events.iter().rev().find_map(|event| match event { orchid::model::Event::Message { role, content, .. } if role == "assistant" => Some(content), _ => None })}).to_string(),
-        );
+        return Ok(serde_json::json!({"id":id,"last_message":last_message(&session)}).to_string());
     }
     serde_json::to_string(&session).map_err(io::Error::other)
+}
+
+/// Returns the latest assistant message.
+fn last_message(session: &Session) -> Option<&str> {
+    session.events.iter().rev().find_map(|event| match event {
+        orchid::model::Event::Message { role, content, .. } if role == "assistant" => {
+            Some(content.as_str())
+        }
+        _ => None,
+    })
 }
 
 /// Performs the set operation.
@@ -245,13 +257,27 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
             .all(|s| s.metadata.status != Status::Running)
             || Instant::now() >= deadline
         {
+            // Exit 0 when every session is idle, 1 if any failed, was cancelled
+            // or terminated, 2 on timeout; the JSON is printed either way.
+            let code = sessions.iter().fold(0, |code, s| match s.metadata.status {
+                Status::Idle => code,
+                Status::Running => 2,
+                _ => code.max(1),
+            });
             let statuses: Vec<_> = sessions
                 .iter()
-                .zip(&ids)
-                .map(|(s, id)| serde_json::json!({"id": id, "status": s.metadata.status}))
+                .map(|s| {
+                    let idle = s.metadata.status == Status::Idle;
+                    serde_json::json!({"id": s.metadata.id, "status": s.metadata.status,
+                        "message": last_message(s).filter(|_| idle), "reason": s.metadata.termination_reason})
+                })
                 .collect();
-            return serde_json::to_string(&serde_json::json!({"sessions":statuses}))
-                .map_err(io::Error::other);
+            let output = serde_json::json!({"sessions": statuses}).to_string();
+            if code != 0 {
+                println!("{output}");
+                std::process::exit(code);
+            }
+            return Ok(output);
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -278,27 +304,31 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
         connection: None,
         token_usage: orchid::model::TokenUsage::default(),
     });
-    session.metadata.status = Status::Idle;
+    session.metadata.status = Status::Cancelled;
     session.metadata.pid = None;
     session.metadata.termination_reason = Some("cancelled by user".into());
     store.save(&session)?;
     let _ = orchid::hooks::fire_events(&settings.for_session(&session), &session, before);
-    Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
+    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
 }
 
-/// Performs the terminate worker operation.
+/// Signals a worker's process group (its tool commands included) and the
+/// worker itself, escalating to SIGKILL after two seconds.
 fn terminate_worker(pid: u32) {
-    let _ = Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status();
+    let signal = |name: &str| {
+        let targets = [format!("-{pid}"), pid.to_string()];
+        let _ = Command::new("kill")
+            .args(["-s", name, "--", &targets[0], &targets[1]])
+            .stderr(std::process::Stdio::null())
+            .status();
+    };
+    signal("TERM");
     let deadline = Instant::now() + Duration::from_secs(2);
     while process_alive(pid) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(25));
     }
     if process_alive(pid) {
-        let _ = Command::new("kill")
-            .args(["-KILL", &pid.to_string()])
-            .status();
+        signal("KILL");
     }
 }
 

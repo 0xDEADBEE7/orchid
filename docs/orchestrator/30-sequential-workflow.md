@@ -4,20 +4,19 @@ For dependent work, create one worker at a time and pass verified findings
 forward:
 
 ```bash
-ID=$(orchid --config ./config create --agent worker \
+ID=$("$ORCHID_BIN" create --agent worker \
   --label implement-feature --working-dir "$WORKTREE" | jq -r '.id')
-orchid --config ./config send --id "$ID" "<task brief>"
-orchid --config ./config await "$ID" --timeout 900
-orchid --config ./config get "$ID" --last-message
+"$ORCHID_BIN" send --id "$ID" -- "<task brief>"
 ```
 
-After each worker, inspect its response, inspect Git, run or review validation,
-and follow up before starting dependent work.
+Then end your turn. When the worker's `<subagent>` report arrives, inspect its
+response (`"$ORCHID_BIN" get "$ID" --last-message`), inspect Git, run or review
+validation, and follow up before starting dependent work.
 
 Use the same session for a local correction:
 
 ```bash
-orchid --config ./config send --id "$ID" \
+"$ORCHID_BIN" send --id "$ID" -- \
   "The focused test is missing. Add it, run the relevant checks, and create a follow-up commit."
 ```
 

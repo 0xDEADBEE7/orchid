@@ -117,16 +117,11 @@ pub fn bash_in(settings: &Settings, command: &str, working_dir: &Path) -> io::Re
         .arg("-c")
         .arg(command)
         .current_dir(working_dir)
+        .envs(settings.child_env())
         .output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Ok(Value::String(if stderr.is_empty() {
-        stdout.into()
-    } else if stdout.is_empty() {
-        stderr.into()
-    } else {
-        format!("{}{}", stdout, stderr)
-    }))
+    Ok(Value::String(format!("{stdout}{stderr}")))
 }
 
 /// Checks whether a tool is allowed.

@@ -102,7 +102,7 @@ fn run(
     let working_dir = session.metadata.working_dir.as_deref();
     let mut child = Command::new(executable(settings, &hook.script))
         .current_dir(working_dir.map_or_else(|| settings.root.clone(), PathBuf::from))
-        .env("ORCHID_CONFIG", &settings.root)
+        .envs(settings.child_env())
         .env("ORCHID_SESSION_ID", &session.metadata.id)
         .env("ORCHID_HOOK_EVENT", name)
         .env("ORCHID_HOOK_DEPTH", (depth + 1).to_string())
