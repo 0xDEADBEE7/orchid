@@ -60,20 +60,27 @@ curl -X POST "https://d-s-genai-pkgw-alb.dotdtetp01dev01.aws.test.au.internal.cb
 
 ## Orchid integration
 
-The Portkey connection is represented as a Connection resource under the
-selected config directory and uses its `headers` map:
+Orchid talks to OpenAI-compatible endpoints, not the Anthropic-native
+`/v1/messages` used above. Portkey also serves `/v1/chat/completions`; check
+that it accepts these models before relying on it:
 
-```json
-"portkey-aipe": {
-  "provider": "anthropic",
-  "base_url": "https://portkey.aipe.cba",
-  "model": "@bedrock-eus1/us.anthropic.claude-sonnet-4-6",
-  "headers": {
-    "Authorization": "env.AIPE_PORTKEY_AUTH_TOKEN",
-    "x-portkey-api-key": "env.AIPE_PORTKEY_AUTH_TOKEN",
-    "x-portkey-provider": "anthropic"
-  }
-}
+```bash
+curl -X POST "https://d-s-genai-pkgw-alb.dotdtetp01dev01.aws.test.au.internal.cba/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AIPE_PORTKEY_AUTH_TOKEN" \
+  -H "x-portkey-provider: anthropic" \
+  -H "x-portkey-api-key: $VIRTUAL_AIPE_PORTKEY_AUTH_TOKEN" \
+  -d '{"model":"@bedrock-eus1/us.anthropic.claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}],"max_tokens":64}'
 ```
 
-`env.<VAR>` values are resolved at request time. `api_key` can be omitted when `Authorization` is in `headers`.
+If it does, add the connection (the key becomes the `Authorization: Bearer`
+header; values are resolved from the environment at request time):
+
+```bash
+orchid auth add portkey-aipe \
+  --base-url https://d-s-genai-pkgw-alb.dotdtetp01dev01.aws.test.au.internal.cba/v1 \
+  --model @bedrock-eus1/us.anthropic.claude-sonnet-4-6 \
+  --key-env AIPE_PORTKEY_AUTH_TOKEN \
+  --header x-portkey-provider=anthropic \
+  --header x-portkey-api-key=env.VIRTUAL_AIPE_PORTKEY_AUTH_TOKEN
+```

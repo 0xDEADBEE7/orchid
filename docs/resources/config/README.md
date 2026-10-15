@@ -18,4 +18,4 @@ orchid --config ./config agent
 
 Add credentials separately with environment-backed references or `orchid auth login`. Runtime session data is created under `./config/sessions/` and should not be copied into this template.
 
-See [configuration](docs/user-guide/configuration.md) and the [configuration architecture](docs/architecture/NEW_CONFIG.md) for schemas.
+See the [configuration guide](../../user-guide/configuration.md) for schemas and [hooks](../../user-guide/hooks.md) for the notify-parent hook.
