@@ -166,3 +166,67 @@ fn concurrent_appends_are_serialized_across_store_clones() {
     }
     assert_eq!(store.load(&id).unwrap().events.len(), 8);
 }
+
+#[test]
+fn claim_is_exclusive_while_the_owner_lives_and_stale_marker_locks_do_not_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    // A marker file left by the old lock implementation must not wedge writes.
+    std::fs::write(dir.path().join("sessions").join(&id).join(".lock"), "").unwrap();
+    assert_eq!(
+        store.claim(&id).unwrap().metadata.pid,
+        Some(std::process::id())
+    );
+    let busy = store.claim(&id).unwrap_err();
+    assert_eq!(busy.kind(), std::io::ErrorKind::WouldBlock);
+}
+
+#[test]
+fn stale_saves_keep_label_and_working_dir_set_meanwhile() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let stale = store.load(&id).unwrap();
+    store
+        .update(&id, |s| {
+            s.metadata.label = Some("renamed".into());
+            s.metadata.working_dir = Some("/tmp".into());
+        })
+        .unwrap();
+    store.save(&stale).unwrap();
+    let saved = store.load(&id).unwrap().metadata;
+    assert_eq!(
+        (saved.label.as_deref(), saved.working_dir.as_deref()),
+        (Some("renamed"), Some("/tmp"))
+    );
+}
+
+#[test]
+fn reconcile_answers_open_tool_calls_of_a_dead_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    session.append(orchid::model::Event::ToolCall {
+        event_id: "e".into(),
+        timestamp: chrono::Utc::now(),
+        calls: vec![orchid::model::ToolCall {
+            call_id: "c1".into(),
+            name: "bash".into(),
+            input: serde_json::json!({}),
+        }],
+        connection: None,
+        token_usage: Default::default(),
+    });
+    session.metadata.status = orchid::Status::Running;
+    session.metadata.pid = Some(u32::MAX - 1);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let reconciled = store.reconcile(&id).unwrap();
+    assert_eq!(reconciled.metadata.status, orchid::Status::Failed);
+    assert!(reconciled.pending_tool_call_ids().is_empty());
+}

@@ -5,7 +5,7 @@ mod cli_tool_call;
 use orchid::{
     config::{init, Settings},
     model::{Session, Status},
-    store::{default_root, Store},
+    store::{default_root, process_alive, Store},
 };
 use std::{
     env, io,
@@ -116,7 +116,9 @@ fn root_arg(mut args: Vec<String>) -> (PathBuf, Vec<String>) {
 /// Performs the create operation.
 fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let label = value(args, "--label");
-    let working_dir = value(args, "--working-dir");
+    let working_dir = value(args, "--working-dir")
+        .map(canonical_dir)
+        .transpose()?;
     let agent = value(args, "--agent").unwrap_or_else(|| "default".into());
     let snapshot = settings.snapshot_agent(&agent)?;
     let prompt = settings.resolve_agent(&agent)?.prompt()?;
@@ -181,7 +183,9 @@ fn set(store: &Store, args: &[String]) -> io::Result<String> {
         .ok_or_else(|| invalid("set requires an id"))?
         .clone();
     let label = value(&args[1..], "--label");
-    let dir = value(&args[1..], "--working-dir");
+    let dir = value(&args[1..], "--working-dir")
+        .map(canonical_dir)
+        .transpose()?;
     store.update(&id, |s| {
         if label.is_some() {
             s.metadata.label = label;
@@ -241,50 +245,32 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
     }
 }
 
-/// Performs the stop operation.
+/// Stops a session's worker, answers open tool calls, and records the cancellation.
+/// A session without a worker is left unchanged.
 fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
     let session = store.load(id)?;
+    if session.metadata.status != Status::Running && session.metadata.pid.is_none() {
+        return Ok(serde_json::json!({"id":id,"status":session.metadata.status}).to_string());
+    }
     if let Some(pid) = session.metadata.pid {
         terminate_worker(pid);
     }
-
     let mut session = store.load(id)?;
-    for call_id in session.pending_tool_call_ids() {
-        orchid::hooks::append(
-            store,
-            settings,
-            &mut session,
-            orchid::model::Event::ToolResult {
-                event_id: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                call_id,
-                content: serde_json::json!({
-                    "status": "terminated",
-                    "error": "tool call terminated because the session was cancelled"
-                }),
-                connection: None,
-                token_usage: orchid::model::TokenUsage::default(),
-            },
-        )?;
-    }
-    orchid::hooks::append(
-        store,
-        settings,
-        &mut session,
-        orchid::model::Event::Termination {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            reason: "cancelled by user".into(),
-            connection: None,
-            token_usage: orchid::model::TokenUsage::default(),
-        },
-    )?;
-    store.update(id, |session| {
-        session.metadata.status = Status::Idle;
-        session.metadata.pid = None;
-        session.metadata.termination_reason = Some("cancelled by user".into());
-    })?;
+    let before = session.events.len();
+    session.close_pending("tool call terminated because the session was cancelled");
+    session.append(orchid::model::Event::Termination {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now(),
+        reason: "cancelled by user".into(),
+        connection: None,
+        token_usage: orchid::model::TokenUsage::default(),
+    });
+    session.metadata.status = Status::Idle;
+    session.metadata.pid = None;
+    session.metadata.termination_reason = Some("cancelled by user".into());
+    store.save(&session)?;
+    let _ = orchid::hooks::dispatch_events(settings, &session, before);
     Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
 }
 
@@ -302,15 +288,6 @@ fn terminate_worker(pid: u32) {
             .args(["-KILL", &pid.to_string()])
             .status();
     }
-}
-
-/// Performs the process alive operation.
-fn process_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
 }
 
 /// Performs the positional operation.
@@ -352,6 +329,14 @@ fn value(args: &[String], name: &str) -> Option<String> {
                 .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
         })
 }
+/// Resolves a working directory to an existing absolute path, so tools and hooks
+/// agree on it regardless of where a command was run.
+fn canonical_dir(dir: String) -> io::Result<String> {
+    std::fs::canonicalize(&dir)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| io::Error::new(error.kind(), format!("working directory {dir}: {error}")))
+}
+
 /// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)

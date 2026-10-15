@@ -175,7 +175,8 @@ fn hooks_run_from_session_working_directory() {
             timeout_seconds: None,
         }],
     );
-    let mut session = Session::new(None, Some("work".into()), None);
+    let work = dir.path().join("work").to_string_lossy().into_owned();
+    let mut session = Session::new(None, Some(work), None);
     let event = Session::message("user", "hello".into());
     session.append(event.clone());
     dispatch(&settings, "on-event", &event, &session).unwrap();

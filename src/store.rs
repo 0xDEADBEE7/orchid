@@ -1,10 +1,9 @@
 //! Provides the store functionality.
-use crate::model::{LogRecord, Session};
+use crate::model::{LogRecord, Session, Status};
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
+    process::{Command, Stdio},
 };
 
 #[derive(Debug, Clone)]
@@ -45,36 +44,41 @@ impl Store {
         Ok(Session { metadata, events })
     }
 
-    /// Performs the reconcile operation.
+    /// Marks a session whose worker died as failed, answering any open tool calls.
     pub fn reconcile(&self, id: &str) -> io::Result<Session> {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
-        if session.metadata.status == crate::model::Status::Running {
-            let alive = session
-                .metadata
-                .pid
-                .map(|pid| {
-                    std::process::Command::new("kill")
-                        .args(["-0", &pid.to_string()])
-                        .status()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false);
-            if !alive {
-                session.metadata.status = crate::model::Status::Failed;
-                session.metadata.pid = None;
-                session.metadata.termination_reason = Some("worker process disappeared".into());
-                session.append(crate::model::Event::Failure {
-                    event_id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: chrono::Utc::now(),
-                    message: "worker process disappeared".into(),
-                    connection: None,
-                    token_usage: crate::model::TokenUsage::default(),
-                });
-                self.save_unlocked(&session)?;
-            }
+        if session.metadata.status == Status::Running
+            && !session.metadata.pid.is_some_and(process_alive)
+        {
+            session.metadata.status = Status::Failed;
+            session.metadata.pid = None;
+            session.metadata.termination_reason = Some("worker process disappeared".into());
+            session.close_pending("worker process disappeared");
+            session.append(crate::model::Event::Failure {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now(),
+                message: "worker process disappeared".into(),
+                connection: None,
+                token_usage: crate::model::TokenUsage::default(),
+            });
+            self.save_unlocked(&session)?;
         }
+        Ok(session)
+    }
+
+    /// Atomically marks an idle session as running for this process. Fails with
+    /// WouldBlock while a live worker owns it; the caller records the worker pid.
+    pub fn claim(&self, id: &str) -> io::Result<Session> {
+        let _lock = SessionLock::acquire(&self.path(id))?;
+        let mut session = self.load(id)?;
+        if session.metadata.pid.is_some_and(process_alive) {
+            let busy = io::Error::new(io::ErrorKind::WouldBlock, "session is already running");
+            return Err(busy);
+        }
+        session.metadata.status = Status::Running;
+        session.metadata.pid = Some(std::process::id());
+        self.save_unlocked_with_prompt(&session, None)?;
         Ok(session)
     }
 
@@ -97,21 +101,22 @@ impl Store {
     /// Performs the save unlocked operation.
     fn save_unlocked(&self, session: &Session) -> io::Result<()> {
         let mut session = session.clone();
-        self.preserve_external_policy(&mut session)?;
+        self.preserve_external_fields(&mut session)?;
         self.save_unlocked_with_prompt(&session, None)
     }
 
-    /// Performs the preserve external policy operation.
-    fn preserve_external_policy(&self, session: &mut Session) -> io::Result<()> {
+    /// Keeps fields that other commands (`set`, `session`) may have changed on disk
+    /// while a long-lived in-memory copy was held, e.g. by a worker.
+    fn preserve_external_fields(&self, session: &mut Session) -> io::Result<()> {
         let path = self.path(&session.metadata.id).join("metadata.json");
         if !path.exists() {
             return Ok(());
         }
         let current: crate::model::Metadata =
             serde_json::from_slice(&fs::read(path)?).map_err(io::Error::other)?;
-        if current.policy != session.metadata.policy {
-            session.metadata.policy = current.policy;
-        }
+        session.metadata.policy = current.policy;
+        session.metadata.label = current.label;
+        session.metadata.working_dir = current.working_dir;
         Ok(())
     }
 
@@ -219,44 +224,34 @@ impl Store {
     }
 }
 
-/// Performs the SessionLock operation.
+/// An exclusive flock on the session's lock file. The kernel releases it when the
+/// file is dropped or the process dies, so a killed writer never wedges a session.
+/// (A distinct filename from the old marker-file lock, which it replaces.)
 struct SessionLock {
-    path: PathBuf,
+    _file: fs::File,
 }
 
 impl SessionLock {
-    /// Performs the acquire operation.
+    /// Blocks until the session lock is held.
     fn acquire(dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
-        let path = dir.join(".lock");
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(_) => return Ok(Self { path }),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    if Instant::now() >= deadline {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "session write lock timed out",
-                        ));
-                    }
-                    thread::sleep(Duration::from_millis(5));
-                }
-                Err(error) => return Err(error),
-            }
-        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(".flock"))?;
+        file.lock()?;
+        Ok(Self { _file: file })
     }
 }
 
-impl Drop for SessionLock {
-    /// Releases resources and restores associated state.
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-    }
+/// Returns whether a process exists (signal 0), without writing to stderr.
+pub fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// Performs the append events operation.
@@ -319,10 +314,14 @@ fn level_rank(level: &str) -> u8 {
     }
 }
 
-/// Performs the write json operation.
+/// Writes JSON to a temporary file and renames it, so readers never see a partial file.
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
-    let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
-    fs::write(path, bytes)
+    let tmp = path.with_extension("json.tmp");
+    fs::write(
+        &tmp,
+        serde_json::to_vec_pretty(value).map_err(io::Error::other)?,
+    )?;
+    fs::rename(tmp, path)
 }
 
 /// Performs the read jsonl operation.

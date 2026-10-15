@@ -31,7 +31,8 @@ fn run_send(
     message: &str,
     no_run: bool,
 ) -> io::Result<String> {
-    let mut session = store.load(id)?;
+    // Reconciling first means a dead worker's stale `running` status never blocks.
+    let mut session = store.reconcile(id)?;
     if session.metadata.status == Status::Running {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
@@ -49,21 +50,14 @@ fn run_send(
             serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
         );
     }
-    start_worker(store, settings, id, &mut session)
+    start_worker(store, settings, id)
 }
 
 /// Performs the start worker operation.
-fn start_worker(
-    store: &Store,
-    settings: &Settings,
-    id: &str,
-    session: &mut Session,
-) -> io::Result<String> {
-    // A synchronous hook may append another event through `send --no-run`.
-    // Refresh before changing the running state so the outer process never
-    // attempts to save a stale, shorter event stream.
-    *session = store.load(id)?;
-    session.metadata.status = Status::Running;
+fn start_worker(store: &Store, settings: &Settings, id: &str) -> io::Result<String> {
+    // Claiming re-reads the session under the lock (keeping events a synchronous
+    // hook appended) and refuses if another worker already owns it.
+    store.claim(id)?;
     log(store, settings, id, "info", "send accepted");
     let child = match spawn_worker(settings, id) {
         Ok(child) => child,
@@ -75,11 +69,14 @@ fn start_worker(
                 "error",
                 &format!("worker spawn failed: {error}"),
             );
+            store.update(id, |session| {
+                session.metadata.status = Status::Idle;
+                session.metadata.pid = None;
+            })?;
             return Err(error);
         }
     };
-    session.metadata.pid = Some(child.id());
-    store.save(session)?;
+    store.update(id, |session| session.metadata.pid = Some(child.id()))?;
     log(
         store,
         settings,

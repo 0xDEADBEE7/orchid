@@ -237,6 +237,21 @@ impl Session {
             .collect()
     }
 
+    /// Answers every unanswered tool call with a terminated result, so the
+    /// transcript stays valid for the next request.
+    pub fn close_pending(&mut self, error: &str) {
+        for call_id in self.pending_tool_call_ids() {
+            self.append(Event::ToolResult {
+                event_id: Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                call_id,
+                content: serde_json::json!({"status": "terminated", "error": error}),
+                connection: None,
+                token_usage: TokenUsage::default(),
+            });
+        }
+    }
+
     /// Creates a new value.
     pub fn new(
         label: Option<String>,

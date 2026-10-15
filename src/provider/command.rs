@@ -11,7 +11,8 @@ pub fn run_command(
     args: &[String],
 ) -> io::Result<String> {
     let id = command_id(args)?;
-    let session = load_session(store, settings, &id)?;
+    let mut session = load_session(store, settings, &id)?;
+    session.metadata.pid = Some(std::process::id());
     let settings = settings.settings_for_session(&id, &session.metadata.policy);
     run_session(store, &settings, &id, session)
 }

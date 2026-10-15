@@ -15,15 +15,7 @@ pub(super) fn executable(settings: &Settings, script: &str) -> PathBuf {
 
 /// Resolves the working directory.
 pub(super) fn working_dir(settings: &Settings, value: Option<&str>) -> PathBuf {
-    let Some(value) = value else {
-        return settings.root.clone();
-    };
-    let path = Path::new(value);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        settings.root.join(path)
-    }
+    value.map_or_else(|| settings.root.clone(), PathBuf::from)
 }
 
 /// Performs the is executable operation.

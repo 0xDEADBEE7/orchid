@@ -267,3 +267,42 @@ fn worker_setup_error_fails_the_session_with_the_reason() {
     let reason = session["metadata"]["termination_reason"].as_str().unwrap();
     assert!(reason.contains("connection missing"), "{reason}");
 }
+
+#[test]
+fn stop_on_idle_session_is_a_no_op_and_working_dirs_are_absolute() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    assert!(
+        !run(binary, root, &["create", "--working-dir", "/no/such/dir"])
+            .status
+            .success()
+    );
+    let created = Command::new(binary)
+        .current_dir(root)
+        .args([
+            "--config",
+            root.to_str().unwrap(),
+            "create",
+            "--working-dir",
+            "prompts",
+        ])
+        .output()
+        .unwrap();
+    let id = serde_json::from_slice::<serde_json::Value>(&created.stdout).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let get = |id: &str| -> serde_json::Value {
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap()
+    };
+    let working_dir = get(&id)["metadata"]["working_dir"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(std::path::Path::new(&working_dir).is_absolute() && working_dir.ends_with("prompts"));
+    let stopped = run(binary, root, &["stop", &id]);
+    assert!(stopped.status.success());
+    assert_eq!(get(&id)["events"].as_array().unwrap().len(), 0);
+}
