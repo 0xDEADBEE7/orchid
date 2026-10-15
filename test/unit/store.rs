@@ -167,7 +167,7 @@ fn concurrent_appends_are_serialized_across_store_clones() {
 }
 
 #[test]
-fn claim_is_exclusive_while_the_owner_lives_and_stale_marker_locks_do_not_block() {
+fn messages_queue_while_a_worker_owns_the_session_and_drain_in_order() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let session = Session::new(None, None, None);
@@ -175,12 +175,35 @@ fn claim_is_exclusive_while_the_owner_lives_and_stale_marker_locks_do_not_block(
     store.create(&session).unwrap();
     // A marker file left by the old lock implementation must not wedge writes.
     std::fs::write(dir.path().join("sessions").join(&id).join(".lock"), "").unwrap();
+    // The first delivery claims the session for this (live) process.
+    let mut owned = store
+        .deliver(&id, Session::message("user", "one".into()), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(owned.metadata.pid, Some(std::process::id()));
+    for text in ["two", "three"] {
+        assert!(store
+            .deliver(&id, Session::message("user", text.into()), false)
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(store.load(&id).unwrap().events.len(), 1);
+    assert!(store.drain(&mut owned).unwrap());
+    let texts: Vec<_> = owned
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            orchid::model::Event::Message { content, .. } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, ["one", "two", "three"]);
+    assert!(!store.finish(&mut owned).unwrap());
+    let done = store.load(&id).unwrap();
     assert_eq!(
-        store.claim(&id).unwrap().metadata.pid,
-        Some(std::process::id())
+        (done.metadata.status, done.metadata.pid, done.events.len()),
+        (orchid::Status::Idle, None, 3)
     );
-    let busy = store.claim(&id).unwrap_err();
-    assert_eq!(busy.kind(), std::io::ErrorKind::WouldBlock);
 }
 
 #[test]

@@ -15,17 +15,25 @@ pub fn run(
     settings: &Settings,
     session: &mut Session,
 ) -> io::Result<String> {
-    run_with_progress(provider, settings, session, |_| None)
+    run_with_progress(provider, settings, session, |_| None, |_| Ok(()))
 }
 
-/// Performs the run with progress operation.
-pub fn run_with_progress<F: FnMut(&Session) -> Option<String>>(
+/// Runs one turn: request, run tools, repeat until a reply has no tool calls.
+/// `progress` persists each step and may block (hook exit 2); `inbox` adds
+/// queued messages before each request, never between a call and its result.
+pub fn run_with_progress<F, I>(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
     mut progress: F,
-) -> io::Result<String> {
+    mut inbox: I,
+) -> io::Result<String>
+where
+    F: FnMut(&Session) -> Option<String>,
+    I: FnMut(&mut Session) -> io::Result<()>,
+{
     loop {
+        inbox(session)?;
         enforce_token_limit(session, settings.agent.max_tokens)?;
         check(progress(session))?;
         let (answer, usage, calls) = collect(stream_with_retries(provider, settings, session)?);

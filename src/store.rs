@@ -6,6 +6,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+mod queue;
+
 #[derive(Debug, Clone)]
 /// Performs the Store operation.
 pub struct Store {
@@ -64,21 +66,6 @@ impl Store {
             });
             self.save_unlocked(&session)?;
         }
-        Ok(session)
-    }
-
-    /// Atomically marks an idle session as running for this process. Fails with
-    /// WouldBlock while a live worker owns it; the caller records the worker pid.
-    pub fn claim(&self, id: &str) -> io::Result<Session> {
-        let _lock = SessionLock::acquire(&self.path(id))?;
-        let mut session = self.load(id)?;
-        if session.metadata.pid.is_some_and(process_alive) {
-            let busy = io::Error::new(io::ErrorKind::WouldBlock, "session is already running");
-            return Err(busy);
-        }
-        session.metadata.status = Status::Running;
-        session.metadata.pid = Some(std::process::id());
-        self.save_unlocked_with_prompt(&session, None)?;
         Ok(session)
     }
 

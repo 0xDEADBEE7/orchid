@@ -62,28 +62,39 @@ fn run_provider(
     provider: &dyn Provider,
 ) -> io::Result<String> {
     // Persist each step, then fire on-event for the new events; a hook block
-    // (exit 2) is returned to the loop.
-    let mut fired = session.events.len();
-    match run_with_progress(provider, settings, &mut session, |session| {
-        store.save(session).ok()?;
-        let blocked = crate::hooks::fire_events(settings, session, fired);
-        fired = session.events.len();
-        blocked
-    }) {
-        Ok(reply) => {
-            log(store, settings, id, "debug", "client stream completed");
-            finish_success(store, settings, id, session, reply)
+    // (exit 2) is returned to the loop. Queued messages are delivered between
+    // requests (their hooks already ran in `send`), and when a turn ends with
+    // messages waiting, another turn starts instead of going idle.
+    let fired = std::cell::Cell::new(session.events.len());
+    loop {
+        let result = run_with_progress(
+            provider,
+            settings,
+            &mut session,
+            |session| {
+                store.save(session).ok()?;
+                let blocked = crate::hooks::fire_events(settings, session, fired.get());
+                fired.set(session.events.len());
+                blocked
+            },
+            |session| {
+                store.drain(session)?;
+                fired.set(session.events.len());
+                Ok(())
+            },
+        );
+        let reply = match result {
+            Ok(reply) => reply,
+            Err(error) => {
+                let message = format!("client stream failed: {error}");
+                log(store, settings, id, "error", &message);
+                return finish_failure(store, settings, id, session, error);
+            }
+        };
+        if !store.finish(&mut session)? {
+            return finish_success(store, settings, id, session, reply);
         }
-        Err(error) => {
-            log(
-                store,
-                settings,
-                id,
-                "error",
-                &format!("client stream failed: {error}"),
-            );
-            finish_failure(store, settings, id, session, error)
-        }
+        fired.set(session.events.len());
     }
 }
 
@@ -121,24 +132,10 @@ fn finish_success(
     store: &crate::store::Store,
     settings: &Settings,
     id: &str,
-    mut session: Session,
+    session: Session,
     reply: String,
 ) -> io::Result<String> {
-    if store.load(id)?.metadata.status != crate::model::Status::Cancelled {
-        session.metadata.status = crate::model::Status::Idle;
-        session.metadata.pid = None;
-        store.save(&session)?;
-    }
-    let _ = store.log_both(
-        id,
-        &crate::model::LogRecord::new(
-            "info",
-            "worker finished successfully",
-            serde_json::json!({}),
-        ),
-        &settings.log_level,
-    );
-    log(store, settings, id, "info", "run completed");
+    log(store, settings, id, "info", "worker finished successfully");
     turn_end(settings, &session);
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }

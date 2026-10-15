@@ -1,7 +1,7 @@
 //! Provides the cli send functionality.
 use orchid::{
     config::Settings,
-    model::{Session, Status},
+    model::{Event, Session, Status},
     store::Store,
 };
 use std::{
@@ -32,16 +32,10 @@ fn run_send(
     no_run: bool,
 ) -> io::Result<String> {
     // Reconciling first means a dead worker's stale `running` status never blocks.
-    let mut session = store.reconcile(id)?;
+    let session = store.reconcile(id)?;
     let settings = &settings.for_session(&session);
-    if session.metadata.status == Status::Running {
-        return Err(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            "session is already running",
-        ));
-    }
-    // Hooks for a user message run before it is stored, so a block (exit 2)
-    // keeps it out of the transcript.
+    // Hooks for a user message run before it is stored or queued, so a block
+    // (exit 2) keeps it out of the transcript.
     let event = Session::message("user", message.to_owned());
     let mut preview = session.clone();
     preview.append(event.clone());
@@ -49,7 +43,14 @@ fn run_send(
         let reason = format!("blocked by hook: {reason}");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
     }
-    session = store.append_event(id, event)?;
+    let event_id = match &event {
+        Event::Message { event_id, .. } => event_id.clone(),
+        _ => String::new(),
+    };
+    // While a worker runs, the message is queued and delivered before its next request.
+    let Some(session) = store.deliver(id, event, !no_run)? else {
+        return Ok(serde_json::json!({"id":id,"status":"queued","event_id":event_id}).to_string());
+    };
     if no_run {
         return Ok(
             serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
@@ -60,9 +61,6 @@ fn run_send(
 
 /// Performs the start worker operation.
 fn start_worker(store: &Store, settings: &Settings, id: &str) -> io::Result<String> {
-    // Claiming re-reads the session under the lock (keeping events a synchronous
-    // hook appended) and refuses if another worker already owns it.
-    store.claim(id)?;
     log(store, settings, id, "info", "send accepted");
     let child = match spawn_worker(settings, id) {
         Ok(child) => child,
