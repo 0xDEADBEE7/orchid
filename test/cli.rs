@@ -243,3 +243,65 @@ fn stop_on_idle_session_is_a_no_op_and_working_dirs_are_absolute() {
     assert!(stopped.status.success());
     assert_eq!(get(&id)["events"].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn auth_add_writes_a_connection_wires_the_default_agent_and_tests_it() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0u8; 65536];
+        let read = stream.read(&mut request).unwrap();
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\ndata: [DONE]\n\n";
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(reply.as_bytes()).unwrap();
+        String::from_utf8_lossy(&request[..read]).into_owned()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let added = run(
+        binary,
+        root,
+        &[
+            "auth",
+            "add",
+            "local",
+            "--base-url",
+            &base,
+            "--model",
+            "m",
+            "--header",
+            "x-team=core",
+        ],
+    );
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    assert_eq!(
+        (added["default"].as_bool(), added["test"]["reply"].as_str()),
+        (Some(true), Some("OK"))
+    );
+    let request = server.join().unwrap();
+    assert!(request.starts_with("POST /v1/chat/completions") && request.contains("x-team: core"));
+    let agent: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("agents/default.json")).unwrap())
+            .unwrap();
+    assert_eq!(agent["connection"], "local");
+    assert!(!run(
+        binary,
+        root,
+        &["auth", "add", "local", "--base-url", &base, "--model", "m"]
+    )
+    .status
+    .success());
+}

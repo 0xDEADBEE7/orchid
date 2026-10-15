@@ -51,11 +51,14 @@ impl Client for OpenAiChatClient {
     }
 }
 
-/// Builds the API endpoint URL.
-fn endpoint(base_url: &str) -> String {
+/// Builds the endpoint URL: a full `.../chat/completions` URL (query string
+/// included) is used as given; `.../v1` and bare hosts get the standard path.
+pub fn endpoint(base_url: &str) -> String {
     let base = base_url.trim_end_matches('/');
-    if base.ends_with("/chat/completions") {
+    if base.contains("/chat/completions") {
         base.into()
+    } else if base.ends_with("/v1") {
+        format!("{base}/chat/completions")
     } else {
         format!("{base}/v1/chat/completions")
     }

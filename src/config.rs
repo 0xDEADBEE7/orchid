@@ -177,12 +177,11 @@ impl Settings {
         let profile = self.root.join("auth").join(format!("{name}.json"));
         if profile.exists() {
             let value: Value = read_json(&profile)?;
-            let kind = value["type"].as_str().unwrap_or("api_key");
-            if kind == "api_key" {
-                let reference = value["value"]
-                    .as_str()
-                    .ok_or_else(|| safe_config_error("API key credential unavailable"))?;
-                return Ok(Some(Credential::ApiKey(resolve_secret(reference)?)));
+            // API-key profiles were replaced by `api_key` on the connection.
+            if value["type"].as_str().unwrap_or("api_key") == "api_key" {
+                return Err(safe_config_error(&format!(
+                    "auth profile {name} holds an API key; set the connection's \"api_key\" to its env./file. reference instead"
+                )));
             }
         }
         Ok(Some(self.codex_credential(name)?))
@@ -215,7 +214,7 @@ fn echo_connection() -> Connection {
 }
 
 /// Performs the validate connection operation.
-fn validate_connection(connection: &Connection) -> io::Result<()> {
+pub(crate) fn validate_connection(connection: &Connection) -> io::Result<()> {
     if connection.interface.is_empty()
         || connection.base_url.is_empty()
         || connection.model.is_empty()
@@ -243,7 +242,7 @@ fn resolve_headers(headers: &HashMap<String, String>) -> io::Result<HashMap<Stri
 }
 /// Performs the resolve inline operation.
 fn resolve_inline(reference: &str) -> io::Result<String> {
-    if reference.starts_with("env.") {
+    if reference.starts_with("env.") || reference.starts_with("file.") {
         return resolve_secret(reference);
     }
     Ok(reference.to_owned())
@@ -251,17 +250,19 @@ fn resolve_inline(reference: &str) -> io::Result<String> {
 
 /// Performs the resolve secret operation.
 fn resolve_secret(reference: &str) -> io::Result<String> {
+    let missing = || safe_config_error(&format!("credential {reference} is unset or empty"));
     let value = if let Some(name) = reference.strip_prefix("env.") {
-        std::env::var(name).map_err(|_| safe_config_error("required credential is unavailable"))?
+        std::env::var(name).map_err(|_| missing())?
     } else if let Some(path) = reference.strip_prefix("file.") {
-        fs::read_to_string(path)
-            .map_err(|_| safe_config_error("required credential is unavailable"))?
+        fs::read_to_string(path).map_err(|_| missing())?
     } else {
-        return Err(safe_config_error("invalid credential reference"));
+        return Err(safe_config_error(
+            "credentials must be env.NAME or file.PATH references",
+        ));
     };
     let value = value.trim_end_matches('\n').to_owned();
     if value.is_empty() {
-        Err(safe_config_error("required credential is unavailable"))
+        Err(missing())
     } else {
         Ok(value)
     }
