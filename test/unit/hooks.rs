@@ -1,6 +1,6 @@
 use orchid::{
     config::{init, HookDefinition, Settings},
-    hooks::{append, dispatch, resolve_executable},
+    hooks::{executable, fire, fire_events},
     model::Session,
     store::Store,
 };
@@ -32,13 +32,13 @@ fn sync_hook_receives_versioned_session_envelope_after_persist() {
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
     store.create(&session).unwrap();
-    append(
-        &store,
-        &settings,
-        &mut session,
-        Session::message("user", "hello".into()),
-    )
-    .unwrap();
+    session = store
+        .append_event(
+            &session.metadata.id,
+            Session::message("user", "hello".into()),
+        )
+        .unwrap();
+    assert!(fire_events(&settings, &session, 0).is_none());
     let received: serde_json::Value =
         orchid::config::read_json(&dir.path().join("received.json")).unwrap();
     assert_eq!(received["version"], 1);
@@ -71,13 +71,13 @@ fn global_hooks_run_before_agent_hooks_in_declared_order() {
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
     store.create(&session).unwrap();
-    append(
-        &store,
-        &settings,
-        &mut session,
-        Session::message("user", "hello".into()),
-    )
-    .unwrap();
+    session = store
+        .append_event(
+            &session.metadata.id,
+            Session::message("user", "hello".into()),
+        )
+        .unwrap();
+    assert!(fire_events(&settings, &session, 0).is_none());
     assert_eq!(
         fs::read_to_string(dir.path().join("order")).unwrap(),
         "one\ntwo\n"
@@ -85,7 +85,7 @@ fn global_hooks_run_before_agent_hooks_in_declared_order() {
 }
 
 #[test]
-fn sync_hook_timeout_is_reported() {
+fn hook_timeout_fails_open() {
     let dir = tempfile::tempdir().unwrap();
     let mut settings = settings(dir.path());
     script(dir.path(), "slow.sh", "sleep 1");
@@ -99,8 +99,10 @@ fn sync_hook_timeout_is_reported() {
     let mut session = Session::new(None, None, None);
     let event = Session::message("user", "hello".into());
     session.append(event.clone());
-    let error = dispatch(&settings, "on-event", &event, &session);
-    assert!(error.is_err());
+    // A timeout is logged and does not block.
+    let started = std::time::Instant::now();
+    assert!(fire(&settings, "on-event", &event, &session).is_none());
+    assert!(started.elapsed() < std::time::Duration::from_millis(900));
 }
 
 #[test]
@@ -108,22 +110,16 @@ fn executable_resolution_distinguishes_path_like_and_bare_names() {
     let dir = tempfile::tempdir().unwrap();
     let settings = settings(dir.path());
     assert_eq!(
-        resolve_executable(&settings, "hooks/test.sh"),
+        executable(&settings, "hooks/test.sh"),
         dir.path().join("hooks/test.sh")
     );
     assert_eq!(
-        resolve_executable(&settings, "/bin/ls"),
+        executable(&settings, "/bin/ls"),
         std::path::PathBuf::from("/bin/ls")
     );
-    assert_eq!(
-        resolve_executable(&settings, "ls"),
-        std::path::PathBuf::from("ls")
-    );
+    assert_eq!(executable(&settings, "ls"), std::path::PathBuf::from("ls"));
     std::fs::write(dir.path().join("ls"), "not executable").unwrap();
-    assert_eq!(
-        resolve_executable(&settings, "ls"),
-        std::path::PathBuf::from("ls")
-    );
+    assert_eq!(executable(&settings, "ls"), std::path::PathBuf::from("ls"));
 }
 
 #[test]
@@ -143,7 +139,7 @@ fn hooks_run_from_session_working_directory() {
     let mut session = Session::new(None, Some(work), None);
     let event = Session::message("user", "hello".into());
     session.append(event.clone());
-    dispatch(&settings, "on-event", &event, &session).unwrap();
+    assert!(fire(&settings, "on-event", &event, &session).is_none());
     let actual = std::fs::read_to_string(dir.path().join("work/cwd")).unwrap();
     assert_eq!(
         std::path::Path::new(actual.trim()).canonicalize().unwrap(),

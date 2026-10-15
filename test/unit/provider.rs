@@ -320,3 +320,44 @@ fn transient_client_errors_are_retried_and_others_are_not() {
     assert!(run(&denied, &settings, &mut Session::new(None, None, None)).is_err());
     assert_eq!(denied.0.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn on_tool_call_hook_exiting_2_blocks_the_tool_and_other_failures_do_not() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    let mut settings = Settings::load(dir.path()).unwrap();
+    settings.agent.tools = vec!["bash".into()];
+    struct TouchThenDone(Cell<bool>);
+    impl Provider for TouchThenDone {
+        fn stream(&self, _: &Session) -> io::Result<Vec<StreamEvent>> {
+            if self.0.replace(true) {
+                return Ok(vec![StreamEvent::Text("done".into())]);
+            }
+            let input = serde_json::json!({"cmd": "touch ran"});
+            Ok(vec![StreamEvent::ToolCall {
+                name: "bash".into(),
+                input,
+            }])
+        }
+    }
+    for (code, blocked) in [(2, true), (1, false)] {
+        let script = dir.path().join("gate.sh");
+        std::fs::write(&script, format!("#!/bin/sh\necho nope >&2\nexit {code}\n")).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hook = orchid::config::HookDefinition {
+            script: "gate.sh".into(),
+            timeout: None,
+        };
+        settings.hooks.insert("on-tool-call".into(), vec![hook]);
+        let _ = std::fs::remove_file(dir.path().join("ran"));
+        let mut session = Session::new(None, None, None);
+        run(&TouchThenDone(Cell::new(false)), &settings, &mut session).unwrap();
+        assert_eq!(!dir.path().join("ran").exists(), blocked, "exit {code}");
+        let reported = session.events.iter().any(|e| {
+            matches!(e, Event::ToolResult { content, .. }
+            if content["error"] == "blocked by hook: nope")
+        });
+        assert_eq!(reported, blocked, "exit {code}");
+    }
+}

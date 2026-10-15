@@ -10,92 +10,31 @@ fn run(binary: &str, root: &std::path::Path, args: &[&str]) -> std::process::Out
 }
 
 #[test]
-fn tool_call_persists_result_and_hook_can_invoke_it() {
+fn a_hook_exiting_2_keeps_a_user_message_out_of_the_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     orchid::config::init(root).unwrap();
     let binary = env!("CARGO_BIN_EXE_orchid");
     fs::write(
-        root.join("agents/default.json"),
-        r#"{"prompt":"default","tools":["bash"],"hooks":{"on-init":[{"script":"hook.sh"}]}}"#,
+        root.join("deny.sh"),
+        "#!/bin/sh\necho 'not today' >&2\nexit 2\n",
     )
     .unwrap();
-    let hook = format!(
-        "#!/bin/sh\n{} --config {} tool-call --id \"$ORCHID_SESSION_ID\" --input '{{\"call_id\":\"hook-call\",\"name\":\"bash\",\"input\":{{\"cmd\":\"printf hook > hook-output\"}}}}'\n",
-        shell_quote(binary),
-        shell_quote(root.to_str().unwrap()),
-    );
-    fs::write(root.join("hook.sh"), hook).unwrap();
-    set_executable(&root.join("hook.sh"));
-
-    let created = run(binary, root, &["create"]);
-    assert!(
-        created.status.success(),
-        "{}",
-        String::from_utf8_lossy(&created.stderr)
-    );
-    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    set_executable(&root.join("deny.sh"));
+    fs::write(
+        root.join("config.json"),
+        r#"{"hooks":{"on-event":[{"script":"deny.sh"}]}}"#,
+    )
+    .unwrap();
+    let created: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["create"]).stdout).unwrap();
     let id = created["id"].as_str().unwrap();
-
-    let direct = run(
-        binary,
-        root,
-        &[
-            "tool-call",
-            "--id",
-            id,
-            "--input",
-            r#"{"call_id":"direct-call","name":"bash","input":{"cmd":"printf direct > direct-output"}}"#,
-        ],
-    );
-    assert!(
-        direct.status.success(),
-        "{}",
-        String::from_utf8_lossy(&direct.stderr)
-    );
-    assert!(direct.stdout.is_empty());
-    assert_eq!(
-        fs::read_to_string(root.join("direct-output")).unwrap(),
-        "direct"
-    );
-    let direct_events =
-        fs::read_to_string(root.join("sessions").join(id).join("events.jsonl")).unwrap();
-    assert!(direct_events
-        .lines()
-        .any(|line| line.contains("direct-call")));
-
-    let hooked = run(binary, root, &["create"]);
-    assert!(hooked.status.success());
-    let hooked: serde_json::Value = serde_json::from_slice(&hooked.stdout).unwrap();
-    let hooked_id = hooked["id"].as_str().unwrap();
-    let sent = run(
-        binary,
-        root,
-        &["send", "--no-run", "--id", hooked_id, "start"],
-    );
-    assert!(
-        sent.status.success(),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&sent.stderr),
-        String::from_utf8_lossy(&sent.stdout)
-    );
-    assert_eq!(
-        fs::read_to_string(root.join("hook-output")).unwrap(),
-        "hook"
-    );
-
-    let events =
-        fs::read_to_string(root.join("sessions").join(hooked_id).join("events.jsonl")).unwrap();
-    let values: Vec<serde_json::Value> = events
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert!(values
-        .iter()
-        .any(|event| event["type"] == "tool_call" && event["calls"][0]["call_id"] == "hook-call"));
-    assert!(values
-        .iter()
-        .any(|event| event["type"] == "tool_result" && event["call_id"] == "hook-call"));
+    let sent = run(binary, root, &["send", "--no-run", "--id", id, "hello"]);
+    assert!(!sent.status.success());
+    assert!(String::from_utf8_lossy(&sent.stderr).contains("blocked by hook: not today"));
+    let session: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap();
+    assert!(session["events"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -236,10 +175,6 @@ fn set_executable(path: &std::path::Path) {
 
 #[cfg(not(unix))]
 fn set_executable(_: &std::path::Path) {}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
 
 #[test]
 fn worker_setup_error_fails_the_session_with_the_reason() {

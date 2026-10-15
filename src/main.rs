@@ -1,6 +1,5 @@
 //! Provides the main functionality.
 mod cli_send;
-mod cli_tool_call;
 
 use orchid::{
     config::{init, Settings},
@@ -69,7 +68,6 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("set", |a, s, _| set(s, a)),
     ("delete", |a, s, _| delete(s, a)),
     ("send", |a, s, c| cli_send::send(s, c, a)),
-    ("tool-call", |a, s, c| cli_tool_call::tool_call(s, c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
     ("__run", |a, s, c| orchid::provider::command(s, c, a)),
     ("await", |a, s, c| await_sessions(s, c, a)),
@@ -236,7 +234,7 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
                 let session = store.reconcile(id)?;
                 if session.events.len() > before {
                     let settings = settings.for_session(&session);
-                    let _ = orchid::hooks::dispatch_events(&settings, &session, before);
+                    let _ = orchid::hooks::fire_events(&settings, &session, before);
                 }
                 Ok(session)
             })
@@ -283,7 +281,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
     session.metadata.pid = None;
     session.metadata.termination_reason = Some("cancelled by user".into());
     store.save(&session)?;
-    let _ = orchid::hooks::dispatch_events(&settings.for_session(&session), &session, before);
+    let _ = orchid::hooks::fire_events(&settings.for_session(&session), &session, before);
     Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
 }
 
@@ -356,5 +354,5 @@ fn invalid(message: &str) -> io::Error {
 }
 /// Returns command-line help text.
 fn help() -> String {
-    "orchid <create|list|get|set|delete|send|tool-call|agent|session>\n  --config DIR  configuration/session root".into()
+    "orchid <create|list|get|set|delete|send|agent|session|await|stop>\n  --config DIR  configuration/session root".into()
 }

@@ -40,12 +40,16 @@ fn run_send(
             "session is already running",
         ));
     }
-    orchid::hooks::append(
-        store,
-        settings,
-        &mut session,
-        Session::message("user", message.to_owned()),
-    )?;
+    // Hooks for a user message run before it is stored, so a block (exit 2)
+    // keeps it out of the transcript.
+    let event = Session::message("user", message.to_owned());
+    let mut preview = session.clone();
+    preview.append(event.clone());
+    if let Some(reason) = orchid::hooks::fire_events(settings, &preview, session.events.len()) {
+        let reason = format!("blocked by hook: {reason}");
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
+    }
+    session = store.append_event(id, event)?;
     if no_run {
         return Ok(
             serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
@@ -127,6 +131,8 @@ fn spawn_worker(settings: &Settings, id: &str) -> io::Result<std::process::Child
         .arg("__run")
         .arg("--id")
         .arg(id)
+        // A worker's turn is a fresh root for hook nesting.
+        .env_remove("ORCHID_HOOK_DEPTH")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr)

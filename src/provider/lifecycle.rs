@@ -15,11 +15,11 @@ pub fn run(
     settings: &Settings,
     session: &mut Session,
 ) -> io::Result<String> {
-    run_with_progress(provider, settings, session, |_| {})
+    run_with_progress(provider, settings, session, |_| None)
 }
 
 /// Performs the run with progress operation.
-pub fn run_with_progress<F: FnMut(&Session)>(
+pub fn run_with_progress<F: FnMut(&Session) -> Option<String>>(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
@@ -27,7 +27,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
 ) -> io::Result<String> {
     loop {
         enforce_token_limit(session, settings.agent.max_tokens)?;
-        progress(session);
+        check(progress(session))?;
         let (answer, usage, calls) = collect(stream_with_retries(provider, settings, session)?);
         let input = match usage.as_ref() {
             Some(tokens) => tokens.input,
@@ -35,13 +35,13 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         };
         session.metadata.token_estimate = input;
         record_usage(session, usage, input);
-        progress(session);
+        check(progress(session))?;
         // A reply may carry text and tool calls together (e.g. a preamble before a
         // tool call). Keep the text, then run the calls; only a reply without calls
         // ends the turn.
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
-            progress(session);
+            check(progress(session))?;
         }
         if calls.is_empty() {
             return if answer.is_empty() {
@@ -51,6 +51,17 @@ pub fn run_with_progress<F: FnMut(&Session)>(
             };
         }
         dispatch::execute(settings, session, calls, &mut progress)?;
+    }
+}
+
+/// Turns a hook block (exit 2) into an error that ends the turn.
+pub(super) fn check(blocked: Option<String>) -> io::Result<()> {
+    match blocked {
+        Some(reason) => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("blocked by hook: {reason}"),
+        )),
+        None => Ok(()),
     }
 }
 

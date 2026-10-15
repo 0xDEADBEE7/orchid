@@ -50,7 +50,6 @@ fn run_session(
         Err(error) => return finish_failure(store, settings, id, session, error),
     };
     log(store, settings, id, "debug", "client selected");
-    let _ = crate::hooks::run(settings, "on-turn-start", id);
     run_provider(store, settings, id, session, &provider)
 }
 
@@ -62,12 +61,14 @@ fn run_provider(
     mut session: Session,
     provider: &dyn Provider,
 ) -> io::Result<String> {
-    let mut dispatched = session.events.len();
+    // Persist each step, then fire on-event for the new events; a hook block
+    // (exit 2) is returned to the loop.
+    let mut fired = session.events.len();
     match run_with_progress(provider, settings, &mut session, |session| {
-        if store.save(session).is_ok() {
-            let _ = crate::hooks::dispatch_events(settings, session, dispatched);
-            dispatched = session.events.len();
-        }
+        store.save(session).ok()?;
+        let blocked = crate::hooks::fire_events(settings, session, fired);
+        fired = session.events.len();
+        blocked
     }) {
         Ok(reply) => {
             log(store, settings, id, "debug", "client stream completed");
@@ -138,7 +139,7 @@ fn finish_success(
         &settings.log_level,
     );
     log(store, settings, id, "info", "run completed");
-    let _ = crate::hooks::run(settings, "on-turn-end", id);
+    turn_end(settings, &session);
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }
 
@@ -151,7 +152,7 @@ fn finish_failure(
     error: io::Error,
 ) -> io::Result<String> {
     let message = error.to_string();
-    let terminated = message.contains("token threshold");
+    let terminated = message.contains("token threshold") || message.starts_with("blocked by hook");
     session.metadata.status = if terminated {
         crate::model::Status::Terminated
     } else {
@@ -177,8 +178,8 @@ fn finish_failure(
         });
     }
     store.save(&session)?;
-    let _ =
-        crate::hooks::dispatch_events(settings, &session, session.events.len().saturating_sub(1));
+    let _ = crate::hooks::fire_events(settings, &session, session.events.len() - 1);
+    turn_end(settings, &session);
     let _ = store.log_both(
         id,
         &crate::model::LogRecord::new(
@@ -190,6 +191,13 @@ fn finish_failure(
     );
     log(store, settings, id, "error", &message);
     Err(error)
+}
+
+/// Fires on-turn-end with the turn's last event, after success or failure.
+fn turn_end(settings: &Settings, session: &Session) {
+    if let Some(last) = session.events.last() {
+        let _ = crate::hooks::fire(settings, "on-turn-end", last, session);
+    }
 }
 
 /// Records a lifecycle message.

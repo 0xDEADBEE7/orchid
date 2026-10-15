@@ -9,9 +9,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
+    /// `hookrunning` was a transient state in earlier versions.
+    #[serde(alias = "hookrunning")]
     Idle,
     Running,
-    HookRunning,
     Failed,
     Cancelled,
     Terminated,
