@@ -1,5 +1,5 @@
 //! Provides the dispatch functionality.
-use super::Settings;
+use crate::config::Settings;
 use crate::model::{Event, Session};
 use serde_json::Value;
 use std::io;

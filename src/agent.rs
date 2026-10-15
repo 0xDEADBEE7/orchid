@@ -48,7 +48,6 @@ impl Settings {
         }
         Ok(Settings {
             root: self.root.clone(),
-            policy_name: agent.policy,
             policy,
             prompt_name: agent.prompt,
             log_level: self.log_level.clone(),
@@ -66,7 +65,6 @@ impl Settings {
     pub fn settings_for_session(&self, id: &str, policy: &Policy) -> Settings {
         Settings {
             root: self.root.clone(),
-            policy_name: "session".into(),
             policy: policy.clone(),
             prompt_name: format!("session:{id}"),
             log_level: self.log_level.clone(),

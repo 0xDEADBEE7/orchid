@@ -176,7 +176,7 @@ fn configured_provider_sends_persisted_user_message_once() {
     let mut session = Session::new(None, None, None);
     session.append(Session::message("user", "only once".into()));
 
-    provider.stream("only once", &session).unwrap();
+    provider.stream(&session).unwrap();
 
     let requests = requests.lock().unwrap();
     assert_eq!(requests.len(), 1);

@@ -49,7 +49,7 @@ fn run_send(
             serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
         );
     }
-    start_worker(store, settings, id, message, &mut session)
+    start_worker(store, settings, id, &mut session)
 }
 
 /// Performs the start worker operation.
@@ -57,7 +57,6 @@ fn start_worker(
     store: &Store,
     settings: &Settings,
     id: &str,
-    message: &str,
     session: &mut Session,
 ) -> io::Result<String> {
     // A synchronous hook may append another event through `send --no-run`.
@@ -66,7 +65,7 @@ fn start_worker(
     *session = store.load(id)?;
     session.metadata.status = Status::Running;
     log(store, settings, id, "info", "send accepted");
-    let child = match spawn_worker(settings, id, message) {
+    let child = match spawn_worker(settings, id) {
         Ok(child) => child,
         Err(error) => {
             log(
@@ -120,7 +119,7 @@ fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str)
 }
 
 /// Performs the spawn worker operation.
-fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std::process::Child> {
+fn spawn_worker(settings: &Settings, id: &str) -> io::Result<std::process::Child> {
     let stderr_path = settings
         .root
         .join("sessions")
@@ -136,7 +135,6 @@ fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std:
         .arg("__run")
         .arg("--id")
         .arg(id)
-        .arg(message)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr)

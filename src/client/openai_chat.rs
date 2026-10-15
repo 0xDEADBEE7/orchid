@@ -98,7 +98,9 @@ fn request_body(request: ClientRequest) -> Value {
             messages.push(json!({"role":message.role, "content":message.content}));
         }
     }
-    let mut body = json!({"model":request.model, "messages":messages, "stream":true});
+    // Ask for a final usage chunk so token limits use reported, not estimated, counts.
+    let mut body = json!({"model":request.model, "messages":messages, "stream":true,
+        "stream_options":{"include_usage":true}});
     if !request.tools.is_empty() {
         body["tools"] = Value::Array(request.tools.into_iter().map(|tool| json!({
             "type":"function",

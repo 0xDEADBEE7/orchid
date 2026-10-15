@@ -128,7 +128,8 @@ fn async_hook_is_launched_without_blocking_dispatch() {
     let started = std::time::Instant::now();
     dispatch(&settings, "on-event", &event, &session).unwrap();
     assert!(started.elapsed() < std::time::Duration::from_millis(90));
-    for _ in 0..30 {
+    // Generous: the hook takes ~0.2s alone but up to ~1s under parallel test load.
+    for _ in 0..250 {
         if dir.path().join("async-result").exists() {
             return;
         }

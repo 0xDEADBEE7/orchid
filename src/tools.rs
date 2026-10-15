@@ -1,5 +1,5 @@
 //! Provides the tools functionality.
-use crate::{config::Settings, model::Event};
+use crate::config::Settings;
 use serde_json::Value;
 use std::process::Command;
 use std::{
@@ -32,11 +32,6 @@ pub fn clip(value: Value) -> Value {
     ))
 }
 
-/// Performs the read operation.
-pub fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
-    read_from(settings, paths, &settings.root)
-}
-
 /// Reads files relative to a base directory.
 pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Result<Value> {
     require(settings, "fs_read")?;
@@ -62,11 +57,6 @@ pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Resu
         }
     }
     Ok(Value::Object(result))
-}
-
-/// Performs the edit operation.
-pub fn edit(settings: &Settings, path: &str, edits: &Value) -> io::Result<Value> {
-    edit_from(settings, path, edits, &settings.root)
 }
 
 /// Applies edits to a file relative to a base directory.
@@ -118,36 +108,6 @@ fn apply_edit(content: String, edit: &Value) -> io::Result<String> {
     } else {
         content.replacen(old, new, 1)
     })
-}
-
-/// Performs the event operation.
-pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
-    [
-        Event::ToolCall {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            calls: vec![crate::model::ToolCall {
-                call_id: uuid::Uuid::new_v4().to_string(),
-                name: name.into(),
-                input,
-            }],
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        },
-        Event::ToolResult {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            call_id: String::new(),
-            content: result,
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        },
-    ]
-}
-
-/// Performs the bash operation.
-pub fn bash(settings: &Settings, command: &str) -> io::Result<Value> {
-    bash_in(settings, command, &settings.root)
 }
 
 /// Runs a shell command in a working directory.
@@ -218,35 +178,4 @@ fn safe_path_at(settings: &Settings, input: &str, base_path: &Path) -> io::Resul
 /// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
-}
-
-pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
-    let name = args
-        .first()
-        .ok_or_else(|| invalid("tool requires a name"))?;
-    let input = args.get(1..).unwrap_or_default().join(" ");
-    let result = run_named(settings, name, &input)?;
-    serde_json::to_string(&serde_json::json!({"result":result})).map_err(io::Error::other)
-}
-
-/// Runs a named tool.
-fn run_named(settings: &Settings, name: &str, input: &str) -> io::Result<Value> {
-    match name {
-        "bash" => bash(settings, input),
-        "fs_read" => read(settings, &[input.to_owned()]),
-        "fs_edit" => edit_input(settings, input),
-        _ => Err(invalid("unknown tool")),
-    }
-}
-
-/// Performs the edit input operation.
-fn edit_input(settings: &Settings, input: &str) -> io::Result<Value> {
-    let (path, content) = input
-        .split_once(' ')
-        .ok_or_else(|| invalid("fs_edit requires path and content"))?;
-    edit(
-        settings,
-        path,
-        &serde_json::json!([{"old_string":"","new_string":content}]),
-    )
 }

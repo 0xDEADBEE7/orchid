@@ -6,16 +6,14 @@ use crate::{
 };
 use serde_json::Value;
 use std::io;
-use tiktoken_rs::o200k_base;
 
 /// Runs the requested operation.
 pub fn run(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
-    prompt: &str,
 ) -> io::Result<String> {
-    run_with_progress(provider, settings, session, prompt, |_| {})
+    run_with_progress(provider, settings, session, |_| {})
 }
 
 /// Performs the run with progress operation.
@@ -23,16 +21,12 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
-    prompt: &str,
     mut progress: F,
 ) -> io::Result<String> {
     loop {
         enforce_token_limit(session, settings.policy.max_tokens())?;
         progress(session);
-        let (answer, usage, calls) = collect(provider.stream(prompt, session)?);
-        if malformed(&calls) {
-            return Err(io::Error::other("malformed provider content"));
-        }
+        let (answer, usage, calls) = collect(provider.stream(session)?);
         let input = match usage.as_ref() {
             Some(tokens) => tokens.input,
             None => estimate_request_tokens(session, &settings.prompt()?),
@@ -58,41 +52,18 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     }
 }
 
-/// Count the serialized JSONL transcript, including one newline per event.
+/// Estimates input tokens as a quarter of the bytes of the system prompt and the
+/// serialized messages sent to clients; used only when the provider reports no usage.
 fn estimate_request_tokens(session: &Session, system_prompt: &str) -> u32 {
-    let tokenizer = match o200k_base() {
-        Ok(tokenizer) => tokenizer,
-        Err(_) => return 0,
-    };
-    let mut tokens = 0usize;
-    // Count the system message included by chat-compatible providers.
-    if !system_prompt.is_empty() {
-        let Ok(line) = serde_json::to_string(&serde_json::json!({
-            "role": "system",
-            "content": system_prompt
-        })) else {
-            return 0;
-        };
-        tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
-    }
-    // Estimate the same filtered transcript sent to clients. Internal event
-    // metadata (timestamps, IDs, token usage, and usage-only events) is not
-    // conversation context and must not inflate the fallback estimate.
-    for message in super::messages(session) {
-        let Ok(line) = serde_json::to_string(&message) else {
-            return 0;
-        };
-        tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
-    }
-    tokens.min(u32::MAX as usize) as u32
+    let messages: usize = super::messages(session)
+        .iter()
+        .map(|message| serde_json::to_string(message).map_or(0, |line| line.len() + 1))
+        .sum();
+    (system_prompt.len() + messages)
+        .div_ceil(4)
+        .min(u32::MAX as usize) as u32
 }
 
-/// Performs the malformed operation.
-fn malformed(calls: &[(String, Value)]) -> bool {
-    calls
-        .first()
-        .is_some_and(|(name, _)| name == "__malformed__")
-}
 /// Compare the configured limit only with the latest request's input usage.
 fn enforce_token_limit(session: &mut Session, limit: Option<i64>) -> io::Result<()> {
     let Some(limit) = limit.filter(|limit| *limit >= 0) else {
@@ -137,9 +108,6 @@ fn collect(events: Vec<StreamEvent>) -> (String, Option<Usage>, Vec<(String, Val
                 StreamEvent::Usage(tokens) => out.1 = Some(tokens),
                 StreamEvent::ToolCall { name, input } => out.2.push((name, input)),
                 StreamEvent::Done => {}
-                StreamEvent::Malformed(message) => {
-                    out.2.push(("__malformed__".into(), Value::String(message)))
-                }
             }
             out
         })

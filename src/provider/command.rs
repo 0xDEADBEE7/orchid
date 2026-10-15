@@ -10,10 +10,10 @@ pub fn run_command(
     settings: &Settings,
     args: &[String],
 ) -> io::Result<String> {
-    let (id, message) = command_args(args)?;
+    let id = command_id(args)?;
     let session = load_session(store, settings, &id)?;
     let settings = settings.settings_for_session(&id, &session.metadata.policy);
-    run_session(store, &settings, &id, session, &message)
+    run_session(store, &settings, &id, session)
 }
 
 /// Performs the load session operation.
@@ -52,7 +52,6 @@ fn run_session(
     settings: &Settings,
     id: &str,
     session: Session,
-    message: &str,
 ) -> io::Result<String> {
     // Setup errors (missing connection, credential, unsupported interface) end the
     // turn as a recorded failure instead of leaving the session marked running.
@@ -62,7 +61,7 @@ fn run_session(
     };
     log(store, settings, id, "debug", "client selected");
     let _ = crate::hooks::run(settings, "on-turn-start", id);
-    run_provider(store, settings, id, session, message, &provider)
+    run_provider(store, settings, id, session, &provider)
 }
 
 /// Performs the run provider operation.
@@ -71,11 +70,10 @@ fn run_provider(
     settings: &Settings,
     id: &str,
     mut session: Session,
-    message: &str,
     provider: &dyn Provider,
 ) -> io::Result<String> {
     let mut dispatched = session.events.len();
-    match run_with_progress(provider, settings, &mut session, message, |session| {
+    match run_with_progress(provider, settings, &mut session, |session| {
         if store.save(session).is_ok() {
             let _ = crate::hooks::dispatch_events(settings, session, dispatched);
             dispatched = session.events.len();
@@ -98,20 +96,12 @@ fn run_provider(
     }
 }
 
-/// Performs the command args operation.
-fn command_args(args: &[String]) -> io::Result<(String, String)> {
-    let id = args
-        .windows(2)
+/// Returns the session id passed to the worker.
+fn command_id(args: &[String]) -> io::Result<String> {
+    args.windows(2)
         .find(|pair| pair[0] == "--id")
         .map(|pair| pair[1].clone())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires --id"))?;
-    let message = args
-        .iter()
-        .rev()
-        .find(|arg| !arg.starts_with('-') && *arg != &id)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires a message"))?
-        .clone();
-    Ok((id, message))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "__run requires --id"))
 }
 
 /// Performs the configured provider operation.

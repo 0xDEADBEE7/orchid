@@ -30,8 +30,6 @@ pub struct Config {
 pub struct Policy {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub log_level: Option<String>,
     #[serde(default)]
     pub active_connection: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -44,8 +42,6 @@ pub struct Policy {
     pub hooks: Hooks,
     #[serde(default, skip_serializing_if = "is_default")]
     pub permissions: Permissions,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
@@ -131,7 +127,6 @@ pub struct Connection {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub root: PathBuf,
-    pub policy_name: String,
     pub policy: Policy,
     pub prompt_name: String,
     pub log_level: String,
@@ -279,7 +274,7 @@ fn validate_connection(connection: &Connection) -> io::Result<()> {
     }
     if matches!(
         connection.interface.as_str(),
-        "local" | "openai" | "anthropic" | "codex" | "openai-codex" | "echo"
+        "local" | "openai" | "codex" | "openai-codex" | "echo"
     ) {
         Ok(())
     } else {
@@ -330,11 +325,9 @@ impl Settings {
     pub fn load(root: impl Into<PathBuf>) -> io::Result<Self> {
         let root = root.into();
         let config: Config = read_json(&root.join("config.json"))?;
-        let policy_name = "default".to_owned();
-        let policy: Policy = read_json(&root.join("policies").join(format!("{policy_name}.json")))?;
+        let policy: Policy = read_json(&root.join("policies/default.json"))?;
         Ok(Self {
             root,
-            policy_name,
             policy,
             prompt_name: "default".into(),
             log_level: config.log_level.unwrap_or_else(|| "info".into()),
@@ -378,23 +371,6 @@ fn write_default(path: &Path, content: &[u8]) -> io::Result<()> {
         fs::write(path, content)?;
     }
     Ok(())
-}
-
-/// Performs the empty env operation.
-pub fn empty_env() -> HashMap<String, String> {
-    HashMap::new()
-}
-
-pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
-    match args.first().map(String::as_str) {
-        None | Some("show") => serde_json::to_string(&settings.policy).map_err(io::Error::other),
-        Some("validate") => Ok(serde_json::json!({"valid":true}).to_string()),
-        Some("list") => Ok(serde_json::json!({"policies":[settings.policy_name]}).to_string()),
-        Some(name) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("unknown config command: {name}"),
-        )),
-    }
 }
 
 pub fn auth(settings: &Settings, args: &[String]) -> io::Result<String> {

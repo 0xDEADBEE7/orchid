@@ -20,24 +20,19 @@ provider client.
 
 ## Client modules
 
-- `src/client/base.rs` — shared HTTP client, response handling, and retry policy.
-- `src/client/resolve.rs` — connection and credential/environment resolution.
-- `src/client/anthropic/` — Anthropic request mapping and SSE handling.
-- `src/client/openai/` — OpenAI-compatible request mapping and SSE handling.
-- `src/client/codex.rs` and `src/client/codex_auth.rs` — OpenAI Codex OAuth
-  transport and token handling.
-- `src/client/sse/` — shared streaming parser and tool-call accumulation.
-
-Provider-specific wire types and mapping stay in each provider module. The
-shared `BaseClient` handles common HTTP concerns; clients implement the
-`Provider` trait directly.
+- `src/client/base.rs` — the `Client` trait and shared request/event types.
+- `src/client/openai_chat.rs` — OpenAI-compatible chat completions and SSE parsing.
+- `src/client/openai_codex/` — OpenAI Codex Responses client and OAuth tokens.
+- `src/client/echo.rs` — returns the latest message without a network request.
+- `src/client/factory.rs` — selects a client for a resolved connection.
 
 ## Client selection
 
 `src/client/mod.rs` creates a client from the single connection selected by the
 policy's `active_connection` index. Supported interfaces are `echo`,
-`anthropic`, and `openai`; an `openai` connection using
-`openai_codex_oauth` selects the Codex client. The `echo` client returns the
+`openai` (and its alias `local`), and `codex` (alias `openai-codex`); an
+`openai` connection with Codex OAuth credentials also selects the Codex client.
+Anthropic models are reachable through OpenAI-compatible endpoints. The `echo` client returns the
 latest user message without making a network request. See
 [NEW_CONFIG.md](NEW_CONFIG.md) for resource configuration and
 [execution.md](execution.md) for loop behavior.

@@ -143,12 +143,6 @@ pub struct LogRecord {
     pub fields: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Reply {
-    pub message: String,
-    pub model: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Usage {
     pub input: u32,

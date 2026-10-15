@@ -93,4 +93,4 @@ Add credentials separately with environment-backed references or
 ## Design
 - Tool loop execution: read the conversation transcript → call the model → execute tools → append results → repeat
 - Stream-first: observe with `tail -f` and standard tooling
-- Anthropic and OpenAI-compatible providers, including the Codex OAuth client
+- OpenAI-compatible providers (including Anthropic's compatibility endpoint) and the Codex OAuth client

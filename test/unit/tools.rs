@@ -1,6 +1,14 @@
 use orchid::config::{init, Settings};
-use orchid::tools::{edit, read};
+use serde_json::Value;
 use std::io;
+
+fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
+    orchid::tools::read_from(settings, paths, &settings.root)
+}
+
+fn edit(settings: &Settings, path: &str, edits: &Value) -> io::Result<Value> {
+    orchid::tools::edit_from(settings, path, edits, &settings.root)
+}
 
 #[test]
 fn policy_denies_tools_by_default() {
@@ -43,7 +51,6 @@ fn fs_read_supports_batch_calls() {
     policy.tools = vec!["fs_read".into()];
     let settings = Settings {
         root: dir.path().into(),
-        policy_name: "default".into(),
         policy,
         prompt_name: "default".into(),
         log_level: "info".into(),
@@ -63,7 +70,6 @@ fn fs_edit_applies_structured_edits() {
     policy.tools = vec!["fs_edit".into()];
     let settings = Settings {
         root: dir.path().into(),
-        policy_name: "default".into(),
         policy,
         prompt_name: "default".into(),
         log_level: "info".into(),
@@ -89,7 +95,6 @@ fn fs_edit_reports_ambiguous_batch_edit_index() {
     policy.tools = vec!["fs_edit".into()];
     let settings = Settings {
         root: dir.path().into(),
-        policy_name: "default".into(),
         policy,
         prompt_name: "default".into(),
         log_level: "info".into(),

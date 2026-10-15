@@ -1,8 +1,5 @@
 //! Provides the mod functionality.
-use crate::{
-    config::Settings,
-    model::{Session, Usage},
-};
+use crate::model::{Session, Usage};
 use serde_json::Value;
 use std::io;
 
@@ -10,37 +7,13 @@ mod command;
 mod defs;
 pub mod dispatch;
 mod lifecycle;
-mod sse;
 pub use command::run_command as command;
 pub use defs::tools as tool_definitions;
 pub use lifecycle::{run, run_with_progress};
-pub use sse::parse as parse_sse;
 
 pub trait Provider {
-    /// Performs the reply operation.
-    fn reply(&self, prompt: &str, session: &Session) -> io::Result<String>;
-    fn stream(&self, prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
-        Ok(vec![StreamEvent::Text(self.reply(prompt, session)?)])
-    }
-}
-
-/// Performs the usage operation.
-fn usage(value: &Value) -> Option<Usage> {
-    Some(Usage {
-        input: value
-            .pointer("/usage/prompt_tokens")
-            .or_else(|| value.pointer("/usage/input_tokens"))?
-            .as_u64()? as u32,
-        output: value
-            .pointer("/usage/completion_tokens")
-            .or_else(|| value.pointer("/usage/output_tokens"))?
-            .as_u64()? as u32,
-        cached_input: value
-            .pointer("/usage/prompt_tokens_details/cached_tokens")
-            .or_else(|| value.pointer("/usage/input_tokens_details/cached_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32,
-    })
+    /// Requests the next reply for the session's transcript.
+    fn stream(&self, session: &Session) -> io::Result<Vec<StreamEvent>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +22,6 @@ pub enum StreamEvent {
     Usage(Usage),
     ToolCall { name: String, input: Value },
     Done,
-    Malformed(String),
 }
 
 /// Performs the ClientProvider operation.
@@ -61,22 +33,8 @@ pub struct ClientProvider {
     pub params: serde_json::Map<String, Value>,
 }
 impl Provider for ClientProvider {
-    /// Performs the reply operation.
-    fn reply(&self, prompt: &str, session: &Session) -> io::Result<String> {
-        let events = self.stream(prompt, session)?;
-        Ok(events
-            .into_iter()
-            .filter_map(|event| {
-                if let StreamEvent::Text(text) = event {
-                    Some(text)
-                } else {
-                    None
-                }
-            })
-            .collect())
-    }
     /// Streams events for a request.
-    fn stream(&self, _prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
+    fn stream(&self, session: &Session) -> io::Result<Vec<StreamEvent>> {
         let messages = messages(session);
         self.client
             .stream(request(self, messages))
@@ -155,12 +113,4 @@ fn stream_events(events: Vec<crate::client::ClientEvent>) -> Vec<StreamEvent> {
             crate::client::ClientEvent::ReasoningDelta(_) => None,
         })
         .collect()
-}
-/// Performs the tool allowed operation.
-pub fn tool_allowed(settings: &Settings, name: &str) -> bool {
-    settings.policy.tools().iter().any(|tool| tool == name)
-}
-/// Performs the tool result operation.
-pub fn tool_result(value: impl Into<Value>) -> Value {
-    value.into()
 }
