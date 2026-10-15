@@ -3,8 +3,7 @@
 //! as the reason; any other failure or a timeout is logged and ignored.
 use crate::{
     config::{HookDefinition, Settings},
-    model::{Event, LogRecord, Session},
-    store::Store,
+    model::{Event, Session},
 };
 use serde_json::json;
 use std::{
@@ -79,9 +78,7 @@ fn outcome(
         Ok((status, stderr)) => json!({"status": status.code(), "stderr": stderr}),
         Err(error) => json!({"error": error.to_string()}),
     };
-    let record = LogRecord::new(level, message, fields(detail));
-    let _ = Store::new(&settings.root)
-        .and_then(|store| store.log_both(&session.metadata.id, &record, &settings.log_level));
+    settings.log(&session.metadata.id, level, message, fields(detail));
     blocked
 }
 

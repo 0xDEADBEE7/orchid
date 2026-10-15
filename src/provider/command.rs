@@ -2,6 +2,7 @@
 use super::{run_with_progress, Provider};
 use crate::config::Settings;
 use crate::model::{Event, EventKind, Session};
+use serde_json::json;
 use std::io;
 
 /// Performs the run command operation.
@@ -19,20 +20,15 @@ pub fn run_command(
 
 /// Performs the load session operation.
 fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> io::Result<Session> {
-    let record = crate::model::LogRecord::new(
+    settings.log(
+        id,
         "info",
         "worker started",
-        serde_json::json!({"pid":std::process::id(),"session_id":id}),
+        json!({"pid": std::process::id()}),
     );
-    let _ = store.log_both(id, &record, &settings.log_level);
-    log(store, settings, id, "debug", "worker loading session");
     store.load(id).inspect_err(|error| {
-        let record = crate::model::LogRecord::new(
-            "error",
-            "worker failed to load session",
-            serde_json::json!({"error":error.to_string()}),
-        );
-        let _ = store.log_both(id, &record, &settings.log_level);
+        let fields = json!({"error": error.to_string()});
+        settings.log(id, "error", "worker failed to load session", fields);
     })
 }
 
@@ -49,7 +45,6 @@ fn run_session(
         Ok(provider) => provider,
         Err(error) => return finish_failure(store, settings, id, session, error),
     };
-    log(store, settings, id, "debug", "client selected");
     run_provider(store, settings, id, session, &provider)
 }
 
@@ -86,13 +81,11 @@ fn run_provider(
         let reply = match result {
             Ok(reply) => reply,
             Err(error) => {
-                let message = format!("client stream failed: {error}");
-                log(store, settings, id, "error", &message);
                 return finish_failure(store, settings, id, session, error);
             }
         };
         if !store.finish(&mut session)? {
-            return finish_success(store, settings, id, session, reply);
+            return finish_success(settings, id, session, reply);
         }
         fired.set(session.events.len());
     }
@@ -129,13 +122,12 @@ fn configured_provider(settings: &Settings) -> io::Result<super::ClientProvider>
 
 /// Performs the finish success operation.
 fn finish_success(
-    store: &crate::store::Store,
     settings: &Settings,
     id: &str,
     session: Session,
     reply: String,
 ) -> io::Result<String> {
-    log(store, settings, id, "info", "worker finished successfully");
+    settings.log(id, "info", "worker finished successfully", json!({}));
     turn_end(settings, &session);
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }
@@ -170,16 +162,7 @@ fn finish_failure(
     store.save(&session)?;
     let _ = crate::hooks::fire_events(settings, &session, session.events.len() - 1);
     turn_end(settings, &session);
-    let _ = store.log_both(
-        id,
-        &crate::model::LogRecord::new(
-            "error",
-            "worker failed",
-            serde_json::json!({"error":message}),
-        ),
-        &settings.log_level,
-    );
-    log(store, settings, id, "error", &message);
+    settings.log(id, "error", "worker failed", json!({"error": message}));
     Err(error)
 }
 
@@ -188,13 +171,4 @@ fn turn_end(settings: &Settings, session: &Session) {
     if let Some(last) = session.events.last() {
         let _ = crate::hooks::fire(settings, "on-turn-end", last, session);
     }
-}
-
-/// Records a lifecycle message.
-fn log(store: &crate::store::Store, settings: &Settings, id: &str, level: &str, message: &str) {
-    let _ = store.log_both(
-        id,
-        &crate::model::LogRecord::new(level, message, serde_json::json!({})),
-        &settings.log_level,
-    );
 }

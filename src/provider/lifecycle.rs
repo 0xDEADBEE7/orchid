@@ -3,8 +3,7 @@ use super::{dispatch, Provider, StreamEvent};
 use crate::{
     client::ClientError,
     config::Settings,
-    model::{LogRecord, Session, Usage},
-    store::Store,
+    model::{Session, Usage},
 };
 use serde_json::Value;
 use std::io;
@@ -87,10 +86,12 @@ fn stream_with_retries(
             Err(error) if delay <= 8 && retryable(&error) => {
                 let fields =
                     serde_json::json!({"error": error.to_string(), "retry_in_seconds": delay});
-                let record = LogRecord::new("warning", "transient provider error", fields);
-                let _ = Store::new(&settings.root).and_then(|store| {
-                    store.log_both(&session.metadata.id, &record, &settings.log_level)
-                });
+                settings.log(
+                    &session.metadata.id,
+                    "warning",
+                    "transient provider error",
+                    fields,
+                );
                 std::thread::sleep(std::time::Duration::from_secs(delay));
                 delay *= 2;
             }

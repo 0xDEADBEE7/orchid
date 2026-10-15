@@ -238,9 +238,10 @@ fn append_events<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Result<(
     append_serialized(path, &events[existing..])
 }
 
-/// Performs the event count operation.
+/// Counts stored events (non-blank lines) without parsing them.
 fn event_count(path: &Path) -> io::Result<usize> {
-    read_jsonl::<serde_json::Value>(path).map(|events| events.len())
+    let text = fs::read_to_string(path)?;
+    Ok(text.lines().filter(|line| !line.trim().is_empty()).count())
 }
 
 /// Performs the append serialized operation.

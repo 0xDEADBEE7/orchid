@@ -63,17 +63,12 @@ fn run_send(
 
 /// Performs the start worker operation.
 fn start_worker(store: &Store, settings: &Settings, id: &str) -> io::Result<String> {
-    log(store, settings, id, "info", "send accepted");
+    settings.log(id, "info", "send accepted", serde_json::json!({}));
     let child = match spawn_worker(settings, id) {
         Ok(child) => child,
         Err(error) => {
-            log(
-                store,
-                settings,
-                id,
-                "error",
-                &format!("worker spawn failed: {error}"),
-            );
+            let fields = serde_json::json!({"error": error.to_string()});
+            settings.log(id, "error", "worker spawn failed", fields);
             store.update(id, |session| {
                 session.metadata.status = Status::Idle;
                 session.metadata.pid = None;
@@ -82,12 +77,11 @@ fn start_worker(store: &Store, settings: &Settings, id: &str) -> io::Result<Stri
         }
     };
     store.update(id, |session| session.metadata.pid = Some(child.id()))?;
-    log(
-        store,
-        settings,
+    settings.log(
         id,
         "info",
-        &format!("worker spawned: {}", child.id()),
+        "worker spawned",
+        serde_json::json!({"pid": child.id()}),
     );
     Ok(serde_json::json!({"id":id,"status":Status::Running,"pid":child.id()}).to_string())
 }
@@ -103,15 +97,6 @@ fn request(args: &[String]) -> io::Result<(String, String)> {
         .ok_or_else(|| invalid("send requires a message"))?
         .clone();
     Ok((id, message))
-}
-
-/// Records a lifecycle message.
-fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str) {
-    let _ = store.log_both(
-        id,
-        &orchid::model::LogRecord::new(level, message, serde_json::json!({})),
-        &settings.log_level,
-    );
 }
 
 /// Performs the spawn worker operation.

@@ -109,6 +109,13 @@ impl Settings {
         env
     }
 
+    /// Appends a record to the session's and the global log (best effort).
+    pub fn log(&self, id: &str, level: &str, message: &str, fields: Value) {
+        let record = crate::model::LogRecord::new(level, message, fields);
+        let _ = crate::store::Store::new(&self.root)
+            .and_then(|store| store.log_both(id, &record, &self.log_level));
+    }
+
     /// Settings for acting on a session: its own agent copy and prompt. Every
     /// path that touches a session uses this, so all of them see the same hooks.
     pub fn for_session(&self, session: &Session) -> Settings {
