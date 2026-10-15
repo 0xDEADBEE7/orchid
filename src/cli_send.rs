@@ -1,4 +1,5 @@
 //! Provides the cli send functionality.
+use crate::cli_args::{invalid, positional, value};
 use orchid::{
     config::Settings,
     model::{Event, Session, Status},
@@ -141,53 +142,4 @@ fn spawn_worker(settings: &Settings, id: &str) -> io::Result<std::process::Child
         .stdout(Stdio::null())
         .stderr(stderr)
         .spawn()
-}
-
-/// Performs the positional operation.
-fn positional(args: &[String]) -> Vec<String> {
-    let flags = [
-        "--id",
-        "--label",
-        "--working-dir",
-        "--agent",
-        "--timeout",
-        "--interval",
-    ];
-    let mut result = Vec::new();
-    let mut skip = false;
-    for (index, arg) in args.iter().enumerate() {
-        if skip {
-            skip = false;
-            continue;
-        }
-        if arg == "--" {
-            // Everything after `--` is literal, e.g. a message starting with '-'.
-            result.extend(args[index + 1..].iter().cloned());
-            break;
-        }
-        if flags.contains(&arg.as_str()) {
-            skip = true;
-            continue;
-        }
-        if !arg.starts_with('-') {
-            result.push(arg.clone());
-        }
-    }
-    result
-}
-
-/// Returns the named argument value, if present.
-fn value(args: &[String], name: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == name)
-        .map(|w| w[1].clone())
-        .or_else(|| {
-            args.iter()
-                .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
-        })
-}
-
-/// Creates an invalid-input error.
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message)
 }

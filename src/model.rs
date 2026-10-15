@@ -254,6 +254,14 @@ impl Session {
             .collect()
     }
 
+    /// Returns the latest assistant message.
+    pub fn last_message(&self) -> Option<&str> {
+        self.events.iter().rev().find_map(|event| match event {
+            Event::Message { role, content, .. } if role == "assistant" => Some(content.as_str()),
+            _ => None,
+        })
+    }
+
     /// Answers every unanswered tool call with a terminated result, so the
     /// transcript stays valid for the next request.
     pub fn close_pending(&mut self, error: &str) {

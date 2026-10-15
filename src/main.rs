@@ -1,17 +1,15 @@
 //! Provides the main functionality.
+mod cli_args;
+mod cli_control;
 mod cli_send;
 
+use cli_args::{invalid, value};
 use orchid::{
     config::{init, Settings},
-    model::{Session, Status},
-    store::{default_root, process_alive, Store},
+    model::Session,
+    store::{default_root, Store},
 };
-use std::{
-    env, io,
-    path::PathBuf,
-    process::{Command, ExitCode},
-    time::{Duration, Instant},
-};
+use std::{env, io, path::PathBuf, process::ExitCode};
 
 /// Performs the main operation.
 fn main() -> ExitCode {
@@ -70,8 +68,8 @@ const COMMANDS: &[(&str, Handler)] = &[
     ("send", |a, s, c| cli_send::send(s, c, a)),
     ("auth", |a, _, c| orchid::config::auth(c, a)),
     ("__run", |a, s, c| orchid::provider::command(s, c, a)),
-    ("await", |a, s, c| await_sessions(s, c, a)),
-    ("stop", |a, s, c| stop(s, c, a)),
+    ("await", |a, s, c| cli_control::await_sessions(s, c, a)),
+    ("stop", |a, s, c| cli_control::stop(s, c, a)),
     ("agent", |_, _, c| agent(c)),
     ("session", |a, s, c| session(s, c, a)),
 ];
@@ -176,19 +174,9 @@ fn get(store: &Store, args: &[String]) -> io::Result<String> {
     let id = args.first().ok_or_else(|| invalid("get requires an id"))?;
     let session = store.load(id)?;
     if args.iter().any(|x| x == "--last-message") {
-        return Ok(serde_json::json!({"id":id,"last_message":last_message(&session)}).to_string());
+        return Ok(serde_json::json!({"id":id,"last_message":session.last_message()}).to_string());
     }
     serde_json::to_string(&session).map_err(io::Error::other)
-}
-
-/// Returns the latest assistant message.
-fn last_message(session: &Session) -> Option<&str> {
-    session.events.iter().rev().find_map(|event| match event {
-        orchid::model::Event::Message { role, content, .. } if role == "assistant" => {
-            Some(content.as_str())
-        }
-        _ => None,
-    })
 }
 
 /// Performs the set operation.
@@ -228,149 +216,6 @@ fn delete(store: &Store, args: &[String]) -> io::Result<String> {
     Ok(serde_json::json!({"id":id,"archived":true}).to_string())
 }
 
-/// Performs the await sessions operation.
-fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
-    if args.is_empty() {
-        return Err(invalid("await requires at least one id"));
-    }
-    let ids = positional(args);
-    let timeout = value(args, "--timeout")
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(60.0);
-    let deadline = Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
-    loop {
-        let sessions: Vec<_> = ids
-            .iter()
-            .map(|id| {
-                // Fire hooks only for events reconcile itself added; a live
-                // worker fires its own.
-                let (session, added) = store.reconcile(id)?;
-                if let Some(from) = added {
-                    let settings = settings.for_session(&session);
-                    let _ = orchid::hooks::fire_events(&settings, &session, from);
-                }
-                Ok(session)
-            })
-            .collect::<io::Result<_>>()?;
-        if sessions
-            .iter()
-            .all(|s| s.metadata.status != Status::Running)
-            || Instant::now() >= deadline
-        {
-            // Exit 0 when every session is idle, 1 if any failed, was cancelled
-            // or terminated, 2 on timeout; the JSON is printed either way.
-            let code = sessions.iter().fold(0, |code, s| match s.metadata.status {
-                Status::Idle => code,
-                Status::Running => 2,
-                _ => code.max(1),
-            });
-            let statuses: Vec<_> = sessions
-                .iter()
-                .map(|s| {
-                    let idle = s.metadata.status == Status::Idle;
-                    serde_json::json!({"id": s.metadata.id, "status": s.metadata.status,
-                        "message": last_message(s).filter(|_| idle), "reason": s.metadata.termination_reason})
-                })
-                .collect();
-            let output = serde_json::json!({"sessions": statuses}).to_string();
-            if code != 0 {
-                println!("{output}");
-                std::process::exit(code);
-            }
-            return Ok(output);
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
-
-/// Stops a session's worker, answers open tool calls, and records the cancellation.
-/// A session without a worker is left unchanged.
-fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<String> {
-    let id = args.first().ok_or_else(|| invalid("stop requires an id"))?;
-    let session = store.load(id)?;
-    if session.metadata.status != Status::Running && session.metadata.pid.is_none() {
-        return Ok(serde_json::json!({"id":id,"status":session.metadata.status}).to_string());
-    }
-    if let Some(pid) = session.metadata.pid {
-        terminate_worker(pid);
-    }
-    let mut session = store.load(id)?;
-    let before = session.events.len();
-    session.close_pending("tool call terminated because the session was cancelled");
-    session.append(orchid::model::Event::Termination {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        reason: "cancelled by user".into(),
-        connection: None,
-        token_usage: orchid::model::TokenUsage::default(),
-    });
-    session.metadata.status = Status::Cancelled;
-    session.metadata.pid = None;
-    session.metadata.termination_reason = Some("cancelled by user".into());
-    store.save(&session)?;
-    let _ = orchid::hooks::fire_events(&settings.for_session(&session), &session, before);
-    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
-}
-
-/// Signals a worker's process group (its tool commands included) and the
-/// worker itself, escalating to SIGKILL after two seconds.
-fn terminate_worker(pid: u32) {
-    let signal = |name: &str| {
-        let targets = [format!("-{pid}"), pid.to_string()];
-        let _ = Command::new("kill")
-            .args(["-s", name, "--", &targets[0], &targets[1]])
-            .stderr(std::process::Stdio::null())
-            .status();
-    };
-    signal("TERM");
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while process_alive(pid) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    if process_alive(pid) {
-        signal("KILL");
-    }
-}
-
-/// Performs the positional operation.
-fn positional(args: &[String]) -> Vec<String> {
-    let value_flags = [
-        "--id",
-        "--label",
-        "--working-dir",
-        "--agent",
-        "--timeout",
-        "--interval",
-    ];
-    let mut result = Vec::new();
-    let mut skip = false;
-    for arg in args {
-        if skip {
-            skip = false;
-            continue;
-        }
-        if value_flags.contains(&arg.as_str()) {
-            skip = true;
-            continue;
-        }
-        if arg.starts_with('-') {
-            continue;
-        }
-        result.push(arg.clone());
-    }
-    result
-}
-
-/// Returns the named argument value, if present.
-fn value(args: &[String], name: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == name)
-        .map(|w| w[1].clone())
-        .or_else(|| {
-            args.iter()
-                .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
-        })
-}
 /// Resolves a working directory to an existing absolute path, so tools and hooks
 /// agree on it regardless of where a command was run.
 fn canonical_dir(dir: String) -> io::Result<String> {
@@ -379,10 +224,6 @@ fn canonical_dir(dir: String) -> io::Result<String> {
         .map_err(|error| io::Error::new(error.kind(), format!("working directory {dir}: {error}")))
 }
 
-/// Creates an invalid-input error.
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message)
-}
 /// Returns command-line help text.
 fn help() -> String {
     "orchid <create|list|get|set|delete|send|agent|session|await|stop>\n  --config DIR  configuration/session root".into()
