@@ -25,13 +25,7 @@ pub(super) fn log_lifecycle(
     };
     let _ = store.log_both(
         session_id,
-        &crate::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: level.into(),
-            message: message.into(),
-            fields,
-        },
+        &crate::model::LogRecord::new(level, message, fields),
         &settings.log_level,
     );
 }

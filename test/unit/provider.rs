@@ -287,3 +287,30 @@ fn oversized_tool_output_keeps_head_and_tail() {
     let small = serde_json::json!({"ok": true});
     assert_eq!(orchid::tools::clip(small.clone()), small);
 }
+
+#[test]
+fn transient_client_errors_are_retried_and_others_are_not() {
+    use orchid::client::{ClientError, ClientErrorKind};
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    let settings = Settings::load(dir.path()).unwrap();
+    struct Flaky(AtomicUsize, ClientErrorKind);
+    impl Provider for Flaky {
+        fn stream(&self, _: &Session) -> io::Result<Vec<StreamEvent>> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(io::Error::other(ClientError::new(
+                    self.1,
+                    "HTTP status 503",
+                )));
+            }
+            Ok(vec![StreamEvent::Text("recovered".into())])
+        }
+    }
+    let mut session = Session::new(None, None, None);
+    let flaky = Flaky(AtomicUsize::new(0), ClientErrorKind::Unavailable);
+    assert_eq!(run(&flaky, &settings, &mut session).unwrap(), "recovered");
+    assert_eq!(flaky.0.load(Ordering::SeqCst), 2);
+    let denied = Flaky(AtomicUsize::new(0), ClientErrorKind::Authentication);
+    assert!(run(&denied, &settings, &mut Session::new(None, None, None)).is_err());
+    assert_eq!(denied.0.load(Ordering::SeqCst), 1);
+}

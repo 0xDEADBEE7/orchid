@@ -38,7 +38,7 @@ impl Provider for ClientProvider {
         let messages = messages(session);
         self.client
             .stream(request(self, messages))
-            .map_err(|error| io::Error::other(error.to_string()))
+            .map_err(io::Error::other)
             .map(stream_events)
     }
 }

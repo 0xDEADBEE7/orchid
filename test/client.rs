@@ -214,3 +214,20 @@ fn codex_sse_maps_extracted_json_payload() {
         ]
     );
 }
+
+#[test]
+fn transient_statuses_and_stream_errors_are_retryable() {
+    use orchid::client::base::{status_kind, ClientErrorKind::*};
+    for status in [408, 429, 500, 502, 503, 504, 529] {
+        assert_eq!(status_kind(status, ""), Unavailable, "{status}");
+    }
+    for status in [400, 404, 501, 505] {
+        assert_eq!(status_kind(status, ""), Http, "{status}");
+    }
+    assert_eq!(status_kind(401, ""), Authentication);
+    assert_eq!(status_kind(429, r#"{"type":"usage_limit_reached"}"#), Http);
+    let in_band = "data: {\"error\":{\"code\":502,\"message\":\"upstream down\"}}\n";
+    assert!(orchid::client::openai_chat::parse_sse(in_band)
+        .unwrap_err()
+        .retryable());
+}

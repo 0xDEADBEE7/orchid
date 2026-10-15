@@ -1,8 +1,10 @@
 //! Provides the lifecycle functionality.
 use super::{dispatch, Provider, StreamEvent};
 use crate::{
+    client::ClientError,
     config::Settings,
-    model::{Session, Usage},
+    model::{LogRecord, Session, Usage},
+    store::Store,
 };
 use serde_json::Value;
 use std::io;
@@ -26,7 +28,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     loop {
         enforce_token_limit(session, settings.policy.max_tokens())?;
         progress(session);
-        let (answer, usage, calls) = collect(provider.stream(session)?);
+        let (answer, usage, calls) = collect(stream_with_retries(provider, settings, session)?);
         let input = match usage.as_ref() {
             Some(tokens) => tokens.input,
             None => estimate_request_tokens(session, &settings.prompt()?),
@@ -50,6 +52,40 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         }
         dispatch::execute(settings, session, calls, &mut progress)?;
     }
+}
+
+/// Requests a reply, retrying transient client failures (network errors,
+/// overload, 5xx) after 2, 4 and 8 seconds. Nothing is persisted until a reply
+/// is complete, so a retry repeats no side effects.
+fn stream_with_retries(
+    provider: &dyn Provider,
+    settings: &Settings,
+    session: &Session,
+) -> io::Result<Vec<StreamEvent>> {
+    let mut delay = 2;
+    loop {
+        match provider.stream(session) {
+            Err(error) if delay <= 8 && retryable(&error) => {
+                let fields =
+                    serde_json::json!({"error": error.to_string(), "retry_in_seconds": delay});
+                let record = LogRecord::new("warning", "transient provider error", fields);
+                let _ = Store::new(&settings.root).and_then(|store| {
+                    store.log_both(&session.metadata.id, &record, &settings.log_level)
+                });
+                std::thread::sleep(std::time::Duration::from_secs(delay));
+                delay *= 2;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Whether an error came from a client failure that may succeed on retry.
+fn retryable(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<ClientError>())
+        .is_some_and(ClientError::retryable)
 }
 
 /// Estimates input tokens as a quarter of the bytes of the system prompt and the

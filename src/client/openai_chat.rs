@@ -41,18 +41,8 @@ impl Client for OpenAiChatClient {
                 format!("OpenAI request failed: {error}"),
             )
         })?;
-        let status = response.status();
-        if !status.is_success() {
-            let kind = if status.as_u16() == 401 || status.as_u16() == 403 {
-                ClientErrorKind::Authentication
-            } else {
-                ClientErrorKind::Http
-            };
-            let detail = response.text().unwrap_or_default();
-            return Err(ClientError::new(
-                kind,
-                format!("OpenAI HTTP status {status}: {detail}"),
-            ));
+        if !response.status().is_success() {
+            return Err(super::base::http_error("OpenAI", response));
         }
         let text = response
             .text()
@@ -137,6 +127,15 @@ pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
                 format!("invalid OpenAI stream event: {error}"),
             )
         })?;
+        // Some gateways report failures inside a 200 stream.
+        if let Some(error) = value.get("error").filter(|error| error.is_object()) {
+            let message = error["message"].as_str().unwrap_or("no message");
+            let kind = super::base::error_kind(error);
+            return Err(ClientError::new(
+                kind,
+                format!("OpenAI stream error: {message}"),
+            ));
+        }
         if let Some(usage) = value.get("usage").filter(|usage| !usage.is_null()) {
             events.push(ClientEvent::Usage(Usage {
                 input: u32_value(usage.get("prompt_tokens")),

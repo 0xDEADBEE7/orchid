@@ -19,7 +19,7 @@ pub fn run_command(
 
 /// Performs the load session operation.
 fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> io::Result<Session> {
-    let record = worker_record(
+    let record = crate::model::LogRecord::new(
         "info",
         "worker started",
         serde_json::json!({"pid":std::process::id(),"session_id":id}),
@@ -27,24 +27,13 @@ fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> i
     let _ = store.log_both(id, &record, &settings.log_level);
     log(store, settings, id, "debug", "worker loading session");
     store.load(id).inspect_err(|error| {
-        let record = worker_record(
+        let record = crate::model::LogRecord::new(
             "error",
             "worker failed to load session",
             serde_json::json!({"error":error.to_string()}),
         );
         let _ = store.log_both(id, &record, &settings.log_level);
     })
-}
-
-/// Performs the worker record operation.
-fn worker_record(level: &str, message: &str, fields: serde_json::Value) -> crate::model::LogRecord {
-    crate::model::LogRecord {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        level: level.into(),
-        message: message.into(),
-        fields,
-    }
 }
 
 /// Performs the run session operation.
@@ -141,13 +130,11 @@ fn finish_success(
     }
     let _ = store.log_both(
         id,
-        &crate::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: "info".into(),
-            message: "worker finished successfully".into(),
-            fields: serde_json::json!({}),
-        },
+        &crate::model::LogRecord::new(
+            "info",
+            "worker finished successfully",
+            serde_json::json!({}),
+        ),
         &settings.log_level,
     );
     log(store, settings, id, "info", "run completed");
@@ -194,13 +181,11 @@ fn finish_failure(
         crate::hooks::dispatch_events(settings, &session, session.events.len().saturating_sub(1));
     let _ = store.log_both(
         id,
-        &crate::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: "error".into(),
-            message: "worker failed".into(),
-            fields: serde_json::json!({"error":message}),
-        },
+        &crate::model::LogRecord::new(
+            "error",
+            "worker failed",
+            serde_json::json!({"error":message}),
+        ),
         &settings.log_level,
     );
     log(store, settings, id, "error", &message);
@@ -211,13 +196,7 @@ fn finish_failure(
 fn log(store: &crate::store::Store, settings: &Settings, id: &str, level: &str, message: &str) {
     let _ = store.log_both(
         id,
-        &crate::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: level.into(),
-            message: message.into(),
-            fields: serde_json::json!({}),
-        },
+        &crate::model::LogRecord::new(level, message, serde_json::json!({})),
         &settings.log_level,
     );
 }

@@ -104,13 +104,7 @@ fn request(args: &[String]) -> io::Result<(String, String)> {
 fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str) {
     let _ = store.log_both(
         id,
-        &orchid::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: level.into(),
-            message: message.into(),
-            fields: serde_json::json!({}),
-        },
+        &orchid::model::LogRecord::new(level, message, serde_json::json!({})),
         &settings.log_level,
     );
 }

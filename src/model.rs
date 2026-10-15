@@ -143,6 +143,19 @@ pub struct LogRecord {
     pub fields: Value,
 }
 
+impl LogRecord {
+    /// Creates a record stamped now.
+    pub fn new(level: &str, message: &str, fields: Value) -> Self {
+        Self {
+            event_id: Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            level: level.into(),
+            message: message.into(),
+            fields,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Usage {
     pub input: u32,
