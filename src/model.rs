@@ -59,75 +59,42 @@ pub struct TokenUsage {
     pub method: String,
 }
 
+/// A transcript event: the kind-specific fields plus common ones.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Event {
+    #[serde(flatten)]
+    pub kind: EventKind,
+    pub event_id: String,
+    pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub connection: Option<String>,
+    #[serde(default)]
+    pub token_usage: TokenUsage,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum Event {
+pub enum EventKind {
     Message {
-        event_id: String,
-        timestamp: DateTime<Utc>,
         role: String,
         content: String,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
     },
     ToolCall {
-        event_id: String,
-        timestamp: DateTime<Utc>,
         calls: Vec<ToolCall>,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
     },
     ToolResult {
-        event_id: String,
-        timestamp: DateTime<Utc>,
         call_id: String,
         content: Value,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
-    },
-    Reasoning {
-        event_id: String,
-        timestamp: DateTime<Utc>,
-        content: String,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
-    },
-    Usage {
-        event_id: String,
-        timestamp: DateTime<Utc>,
-        input: u32,
-        output: u32,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
     },
     Termination {
-        event_id: String,
-        timestamp: DateTime<Utc>,
         reason: String,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
     },
     Failure {
-        event_id: String,
-        timestamp: DateTime<Utc>,
         message: String,
-        #[serde(default)]
-        connection: Option<String>,
-        #[serde(default)]
-        token_usage: TokenUsage,
     },
+    /// Event types from earlier versions (e.g. `usage`): kept on disk, ignored.
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -175,57 +142,14 @@ pub struct Session {
 }
 
 impl Event {
-    /// Performs the set connection operation.
-    fn set_connection(&mut self, connection: Option<String>) {
-        match self {
-            Self::Message {
-                connection: active, ..
-            }
-            | Self::ToolCall {
-                connection: active, ..
-            }
-            | Self::ToolResult {
-                connection: active, ..
-            }
-            | Self::Reasoning {
-                connection: active, ..
-            }
-            | Self::Usage {
-                connection: active, ..
-            }
-            | Self::Termination {
-                connection: active, ..
-            }
-            | Self::Failure {
-                connection: active, ..
-            } => *active = connection,
-        }
-    }
-
-    /// Performs the set token usage operation.
-    fn set_token_usage(&mut self, token_usage: TokenUsage) {
-        match self {
-            Self::Message {
-                token_usage: usage, ..
-            }
-            | Self::ToolCall {
-                token_usage: usage, ..
-            }
-            | Self::ToolResult {
-                token_usage: usage, ..
-            }
-            | Self::Reasoning {
-                token_usage: usage, ..
-            }
-            | Self::Usage {
-                token_usage: usage, ..
-            }
-            | Self::Termination {
-                token_usage: usage, ..
-            }
-            | Self::Failure {
-                token_usage: usage, ..
-            } => *usage = token_usage,
+    /// Creates an event stamped now.
+    pub fn new(kind: EventKind) -> Self {
+        Self {
+            kind,
+            event_id: Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            connection: None,
+            token_usage: TokenUsage::default(),
         }
     }
 }
@@ -236,15 +160,15 @@ impl Session {
         let completed = self
             .events
             .iter()
-            .filter_map(|event| match event {
-                Event::ToolResult { call_id, .. } => Some(call_id.as_str()),
+            .filter_map(|event| match &event.kind {
+                EventKind::ToolResult { call_id, .. } => Some(call_id.as_str()),
                 _ => None,
             })
             .collect::<HashSet<_>>();
         self.events
             .iter()
-            .flat_map(|event| match event {
-                Event::ToolCall { calls, .. } => calls
+            .flat_map(|event| match &event.kind {
+                EventKind::ToolCall { calls } => calls
                     .iter()
                     .filter(|call| !completed.contains(call.call_id.as_str()))
                     .map(|call| call.call_id.clone())
@@ -256,24 +180,23 @@ impl Session {
 
     /// Returns the latest assistant message.
     pub fn last_message(&self) -> Option<&str> {
-        self.events.iter().rev().find_map(|event| match event {
-            Event::Message { role, content, .. } if role == "assistant" => Some(content.as_str()),
-            _ => None,
-        })
+        self.events
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                EventKind::Message { role, content } if role == "assistant" => {
+                    Some(content.as_str())
+                }
+                _ => None,
+            })
     }
 
     /// Answers every unanswered tool call with a terminated result, so the
     /// transcript stays valid for the next request.
     pub fn close_pending(&mut self, error: &str) {
         for call_id in self.pending_tool_call_ids() {
-            self.append(Event::ToolResult {
-                event_id: Uuid::new_v4().to_string(),
-                timestamp: Utc::now(),
-                call_id,
-                content: serde_json::json!({"status": "terminated", "error": error}),
-                connection: None,
-                token_usage: TokenUsage::default(),
-            });
+            let content = serde_json::json!({"status": "terminated", "error": error});
+            self.append(Event::new(EventKind::ToolResult { call_id, content }));
         }
     }
 
@@ -307,8 +230,8 @@ impl Session {
 
     pub fn append(&mut self, mut event: Event) {
         let connection = &self.metadata.agent.connection;
-        event.set_connection((!connection.is_empty()).then(|| connection.clone()));
-        event.set_token_usage(self.metadata.token_usage.clone());
+        event.connection = (!connection.is_empty()).then(|| connection.clone());
+        event.token_usage = self.metadata.token_usage.clone();
         self.events.push(event);
         let now = Utc::now();
         self.metadata.updated_at = now;
@@ -316,13 +239,7 @@ impl Session {
 
     /// Performs the message operation.
     pub fn message(role: &str, content: String) -> Event {
-        Event::Message {
-            event_id: Uuid::new_v4().to_string(),
-            timestamp: Utc::now(),
-            role: role.into(),
-            content,
-            connection: None,
-            token_usage: TokenUsage::default(),
-        }
+        let role = role.into();
+        Event::new(EventKind::Message { role, content })
     }
 }

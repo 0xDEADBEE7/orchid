@@ -1,6 +1,6 @@
 use orchid::{
     config::Settings,
-    model::{Event, Session},
+    model::{Event, EventKind, Session},
     provider::{run, Provider, StreamEvent},
 };
 use std::cell::Cell;
@@ -26,7 +26,7 @@ fn run_records_reassembled_stream() {
     let mut session = Session::new(None, None, None);
     assert_eq!(run(&Chunks, &settings, &mut session).unwrap(), "ab");
     assert!(
-        matches!(session.events.last(), Some(Event::Message { content, .. }) if content == "ab")
+        matches!(session.events.last(), Some(Event { kind: EventKind::Message { content, .. }, .. }) if content == "ab")
     );
 }
 
@@ -60,7 +60,7 @@ fn tool_results_are_fed_back_until_text_arrives() {
     assert!(session
         .events
         .iter()
-        .any(|e| matches!(e, Event::ToolResult { .. })));
+        .any(|e| matches!(e.kind, EventKind::ToolResult { .. })));
     assert_eq!(session.metadata.token_usage.requests, 2);
     assert!(
         session.metadata.token_usage.cumulative_input
@@ -205,10 +205,7 @@ fn provider_reported_usage_beats_local_estimate_and_tracks_cached_input() {
     assert_eq!(session.metadata.token_usage.cumulative_output, 30);
     assert_eq!(session.metadata.token_usage.cumulative_cached_input, 80);
     assert_eq!(session.metadata.token_usage.method, "provider_reported");
-    assert!(!session
-        .events
-        .iter()
-        .any(|event| matches!(event, Event::Usage { .. })));
+    assert_eq!(session.events.len(), 1);
 }
 
 #[test]
@@ -236,12 +233,12 @@ fn tool_failure_persists_correlated_error_result() {
     let call_id = session
         .events
         .iter()
-        .find_map(|event| match event {
-            Event::ToolCall { calls, .. } => calls.first().map(|call| call.call_id.clone()),
+        .find_map(|event| match &event.kind {
+            EventKind::ToolCall { calls } => calls.first().map(|call| call.call_id.clone()),
             _ => None,
         })
         .unwrap();
-    assert!(session.events.iter().any(|event| matches!(event, Event::ToolResult { call_id: id, content, .. } if id == &call_id && content.get("error").is_some())));
+    assert!(session.events.iter().any(|event| matches!(&event.kind, EventKind::ToolResult { call_id: id, content } if id == &call_id && content.get("error").is_some())));
 }
 
 #[test]
@@ -272,14 +269,13 @@ fn text_with_tool_calls_runs_the_calls_and_bad_arguments_become_tool_errors() {
     let mut session = Session::new(None, None, None);
     let answer = run(&Preamble(Cell::new(false)), &settings, &mut session).unwrap();
     assert_eq!(answer, "done");
+    assert!(session.events.iter().any(
+        |e| matches!(&e.kind, EventKind::Message { content, .. } if content == "Let me check.")
+    ));
     assert!(session
         .events
         .iter()
-        .any(|e| matches!(e, Event::Message { content, .. } if content == "Let me check.")));
-    assert!(session
-        .events
-        .iter()
-        .any(|e| matches!(e, Event::ToolResult { content, .. }
+        .any(|e| matches!(&e.kind, EventKind::ToolResult { content, .. }
         if content["error"].as_str().unwrap().contains("JSON object"))));
 }
 
@@ -355,7 +351,7 @@ fn on_tool_call_hook_exiting_2_blocks_the_tool_and_other_failures_do_not() {
         run(&TouchThenDone(Cell::new(false)), &settings, &mut session).unwrap();
         assert_eq!(!dir.path().join("ran").exists(), blocked, "exit {code}");
         let reported = session.events.iter().any(|e| {
-            matches!(e, Event::ToolResult { content, .. }
+            matches!(&e.kind, EventKind::ToolResult { content, .. }
             if content["error"] == "blocked by hook: nope")
         });
         assert_eq!(reported, blocked, "exit {code}");

@@ -1,6 +1,6 @@
 //! Provides the dispatch functionality.
 use crate::config::Settings;
-use crate::model::{Event, Session};
+use crate::model::{Event, EventKind, Session, ToolCall};
 use serde_json::Value;
 use std::io;
 
@@ -34,29 +34,18 @@ pub fn execute<F: FnMut(&Session) -> Option<String>>(
 
 /// Performs the append call operation.
 fn append_call(session: &mut Session, call_id: &str, name: &str, input: &Value) {
-    session.append(Event::ToolCall {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        calls: vec![crate::model::ToolCall {
-            call_id: call_id.into(),
-            name: name.into(),
-            input: input.clone(),
-        }],
-        connection: None,
-        token_usage: crate::model::TokenUsage::default(),
-    });
+    let call = ToolCall {
+        call_id: call_id.into(),
+        name: name.into(),
+        input: input.clone(),
+    };
+    session.append(Event::new(EventKind::ToolCall { calls: vec![call] }));
 }
 
 /// Performs the append result operation.
 fn append_result(session: &mut Session, call_id: String, content: Value) {
-    session.append(Event::ToolResult {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        call_id,
-        content: crate::tools::clip(content),
-        connection: None,
-        token_usage: crate::model::TokenUsage::default(),
-    });
+    let content = crate::tools::clip(content);
+    session.append(Event::new(EventKind::ToolResult { call_id, content }));
 }
 
 /// Invokes a named tool.

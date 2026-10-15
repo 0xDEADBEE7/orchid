@@ -2,7 +2,7 @@
 use crate::cli_args::{invalid, positional, value};
 use orchid::{
     config::Settings,
-    model::{Event, Session, Status},
+    model::{Session, Status},
     store::Store,
 };
 use std::{
@@ -48,10 +48,7 @@ fn run_send(
         let reason = format!("blocked by hook: {reason}");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
     }
-    let event_id = match &event {
-        Event::Message { event_id, .. } => event_id.clone(),
-        _ => String::new(),
-    };
+    let event_id = event.event_id.clone();
     // While a worker runs, the message is queued and delivered before its next request.
     let Some(session) = store.deliver(id, event, !no_run)? else {
         return Ok(serde_json::json!({"id":id,"status":"queued","event_id":event_id}).to_string());

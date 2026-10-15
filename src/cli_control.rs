@@ -2,7 +2,7 @@
 use crate::cli_args::{invalid, positional, value};
 use orchid::{
     config::Settings,
-    model::Status,
+    model::{Event, EventKind, Status},
     store::{process_alive, Store},
 };
 use std::{
@@ -80,13 +80,8 @@ pub fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<S
     let mut session = store.load(id)?;
     let before = session.events.len();
     session.close_pending("tool call terminated because the session was cancelled");
-    session.append(orchid::model::Event::Termination {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        reason: "cancelled by user".into(),
-        connection: None,
-        token_usage: orchid::model::TokenUsage::default(),
-    });
+    let reason = "cancelled by user".into();
+    session.append(Event::new(EventKind::Termination { reason }));
     session.metadata.status = Status::Cancelled;
     session.metadata.pid = None;
     session.metadata.termination_reason = Some("cancelled by user".into());

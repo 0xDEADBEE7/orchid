@@ -1,5 +1,5 @@
 //! Provides the store functionality.
-use crate::model::{LogRecord, Session, Status};
+use crate::model::{Event, EventKind, LogRecord, Session, Status};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -59,13 +59,8 @@ impl Store {
             session.metadata.pid = None;
             session.metadata.termination_reason = Some("worker process disappeared".into());
             session.close_pending("worker process disappeared");
-            session.append(crate::model::Event::Failure {
-                event_id: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                message: "worker process disappeared".into(),
-                connection: None,
-                token_usage: crate::model::TokenUsage::default(),
-            });
+            let message = "worker process disappeared".into();
+            session.append(Event::new(EventKind::Failure { message }));
             self.save_unlocked(&session)?;
             return Ok((session, Some(before)));
         }

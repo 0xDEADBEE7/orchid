@@ -1,7 +1,7 @@
 //! Provides the command functionality.
 use super::{run_with_progress, Provider};
 use crate::config::Settings;
-use crate::model::Session;
+use crate::model::{Event, EventKind, Session};
 use std::io;
 
 /// Performs the run command operation.
@@ -157,23 +157,16 @@ fn finish_failure(
     };
     session.metadata.pid = None;
     session.metadata.termination_reason = Some(message.clone());
-    if terminated {
-        session.append(crate::model::Event::Termination {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
+    let kind = if terminated {
+        EventKind::Termination {
             reason: message.clone(),
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        });
+        }
     } else {
-        session.append(crate::model::Event::Failure {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
+        EventKind::Failure {
             message: message.clone(),
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        });
-    }
+        }
+    };
+    session.append(Event::new(kind));
     store.save(&session)?;
     let _ = crate::hooks::fire_events(settings, &session, session.events.len() - 1);
     turn_end(settings, &session);

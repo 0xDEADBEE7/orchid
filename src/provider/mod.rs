@@ -1,5 +1,5 @@
 //! Provides the mod functionality.
-use crate::model::{Session, Usage};
+use crate::model::{EventKind, Session, Usage};
 use serde_json::Value;
 use std::io;
 
@@ -48,22 +48,20 @@ pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
     session
         .events
         .iter()
-        .filter_map(|event| match event {
-            crate::model::Event::Message { role, content, .. } => Some(crate::client::Message {
+        .filter_map(|event| match &event.kind {
+            EventKind::Message { role, content } => Some(crate::client::Message {
                 role: role.clone(),
                 content: content.clone(),
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             }),
-            crate::model::Event::ToolCall { calls, .. } => Some(crate::client::Message {
+            EventKind::ToolCall { calls } => Some(crate::client::Message {
                 role: "assistant".into(),
                 content: String::new(),
                 tool_calls: calls.clone(),
                 tool_call_id: None,
             }),
-            crate::model::Event::ToolResult {
-                call_id, content, ..
-            } => Some(crate::client::Message {
+            EventKind::ToolResult { call_id, content } => Some(crate::client::Message {
                 role: "tool".into(),
                 content: crate::tools::text(&crate::tools::clip(content.clone())),
                 tool_calls: Vec::new(),

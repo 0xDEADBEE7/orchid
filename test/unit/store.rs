@@ -112,13 +112,8 @@ fn legacy_events_without_a_connection_still_deserialize() {
         }
     }))
     .unwrap();
-    assert!(matches!(
-        event,
-        orchid::model::Event::Message {
-            connection: None,
-            ..
-        }
-    ));
+    assert!(event.connection.is_none());
+    assert!(matches!(event.kind, orchid::EventKind::Message { .. }));
 }
 
 #[test]
@@ -192,8 +187,8 @@ fn messages_queue_while_a_worker_owns_the_session_and_drain_in_order() {
     let texts: Vec<_> = owned
         .events
         .iter()
-        .filter_map(|e| match e {
-            orchid::model::Event::Message { content, .. } => Some(content.as_str()),
+        .filter_map(|e| match &e.kind {
+            orchid::EventKind::Message { content, .. } => Some(content.as_str()),
             _ => None,
         })
         .collect();
@@ -233,17 +228,12 @@ fn reconcile_answers_open_tool_calls_of_a_dead_worker() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
-    session.append(orchid::model::Event::ToolCall {
-        event_id: "e".into(),
-        timestamp: chrono::Utc::now(),
-        calls: vec![orchid::model::ToolCall {
-            call_id: "c1".into(),
-            name: "bash".into(),
-            input: serde_json::json!({}),
-        }],
-        connection: None,
-        token_usage: Default::default(),
-    });
+    let calls = vec![orchid::model::ToolCall {
+        call_id: "c1".into(),
+        name: "bash".into(),
+        input: serde_json::json!({}),
+    }];
+    session.append(orchid::Event::new(orchid::EventKind::ToolCall { calls }));
     session.metadata.status = orchid::Status::Running;
     session.metadata.pid = Some(u32::MAX - 1);
     let id = session.metadata.id.clone();
@@ -252,4 +242,43 @@ fn reconcile_answers_open_tool_calls_of_a_dead_worker() {
     assert_eq!(added, Some(1));
     assert_eq!(reconciled.metadata.status, orchid::Status::Failed);
     assert!(reconciled.pending_tool_call_ids().is_empty());
+}
+
+#[test]
+fn stored_event_lines_round_trip_including_retired_types() {
+    // One real line of each type (content redacted), as written by earlier versions.
+    let usage = r#"{"marginal_input":927,"cumulative_input":927,"cumulative_output":47,"cumulative_cached_input":0,"requests":1,"method":"provider_reported"}"#;
+    let lines = [
+        format!(
+            r#"{{"type":"message","event_id":"a","timestamp":"2026-08-09T06:15:51.590698Z","role":"user","content":"x","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"tool_call","event_id":"b","timestamp":"2026-08-09T06:15:54.922837Z","calls":[{{"call_id":"c","name":"bash","input":{{"cmd":"x"}}}}],"token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"tool_result","event_id":"d","timestamp":"2026-08-09T06:15:54.928810Z","call_id":"c","content":"x","connection":"codex","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"failure","event_id":"e","timestamp":"2026-07-29T08:12:34.672475Z","message":"x","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"termination","event_id":"f","timestamp":"2026-08-09T08:35:20.680714Z","reason":"x","token_usage":{usage}}}"#
+        ),
+    ];
+    for line in &lines {
+        let original: serde_json::Value = serde_json::from_str(line).unwrap();
+        let event: orchid::Event = serde_json::from_str(line).unwrap();
+        let mut expected = original.clone();
+        expected
+            .as_object_mut()
+            .unwrap()
+            .entry("connection")
+            .or_insert(serde_json::Value::Null);
+        assert_eq!(serde_json::to_value(&event).unwrap(), expected, "{line}");
+    }
+    let retired = format!(
+        r#"{{"type":"usage","event_id":"g","timestamp":"2026-08-05T18:06:13.945391Z","input":927,"output":47,"token_usage":{usage}}}"#
+    );
+    let event: orchid::Event = serde_json::from_str(&retired).unwrap();
+    assert_eq!(event.kind, orchid::EventKind::Other);
 }
