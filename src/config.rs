@@ -9,6 +9,8 @@ use std::{
 };
 
 mod auth_command;
+mod prompt;
+mod setup;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credential {
