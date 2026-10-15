@@ -183,7 +183,7 @@ fn messages_queue_while_a_worker_owns_the_session_and_drain_in_order() {
             .is_none());
     }
     assert_eq!(store.load(&id).unwrap().events.len(), 1);
-    assert!(store.drain(&mut owned).unwrap());
+    store.drain(&mut owned).unwrap();
     let texts: Vec<_> = owned
         .events
         .iter()
@@ -193,7 +193,8 @@ fn messages_queue_while_a_worker_owns_the_session_and_drain_in_order() {
         })
         .collect();
     assert_eq!(texts, ["one", "two", "three"]);
-    assert!(!store.finish(&mut owned).unwrap());
+    // Messages queued with --no-run never start another turn by themselves.
+    assert!(!store.finish(&mut owned, orchid::Status::Idle).unwrap());
     let done = store.load(&id).unwrap();
     assert_eq!(
         (done.metadata.status, done.metadata.pid, done.events.len()),
@@ -281,4 +282,29 @@ fn stored_event_lines_round_trip_including_retired_types() {
     );
     let event: orchid::Event = serde_json::from_str(&retired).unwrap();
     assert_eq!(event.kind, orchid::EventKind::Other);
+}
+
+#[test]
+fn a_queued_run_request_continues_a_turn_but_never_a_failed_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let message = |text: &str| Session::message("user", text.into());
+    let mut owned = store.deliver(&id, message("one"), true).unwrap().unwrap();
+    store.deliver(&id, message("two"), true).unwrap();
+    assert!(store.finish(&mut owned, orchid::Status::Idle).unwrap());
+    assert_eq!(
+        store.load(&id).unwrap().metadata.status,
+        orchid::Status::Running
+    );
+    // A failed turn keeps queued messages in the transcript and releases the session.
+    store.deliver(&id, message("three"), true).unwrap();
+    assert!(!store.finish(&mut owned, orchid::Status::Failed).unwrap());
+    let done = store.load(&id).unwrap();
+    assert_eq!(
+        (done.metadata.status, done.metadata.pid, done.events.len()),
+        (orchid::Status::Failed, None, 3)
+    );
 }

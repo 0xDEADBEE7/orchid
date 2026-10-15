@@ -46,6 +46,11 @@ fn list(settings: &Settings) -> io::Result<String> {
 /// or, on a terminal, prompts; makes it the default agent's connection if that
 /// has none; then tests it.
 fn add(settings: &Settings, name: &str, args: &[String]) -> io::Result<String> {
+    if name == "echo" {
+        return Err(invalid(
+            "\"echo\" is the built-in test connection; choose another name",
+        ));
+    }
     let path = settings
         .root
         .join("connections")
@@ -73,6 +78,13 @@ fn add(settings: &Settings, name: &str, args: &[String]) -> io::Result<String> {
         .filter_map(|pair| pair[1].split_once('='))
         .map(|(key, value)| (key.to_owned(), value.into()))
         .collect();
+    let variable = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    if !key_env.chars().all(variable) || key_env.starts_with(|c: char| c.is_ascii_digit()) {
+        // Never echo the value: it may be a pasted key.
+        return Err(invalid(
+            "--key-env takes the name of an environment variable, not the key",
+        ));
+    }
     let mut connection = json!({"interface": "openai", "base_url": base_url, "model": model});
     if !key_env.is_empty() {
         connection["api_key"] = format!("env.{key_env}").into();

@@ -1,7 +1,7 @@
 //! Provides the command functionality.
 use super::{run_with_progress, Provider};
 use crate::config::Settings;
-use crate::model::{Event, EventKind, Session};
+use crate::model::{Event, EventKind, Session, Status};
 use serde_json::json;
 use std::io;
 
@@ -84,8 +84,9 @@ fn run_provider(
                 return finish_failure(store, settings, id, session, error);
             }
         };
-        if !store.finish(&mut session)? {
-            return finish_success(settings, id, session, reply);
+        let last = session.events.len() - 1;
+        if !store.finish(&mut session, Status::Idle)? {
+            return finish_success(settings, id, session, reply, last);
         }
         fired.set(session.events.len());
     }
@@ -126,9 +127,10 @@ fn finish_success(
     id: &str,
     session: Session,
     reply: String,
+    last: usize,
 ) -> io::Result<String> {
     settings.log(id, "info", "worker finished successfully", json!({}));
-    turn_end(settings, &session);
+    turn_end(settings, &session, last);
     Ok(serde_json::json!({"id":id,"status":"idle","message":reply}).to_string())
 }
 
@@ -142,33 +144,27 @@ fn finish_failure(
 ) -> io::Result<String> {
     let message = error.to_string();
     let terminated = message.contains("token threshold") || message.starts_with("blocked by hook");
-    session.metadata.status = if terminated {
-        crate::model::Status::Terminated
-    } else {
-        crate::model::Status::Failed
-    };
-    session.metadata.pid = None;
     session.metadata.termination_reason = Some(message.clone());
-    let kind = if terminated {
-        EventKind::Termination {
-            reason: message.clone(),
-        }
+    let (kind, status) = if terminated {
+        let reason = message.clone();
+        (EventKind::Termination { reason }, Status::Terminated)
     } else {
-        EventKind::Failure {
-            message: message.clone(),
-        }
+        let message = message.clone();
+        (EventKind::Failure { message }, Status::Failed)
     };
     session.append(Event::new(kind));
-    store.save(&session)?;
-    let _ = crate::hooks::fire_events(settings, &session, session.events.len() - 1);
-    turn_end(settings, &session);
+    let failure = session.events.len() - 1;
+    // Messages queued during the failed turn are kept in the transcript (their
+    // hooks already ran in `send`); the session is released in the same step.
+    store.finish(&mut session, status)?;
+    let _ = crate::hooks::fire(settings, "on-event", &session.events[failure], &session);
+    turn_end(settings, &session, failure);
     settings.log(id, "error", "worker failed", json!({"error": message}));
     Err(error)
 }
 
-/// Fires on-turn-end with the turn's last event, after success or failure.
-fn turn_end(settings: &Settings, session: &Session) {
-    if let Some(last) = session.events.last() {
-        let _ = crate::hooks::fire(settings, "on-turn-end", last, session);
-    }
+/// Fires on-turn-end with the event that ended the turn (the reply or the
+/// failure), after success or failure.
+fn turn_end(settings: &Settings, session: &Session, index: usize) {
+    let _ = crate::hooks::fire(settings, "on-turn-end", &session.events[index], session);
 }

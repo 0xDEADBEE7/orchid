@@ -33,6 +33,8 @@ fn main() -> ExitCode {
 /// Runs the requested operation.
 fn run(args: Vec<String>) -> io::Result<String> {
     let (root, args) = root_arg(args);
+    // Absolute, so hooks and tools (which run elsewhere) reach the same store.
+    let root = std::path::absolute(root)?;
     if args.len() == 1 && matches!(args[0].as_str(), "--version" | "-V") {
         return Ok(format!(
             "orchid {} (codex compatibility {})",

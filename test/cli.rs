@@ -65,7 +65,7 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     assert_eq!(loaded["metadata"]["agent"]["max_tokens"], 120000);
     assert_eq!(loaded["metadata"]["agent"]["tools"][0], "bash");
     assert_eq!(loaded["metadata"]["agent_name"], "default");
-    fs::write(root.join("prompts/default.txt"), "A changed source prompt.").unwrap();
+    fs::write(root.join("prompts/default.md"), "A changed source prompt.").unwrap();
     assert_eq!(
         fs::read_to_string(root.join("sessions").join(id).join("prompt.md")).unwrap(),
         "You are a helpful assistant."

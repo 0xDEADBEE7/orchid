@@ -58,7 +58,9 @@ Hooks run synchronously. For background work, detach it:
 `long-task >/dev/null 2>&1 &`.
 
 A hook may call the CLI, e.g. `orchid send --no-run --id "$ORCHID_SESSION_ID" "context"`.
-While a turn is running, sends are refused. Nested hooks stop at depth 8.
+While a turn is running, sends are queued and delivered before the next model
+request; a `--no-run` message is delivered as context and never starts another
+turn by itself. Nested hooks stop at depth 8.
 
 ## Policy examples
 

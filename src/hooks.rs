@@ -9,7 +9,6 @@ use serde_json::json;
 use std::{
     env, fs,
     io::{self, Read},
-    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
     sync::mpsc,
@@ -106,7 +105,6 @@ fn run(
         .stdin(stdin?)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .process_group(0)
         .spawn()?;
     let stderr = child.stderr.take();
     let (sender, receiver) = mpsc::channel();
@@ -128,8 +126,7 @@ fn run(
             return Ok((status, stderr));
         }
         if Instant::now() >= deadline {
-            let group = format!("-{}", child.id());
-            let _ = Command::new("kill").args(["-KILL", &group]).status();
+            let _ = child.kill();
             let _ = child.wait();
             return Err(io::Error::new(io::ErrorKind::TimedOut, "hook timed out"));
         }

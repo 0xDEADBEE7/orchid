@@ -314,10 +314,12 @@ pub fn init(root: &Path) -> io::Result<()> {
         br#"{"log_level":"debug"}
 "#,
     )?;
-    write_default(
-        &root.join("prompts/default.txt"),
-        b"You are a helpful assistant.",
-    )?;
+    if !root.join("prompts/default.txt").exists() {
+        write_default(
+            &root.join("prompts/default.md"),
+            b"You are a helpful assistant.",
+        )?;
+    }
     write_default(
         &root.join("agents/default.json"),
         br#"{"prompt":"default","max_tokens":120000}

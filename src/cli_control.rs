@@ -74,20 +74,28 @@ pub fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<S
     if session.metadata.status != Status::Running && session.metadata.pid.is_none() {
         return Ok(serde_json::json!({"id":id,"status":session.metadata.status}).to_string());
     }
-    if let Some(pid) = session.metadata.pid {
+    let killed = session.metadata.pid;
+    if let Some(pid) = killed {
         terminate_worker(pid);
     }
-    let mut session = store.load(id)?;
-    let before = session.events.len();
-    session.close_pending("tool call terminated because the session was cancelled");
-    let reason = "cancelled by user".into();
-    session.append(Event::new(EventKind::Termination { reason }));
-    session.metadata.status = Status::Cancelled;
-    session.metadata.pid = None;
-    session.metadata.termination_reason = Some("cancelled by user".into());
-    store.save(&session)?;
-    let _ = orchid::hooks::fire_events(&settings.for_session(&session), &session, before);
-    Ok(serde_json::json!({"id":id,"status":"cancelled"}).to_string())
+    // One locked update, skipped if a new worker claimed the session meanwhile.
+    let mut before = None;
+    let session = store.update(id, |session| {
+        if session.metadata.pid != killed && session.metadata.pid.is_some_and(process_alive) {
+            return;
+        }
+        before = Some(session.events.len());
+        session.close_pending("tool call terminated because the session was cancelled");
+        let reason = "cancelled by user".into();
+        session.append(Event::new(EventKind::Termination { reason }));
+        session.metadata.status = Status::Cancelled;
+        session.metadata.pid = None;
+        session.metadata.termination_reason = Some("cancelled by user".into());
+    })?;
+    if let Some(from) = before {
+        let _ = orchid::hooks::fire_events(&settings.for_session(&session), &session, from);
+    }
+    Ok(serde_json::json!({"id":id,"status":session.metadata.status}).to_string())
 }
 
 /// Signals a worker's process group (its tool commands included) and the
