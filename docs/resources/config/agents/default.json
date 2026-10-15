@@ -1,4 +1,6 @@
 {
-  "policy": "default",
-  "prompt": "default"
+  "prompt": "default",
+  "connection": "codex",
+  "tools": ["bash", "fs_read", "fs_edit"],
+  "max_tokens": 120000
 }

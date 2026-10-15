@@ -13,7 +13,7 @@ pub fn run_command(
     let id = command_id(args)?;
     let mut session = load_session(store, settings, &id)?;
     session.metadata.pid = Some(std::process::id());
-    let settings = settings.settings_for_session(&id, &session.metadata.policy);
+    let settings = settings.for_session(&session);
     run_session(store, &settings, &id, session)
 }
 
@@ -96,11 +96,11 @@ fn command_id(args: &[String]) -> io::Result<String> {
 
 /// Performs the configured provider operation.
 fn configured_provider(settings: &Settings) -> io::Result<super::ClientProvider> {
-    let name = settings.active_connection()?.ok_or_else(|| {
-        io::Error::other(
-            "no connection configured: add connections/<name>.json and list it in the policy",
-        )
-    })?;
+    let name = settings.agent.connection.as_str();
+    if name.is_empty() {
+        let hint = "no connection configured: set the agent's \"connection\"";
+        return Err(io::Error::other(hint));
+    }
     let resolved = settings
         .resolve_connection(name)
         .map_err(|error| io::Error::new(error.kind(), format!("connection {name}: {error}")))?;
@@ -110,7 +110,7 @@ fn configured_provider(settings: &Settings) -> io::Result<super::ClientProvider>
         client,
         model: resolved.connection.model,
         system_prompt: settings.prompt()?,
-        tools: settings.policy.tools().to_vec(),
+        tools: settings.agent.tools.clone(),
         params: resolved.params.into_iter().collect(),
     })
 }

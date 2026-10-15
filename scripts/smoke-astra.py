@@ -21,14 +21,13 @@ def main():
     if connection.get("model") != "gpt-6-astra":
         raise RuntimeError("selected connection must use gpt-6-astra")
     root = Path(tempfile.mkdtemp(prefix="orchid-astra-smoke-"))
-    for name in ("agents", "connections", "policies", "prompts"):
+    for name in ("agents", "connections", "prompts"):
         (root / name).mkdir()
     # Reuse OAuth storage so refreshes persist; never copy or print credentials.
     (root / "auth").symlink_to((args.config / "auth").resolve(), target_is_directory=True)
     resources = {
         "config.json": {"log_level": "info"},
-        "agents/default.json": {"policy": "default", "prompt": "default"},
-        "policies/default.json": {"max_tokens": 4096, "connections": [args.connection], "tools": []},
+        "agents/default.json": {"prompt": "default", "connection": args.connection, "max_tokens": 4096},
         "connections/" + args.connection + ".json": connection,
     }
     for name, value in resources.items():

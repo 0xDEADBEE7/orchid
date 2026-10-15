@@ -1,5 +1,5 @@
 //! Provides the model functionality.
-use crate::config::Policy;
+use crate::agent::Agent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,19 +18,19 @@ pub enum Status {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AgentSnapshot {
-    pub policy: Policy,
-    pub prompt: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Metadata {
     pub id: String,
     pub label: Option<String>,
     pub working_dir: Option<String>,
     pub created_at: DateTime<Utc>,
-    #[serde(default)]
-    pub policy: Policy,
+    /// The agent this session was created from, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    /// The session's own copy of its agent (connection, tools, cap, hooks).
+    pub agent: Agent,
+    /// Pre-0.2 policy copy, kept untouched so the migration can be reversed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Value>,
     pub status: Status,
     pub pid: Option<u32>,
     pub updated_at: DateTime<Utc>,
@@ -266,11 +266,7 @@ impl Session {
     }
 
     /// Creates a new value.
-    pub fn new(
-        label: Option<String>,
-        working_dir: Option<String>,
-        agent: Option<AgentSnapshot>,
-    ) -> Self {
+    pub fn new(label: Option<String>, working_dir: Option<String>, agent: Option<Agent>) -> Self {
         let now = Utc::now();
         let id = Uuid::new_v4().to_string();
         Self {
@@ -280,7 +276,9 @@ impl Session {
                 working_dir,
                 created_at: now,
                 updated_at: now,
-                policy: agent.map(|snapshot| snapshot.policy).unwrap_or_default(),
+                agent_name: None,
+                agent: agent.unwrap_or_default(),
+                policy: None,
                 status: Status::Idle,
                 pid: None,
                 token_estimate: 0,
@@ -295,13 +293,8 @@ impl Session {
     }
 
     pub fn append(&mut self, mut event: Event) {
-        let connection = self
-            .metadata
-            .policy
-            .connections
-            .get(self.metadata.policy.active_connection)
-            .cloned();
-        event.set_connection(connection);
+        let connection = &self.metadata.agent.connection;
+        event.set_connection((!connection.is_empty()).then(|| connection.clone()));
         event.set_token_usage(self.metadata.token_usage.clone());
         self.events.push(event);
         let now = Utc::now();

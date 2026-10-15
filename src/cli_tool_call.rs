@@ -28,6 +28,7 @@ pub fn tool_call(store: &Store, settings: &Settings, args: &[String]) -> io::Res
         .and_then(Value::as_str)
         .map(str::to_owned);
     let mut session = store.load(&id)?;
+    let settings = &settings.for_session(&session);
     authorize(&session, &id)?;
     if call_id.as_ref().is_some_and(|id| session.events.iter().any(|event| {
         matches!(event, orchid::model::Event::ToolCall { calls, .. } if calls.iter().any(|call| &call.call_id == id))

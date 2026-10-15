@@ -49,8 +49,8 @@ fn tool_results_are_fed_back_until_text_arrives() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     std::fs::write(
-        dir.path().join("policies/default.json"),
-        r#"{"tools":["fs_read"]}"#,
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","tools":["fs_read"]}"#,
     )
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -81,8 +81,8 @@ fn token_threshold_stops_before_provider_request() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     std::fs::write(
-        dir.path().join("policies/default.json"),
-        r#"{"max_tokens":1}"#,
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":1}"#,
     )
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -101,8 +101,8 @@ fn cumulative_usage_does_not_count_toward_the_token_limit() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     std::fs::write(
-        dir.path().join("policies/default.json"),
-        r#"{"max_tokens":120000}"#,
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":120000}"#,
     )
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -133,8 +133,8 @@ fn negative_one_disables_token_threshold() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     std::fs::write(
-        dir.path().join("policies/default.json"),
-        r#"{"max_tokens":-1}"#,
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":-1}"#,
     )
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
@@ -149,7 +149,7 @@ fn negative_one_disables_token_threshold() {
 
 #[test]
 fn absent_token_limit_does_not_add_a_fallback_limit() {
-    assert_eq!(orchid::config::Policy::default().max_tokens(), None);
+    assert_eq!(orchid::agent::Agent::default().max_tokens, None);
 }
 
 #[test]
@@ -215,6 +215,12 @@ fn provider_reported_usage_beats_local_estimate_and_tracks_cached_input() {
 fn tool_failure_persists_correlated_error_result() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
+    // The fake model calls a failing tool forever; the token cap ends the loop.
+    std::fs::write(
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":300}"#,
+    )
+    .unwrap();
     let settings = Settings::load(dir.path()).unwrap();
     struct FailingTool;
     impl Provider for FailingTool {
@@ -243,8 +249,8 @@ fn text_with_tool_calls_runs_the_calls_and_bad_arguments_become_tool_errors() {
     let dir = tempfile::tempdir().unwrap();
     orchid::config::init(dir.path()).unwrap();
     std::fs::write(
-        dir.path().join("policies/default.json"),
-        r#"{"tools":["fs_read"]}"#,
+        dir.path().join("agents/default.json"),
+        r#"{"prompt":"default","tools":["fs_read"]}"#,
     )
     .unwrap();
     let settings = Settings::load(dir.path()).unwrap();

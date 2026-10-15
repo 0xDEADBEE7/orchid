@@ -9,5 +9,5 @@ pub mod provider;
 pub mod store;
 pub mod tools;
 
-pub use model::{AgentSnapshot, Event, Metadata, Session, Status, TokenUsage};
+pub use model::{Event, Metadata, Session, Status, TokenUsage};
 pub use store::Store;

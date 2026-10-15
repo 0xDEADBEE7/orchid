@@ -40,7 +40,7 @@ pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Resu
     }
     let mut result = serde_json::Map::new();
     for input in paths {
-        match safe_path_at(settings, input, base)
+        match safe_path_at(input, base)
             .and_then(|path| fs::read_to_string(&path).map(|s| (path, s)))
         {
             Ok((path, content)) => {
@@ -62,7 +62,7 @@ pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Resu
 /// Applies edits to a file relative to a base directory.
 pub fn edit_from(settings: &Settings, path: &str, edits: &Value, base: &Path) -> io::Result<Value> {
     require(settings, "fs_edit")?;
-    let path = safe_path_at(settings, path, base)?;
+    let path = safe_path_at(path, base)?;
     let edits = edits
         .as_array()
         .ok_or_else(|| invalid("fs_edit edits must be an array"))?;
@@ -131,47 +131,30 @@ pub fn bash_in(settings: &Settings, command: &str, working_dir: &Path) -> io::Re
 
 /// Checks whether a tool is allowed.
 fn require(settings: &Settings, tool: &str) -> io::Result<()> {
-    if settings
-        .policy
-        .tools()
-        .iter()
-        .any(|allowed| allowed == tool)
-    {
+    if settings.agent.tools.iter().any(|allowed| allowed == tool) {
         Ok(())
     } else {
         Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("tool denied by policy: {tool}"),
+            format!("tool not enabled for this agent: {tool}"),
         ))
     }
 }
 
-/// Resolves a path within policy scope.
-fn safe_path_at(settings: &Settings, input: &str, base_path: &Path) -> io::Result<PathBuf> {
-    let base = Path::new(base_path);
-    let path = if Path::new(input).is_absolute() {
-        PathBuf::from(input)
-    } else {
-        base.join(input)
-    };
+/// Resolves a path, which must stay inside the session's working directory.
+/// Narrower rules (e.g. allowed subdirectories) belong in an on-tool-call hook.
+fn safe_path_at(input: &str, base: &Path) -> io::Result<PathBuf> {
+    let path = base.join(input);
     let base = base.canonicalize()?;
     let candidate = path
         .parent()
         .unwrap_or(&path)
         .canonicalize()?
         .join(path.file_name().ok_or_else(|| invalid("path is empty"))?);
-    let allowed = settings.policy.paths().is_empty()
-        || settings.policy.paths().iter().any(|path| {
-            let path = base
-                .join(path)
-                .canonicalize()
-                .unwrap_or_else(|_| base.join(path));
-            candidate.starts_with(path)
-        });
-    if candidate.starts_with(&base) && allowed {
+    if candidate.starts_with(&base) {
         Ok(candidate)
     } else {
-        Err(invalid("path is outside policy scope"))
+        Err(invalid("path is outside the working directory"))
     }
 }
 

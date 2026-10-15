@@ -1,5 +1,5 @@
 use orchid::{
-    config::{init, HookDefinition, HookMode, Settings},
+    config::{init, HookDefinition, Settings},
     hooks::{append, dispatch, resolve_executable},
     model::Session,
     store::Store,
@@ -22,12 +22,11 @@ fn sync_hook_receives_versioned_session_envelope_after_persist() {
     let dir = tempfile::tempdir().unwrap();
     let mut settings = settings(dir.path());
     script(dir.path(), "hook.sh", "cat > received.json");
-    settings.policy.hooks.events.insert(
+    settings.hooks.insert(
         "on-event".into(),
         vec![HookDefinition {
             script: "hook.sh".into(),
-            mode: HookMode::Sync,
-            timeout_seconds: Some(2),
+            timeout: Some(2),
         }],
     );
     let store = Store::new(dir.path()).unwrap();
@@ -49,25 +48,25 @@ fn sync_hook_receives_versioned_session_envelope_after_persist() {
 }
 
 #[test]
-fn matching_hooks_launch_in_declared_order() {
+fn global_hooks_run_before_agent_hooks_in_declared_order() {
     let dir = tempfile::tempdir().unwrap();
     let mut settings = settings(dir.path());
     script(dir.path(), "one.sh", "echo one >> order");
     script(dir.path(), "two.sh", "echo two >> order");
-    settings.policy.hooks.events.insert(
+    settings.hooks.insert(
         "on-event".into(),
-        vec![
-            HookDefinition {
-                script: "one.sh".into(),
-                mode: HookMode::Sync,
-                timeout_seconds: None,
-            },
-            HookDefinition {
-                script: "two.sh".into(),
-                mode: HookMode::Sync,
-                timeout_seconds: None,
-            },
-        ],
+        vec![HookDefinition {
+            script: "one.sh".into(),
+            timeout: None,
+        }],
+    );
+    // Agent hooks run after the global ones.
+    settings.agent.hooks.insert(
+        "on-event".into(),
+        vec![HookDefinition {
+            script: "two.sh".into(),
+            timeout: None,
+        }],
     );
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
@@ -90,12 +89,11 @@ fn sync_hook_timeout_is_reported() {
     let dir = tempfile::tempdir().unwrap();
     let mut settings = settings(dir.path());
     script(dir.path(), "slow.sh", "sleep 1");
-    settings.policy.hooks.events.insert(
+    settings.hooks.insert(
         "on-event".into(),
         vec![HookDefinition {
             script: "slow.sh".into(),
-            mode: HookMode::Sync,
-            timeout_seconds: Some(0),
+            timeout: Some(0),
         }],
     );
     let mut session = Session::new(None, None, None);
@@ -103,39 +101,6 @@ fn sync_hook_timeout_is_reported() {
     session.append(event.clone());
     let error = dispatch(&settings, "on-event", &event, &session);
     assert!(error.is_err());
-}
-
-#[test]
-fn async_hook_is_launched_without_blocking_dispatch() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut settings = settings(dir.path());
-    script(
-        dir.path(),
-        "async.sh",
-        "sleep 0.1; echo done > async-result",
-    );
-    settings.policy.hooks.events.insert(
-        "on-event".into(),
-        vec![HookDefinition {
-            script: "async.sh".into(),
-            mode: HookMode::Async,
-            timeout_seconds: Some(2),
-        }],
-    );
-    let mut session = Session::new(None, None, None);
-    let event = Session::message("user", "hello".into());
-    session.append(event.clone());
-    let started = std::time::Instant::now();
-    dispatch(&settings, "on-event", &event, &session).unwrap();
-    assert!(started.elapsed() < std::time::Duration::from_millis(90));
-    // Generous: the hook takes ~0.2s alone but up to ~1s under parallel test load.
-    for _ in 0..250 {
-        if dir.path().join("async-result").exists() {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    panic!("async hook did not complete");
 }
 
 #[test]
@@ -167,12 +132,11 @@ fn hooks_run_from_session_working_directory() {
     let mut settings = settings(dir.path());
     std::fs::create_dir(dir.path().join("work")).unwrap();
     script(dir.path(), "pwd.sh", "pwd > cwd");
-    settings.policy.hooks.events.insert(
+    settings.hooks.insert(
         "on-event".into(),
         vec![HookDefinition {
             script: "pwd.sh".into(),
-            mode: HookMode::Sync,
-            timeout_seconds: None,
+            timeout: None,
         }],
     );
     let work = dir.path().join("work").to_string_lossy().into_owned();

@@ -16,8 +16,8 @@ fn tool_call_persists_result_and_hook_can_invoke_it() {
     orchid::config::init(root).unwrap();
     let binary = env!("CARGO_BIN_EXE_orchid");
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"tools":["bash"],"hooks":{"events":{"on-init":[{"script":"hook.sh","mode":"sync"}]}}}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","tools":["bash"],"hooks":{"on-init":[{"script":"hook.sh"}]}}"#,
     )
     .unwrap();
     let hook = format!(
@@ -106,8 +106,8 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     let binary = env!("CARGO_BIN_EXE_orchid");
 
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"max_tokens":120000,"tools":["bash"]}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":120000,"tools":["bash"]}"#,
     )
     .unwrap();
     let created = run(binary, root, &["create"]);
@@ -116,16 +116,16 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     let id = created["id"].as_str().unwrap();
 
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"max_tokens":4096,"tools":[]}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":4096,"tools":[]}"#,
     )
     .unwrap();
     let loaded = run(binary, root, &["get", id]);
     assert!(loaded.status.success());
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(loaded["metadata"]["policy"]["max_tokens"], 120000);
-    assert_eq!(loaded["metadata"]["policy"]["tools"][0], "bash");
-    assert!(loaded["metadata"].get("agent").is_none());
+    assert_eq!(loaded["metadata"]["agent"]["max_tokens"], 120000);
+    assert_eq!(loaded["metadata"]["agent"]["tools"][0], "bash");
+    assert_eq!(loaded["metadata"]["agent_name"], "default");
     fs::write(root.join("prompts/default.txt"), "A changed source prompt.").unwrap();
     assert_eq!(
         fs::read_to_string(root.join("sessions").join(id).join("prompt.md")).unwrap(),
@@ -248,8 +248,8 @@ fn worker_setup_error_fails_the_session_with_the_reason() {
     orchid::config::init(root).unwrap();
     let binary = env!("CARGO_BIN_EXE_orchid");
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"connections":["missing"]}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","connection":"missing"}"#,
     )
     .unwrap();
     let created: serde_json::Value =

@@ -114,6 +114,8 @@ impl Store {
         }
         let current: crate::model::Metadata =
             serde_json::from_slice(&fs::read(path)?).map_err(io::Error::other)?;
+        session.metadata.agent = current.agent;
+        session.metadata.agent_name = current.agent_name;
         session.metadata.policy = current.policy;
         session.metadata.label = current.label;
         session.metadata.working_dir = current.working_dir;

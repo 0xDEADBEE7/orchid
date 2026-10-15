@@ -1,7 +1,7 @@
 use orchid::{model::Session, Store};
 
 #[test]
-fn worker_save_does_not_restore_an_externally_edited_policy() {
+fn worker_save_does_not_restore_an_externally_edited_agent() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let session = Session::new(None, None, None);
@@ -10,17 +10,17 @@ fn worker_save_does_not_restore_an_externally_edited_policy() {
 
     store
         .update(&id, |session| {
-            session.metadata.policy.max_tokens = Some(120_000)
+            session.metadata.agent.max_tokens = Some(120_000)
         })
         .unwrap();
 
     let mut stale = store.load(&id).unwrap();
-    stale.metadata.policy.max_tokens = Some(1);
+    stale.metadata.agent.max_tokens = Some(1);
     stale.metadata.token_estimate = 60_000;
     store.save(&stale).unwrap();
 
     assert_eq!(
-        store.load(&id).unwrap().metadata.policy.max_tokens,
+        store.load(&id).unwrap().metadata.agent.max_tokens,
         Some(120_000)
     );
 }
@@ -79,8 +79,7 @@ fn events_capture_the_active_connection() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
-    session.metadata.policy.connections = vec!["cheap".into(), "premium".into()];
-    session.metadata.policy.active_connection = 1;
+    session.metadata.agent.connection = "premium".into();
     session.append(Session::message("user", "hello".into()));
     store.create(&session).unwrap();
 

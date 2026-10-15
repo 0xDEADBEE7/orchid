@@ -26,7 +26,7 @@ pub fn run_with_progress<F: FnMut(&Session)>(
     mut progress: F,
 ) -> io::Result<String> {
     loop {
-        enforce_token_limit(session, settings.policy.max_tokens())?;
+        enforce_token_limit(session, settings.agent.max_tokens)?;
         progress(session);
         let (answer, usage, calls) = collect(stream_with_retries(provider, settings, session)?);
         let input = match usage.as_ref() {

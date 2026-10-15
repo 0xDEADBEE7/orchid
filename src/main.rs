@@ -119,13 +119,17 @@ fn create(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Str
     let working_dir = value(args, "--working-dir")
         .map(canonical_dir)
         .transpose()?;
-    let agent = value(args, "--agent").unwrap_or_else(|| "default".into());
-    let snapshot = settings.snapshot_agent(&agent)?;
-    let prompt = settings.resolve_agent(&agent)?.prompt()?;
-    let session = Session::new(label, working_dir, Some(snapshot));
+    let name = value(args, "--agent").unwrap_or_else(|| "default".into());
+    let mut agent = settings.agent_named(&name)?;
+    if let Some(connection) = value(args, "--connection") {
+        agent.connection = connection;
+    }
+    let prompt = settings.prompt_text(&agent.prompt)?;
+    let mut session = Session::new(label, working_dir, Some(agent));
+    session.metadata.agent_name = Some(name.clone());
     let id = session.metadata.id.clone();
     store.create_with_prompt(&session, &prompt)?;
-    Ok(serde_json::json!({"id":id,"status":"idle","agent":agent}).to_string())
+    Ok(serde_json::json!({"id":id,"status":"idle","agent":name}).to_string())
 }
 
 /// Performs the agent operation.
@@ -139,13 +143,14 @@ fn session(store: &Store, settings: &Settings, args: &[String]) -> io::Result<St
     let id = args
         .first()
         .ok_or_else(|| invalid("session requires an id"))?;
-    let agent = value(&args[1..], "--agent").ok_or_else(|| invalid("session requires --agent"))?;
-    let resolved = settings.resolve_agent(&agent)?;
-    let prompt = resolved.prompt()?;
+    let name = value(&args[1..], "--agent").ok_or_else(|| invalid("session requires --agent"))?;
+    let agent = settings.agent_named(&name)?;
+    let prompt = settings.prompt_text(&agent.prompt)?;
     store.update_with_prompt(id, &prompt, |session| {
-        session.metadata.policy = resolved.policy.clone();
+        session.metadata.agent = agent;
+        session.metadata.agent_name = Some(name.clone());
     })?;
-    Ok(serde_json::json!({"id":id,"agent":agent,"updated":true}).to_string())
+    Ok(serde_json::json!({"id":id,"agent":name,"updated":true}).to_string())
 }
 
 /// Lists the available entries.
@@ -182,6 +187,13 @@ fn set(store: &Store, args: &[String]) -> io::Result<String> {
         .first()
         .ok_or_else(|| invalid("set requires an id"))?
         .clone();
+    if let Some(flag) = args[1..]
+        .iter()
+        .filter(|arg| arg.starts_with("--"))
+        .find(|arg| !matches!(arg.split('=').next(), Some("--label" | "--working-dir")))
+    {
+        return Err(invalid(&format!("set: unknown flag {flag}")));
+    }
     let label = value(&args[1..], "--label");
     let dir = value(&args[1..], "--working-dir")
         .map(canonical_dir)
@@ -223,7 +235,8 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
                 let before = store.load(id)?.events.len();
                 let session = store.reconcile(id)?;
                 if session.events.len() > before {
-                    let _ = orchid::hooks::dispatch_events(settings, &session, before);
+                    let settings = settings.for_session(&session);
+                    let _ = orchid::hooks::dispatch_events(&settings, &session, before);
                 }
                 Ok(session)
             })
@@ -270,7 +283,7 @@ fn stop(store: &Store, settings: &Settings, args: &[String]) -> io::Result<Strin
     session.metadata.pid = None;
     session.metadata.termination_reason = Some("cancelled by user".into());
     store.save(&session)?;
-    let _ = orchid::hooks::dispatch_events(settings, &session, before);
+    let _ = orchid::hooks::dispatch_events(&settings.for_session(&session), &session, before);
     Ok(serde_json::json!({"id":id,"status":"idle"}).to_string())
 }
 

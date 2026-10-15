@@ -25,14 +25,11 @@ mkdir -p \
     "$SMOKE_CONFIG/agents" \
     "$SMOKE_CONFIG/auth" \
     "$SMOKE_CONFIG/connections" \
-    "$SMOKE_CONFIG/policies" \
     "$SMOKE_CONFIG/prompts"
 
 printf '%s\n' '{"log_level":"debug"}' >"$SMOKE_CONFIG/config.json"
-printf '%s\n' '{"policy":"default","prompt":"default"}' \
+printf '%s\n' '{"prompt":"default","connection":"lmstudio","max_tokens":4096}' \
     >"$SMOKE_CONFIG/agents/default.json"
-printf '%s\n' '{"max_tokens":4096,"connections":["lmstudio"],"tools":[]}' \
-    >"$SMOKE_CONFIG/policies/default.json"
 printf '%s\n' 'You are a concise assistant. Follow the requested output exactly.' \
     >"$SMOKE_CONFIG/prompts/default.txt"
 

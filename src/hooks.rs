@@ -6,7 +6,7 @@ mod hook_logging;
 mod hook_paths;
 
 use crate::{
-    config::{HookDefinition, HookMode, Settings},
+    config::{HookDefinition, Settings},
     model::{Event, Session},
     store::Store,
 };
@@ -14,7 +14,7 @@ use crate::{
     hook_state::HookState,
     hooks::hook_depth::{depth as hook_depth, HookDepth},
 };
-use hook_logging::{format_mode, log_lifecycle};
+use hook_logging::log_lifecycle;
 use hook_paths::{executable, working_dir as resolve_working_dir};
 use serde::Serialize;
 use serde_json::json;
@@ -33,68 +33,34 @@ struct Envelope<'a> {
     event: serde_json::Value,
     session: &'a Session,
 }
-/// Dispatches the requested hook or command.
+/// Runs the event's hooks (global, then the agent's) in order; the first
+/// failure stops the rest.
 pub fn dispatch(
     settings: &Settings,
     name: &str,
     trigger: &Event,
     session: &Session,
 ) -> io::Result<()> {
-    let Some(hooks) = settings.policy.hooks.events.get(name) else {
+    let hooks: Vec<_> = settings.hooks(name).collect();
+    if hooks.is_empty() {
         return Ok(());
-    };
+    }
     let input = serde_json::to_vec(&Envelope {
         version: 1,
         event: json!({"name": name, "event_id": hook_events::id(trigger), "event_type": hook_events::kind(trigger)}),
         session,
     }).map_err(io::Error::other)?;
+    let working_dir = session.metadata.working_dir.as_deref();
     for hook in hooks {
-        match hook.mode {
-            HookMode::Sync => run_one(
-                settings,
-                &session.metadata.id,
-                name,
-                hook,
-                &input,
-                session.metadata.working_dir.as_deref(),
-            )?,
-            HookMode::Async => launch_async(
-                settings,
-                &session.metadata.id,
-                name,
-                hook,
-                &input,
-                session.metadata.working_dir.as_deref(),
-            )?,
-        }
-    }
-    Ok(())
-}
-/// Performs the launch async operation.
-fn launch_async(
-    settings: &Settings,
-    session_id: &str,
-    event_name: &str,
-    hook: &HookDefinition,
-    input: &[u8],
-    working_dir: Option<&str>,
-) -> io::Result<()> {
-    let settings = settings.clone();
-    let session_id = session_id.to_owned();
-    let event_name = event_name.to_owned();
-    let hook = hook.clone();
-    let input = input.to_vec();
-    let working_dir = working_dir.map(str::to_owned);
-    thread::spawn(move || {
-        let _ = run_one(
-            &settings,
-            &session_id,
-            &event_name,
-            &hook,
+        run_one(
+            settings,
+            &session.metadata.id,
+            name,
+            hook,
             &input,
-            working_dir.as_deref(),
-        );
-    });
+            working_dir,
+        )?;
+    }
     Ok(())
 }
 /// Append an event durably, then dispatch the hooks that match it. The store
@@ -147,17 +113,13 @@ fn run_one(
     input: &[u8],
     working_dir: Option<&str>,
 ) -> io::Result<()> {
-    let timeout = Duration::from_secs(
-        hook.timeout_seconds
-            .or(settings.policy.hooks.timeout)
-            .unwrap_or(30),
-    );
+    let timeout = Duration::from_secs(hook.timeout.unwrap_or(30));
     log_lifecycle(
         settings,
         session_id,
         "hook started",
         "info",
-        json!({"event":event_name,"script":hook.script,"mode":format_mode(&hook.mode)}),
+        json!({"event":event_name,"script":hook.script}),
     );
     let mut running = spawn_hook(settings, session_id, event_name, hook, working_dir)?;
     running
@@ -194,7 +156,7 @@ fn spawn_hook(
     working_dir: Option<&str>,
 ) -> io::Result<RunningHook> {
     let depth = HookDepth::enter(&settings.root, session_id)?;
-    let hook_state = enter_hook_state(settings, session_id, hook)?;
+    let hook_state = enter_hook_state(settings, session_id)?;
     let token_path = settings
         .root
         .join("sessions")
@@ -231,18 +193,13 @@ fn spawn_hook(
 }
 
 /// Performs the enter hook state operation.
-fn enter_hook_state(
-    settings: &Settings,
-    session_id: &str,
-    hook: &HookDefinition,
-) -> io::Result<Option<HookState>> {
-    let active = matches!(hook.mode, HookMode::Sync)
-        && settings
-            .root
-            .join("sessions")
-            .join(session_id)
-            .join("metadata.json")
-            .exists();
+fn enter_hook_state(settings: &Settings, session_id: &str) -> io::Result<Option<HookState>> {
+    let active = settings
+        .root
+        .join("sessions")
+        .join(session_id)
+        .join("metadata.json")
+        .exists();
     active
         .then(|| HookState::enter(settings, session_id))
         .transpose()

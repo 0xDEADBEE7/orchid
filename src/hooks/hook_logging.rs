@@ -1,16 +1,5 @@
 //! Provides the hook logging functionality.
-use crate::{
-    config::{HookMode, Settings},
-    store::Store,
-};
-
-/// Performs the format mode operation.
-pub(super) fn format_mode(mode: &HookMode) -> &'static str {
-    match mode {
-        HookMode::Sync => "sync",
-        HookMode::Async => "async",
-    }
-}
+use crate::{config::Settings, store::Store};
 
 /// Performs the log lifecycle operation.
 pub(super) fn log_lifecycle(

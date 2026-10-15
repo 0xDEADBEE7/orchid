@@ -1,4 +1,5 @@
 //! Provides the config functionality.
+use crate::{agent::Agent, model::Session};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -23,87 +24,21 @@ pub enum Credential {
 pub struct Config {
     #[serde(default)]
     pub log_level: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<i64>,
+    /// Hooks that run for every agent.
     #[serde(default)]
-    pub active_connection: usize,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub connections: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub paths: Vec<String>,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub hooks: Hooks,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub permissions: Permissions,
+    pub hooks: HookMap,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Hooks {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<u64>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub events: HashMap<String, Vec<HookDefinition>>,
-}
+/// Hook scripts by event name, run in order.
+pub type HookMap = HashMap<String, Vec<HookDefinition>>;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HookDefinition {
     pub script: String,
-    pub mode: HookMode,
-    #[serde(default)]
-    pub timeout_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum HookMode {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Permissions {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub paths: Vec<String>,
-}
-
-/// Performs the is default operation.
-fn is_default<T: Default + PartialEq>(value: &T) -> bool {
-    value == &T::default()
-}
-
-impl Policy {
-    /// Builds definitions for enabled tools.
-    pub fn tools(&self) -> &[String] {
-        if self.permissions.tools.is_empty() {
-            &self.tools
-        } else {
-            &self.permissions.tools
-        }
-    }
-    /// Extracts paths from input.
-    pub fn paths(&self) -> &[String] {
-        if self.permissions.paths.is_empty() {
-            &self.paths
-        } else {
-            &self.permissions.paths
-        }
-    }
-    /// Performs the max tokens operation.
-    pub fn max_tokens(&self) -> Option<i64> {
-        self.max_tokens
-    }
+    /// Seconds before the hook is killed (default 30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -127,25 +62,47 @@ pub struct Connection {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub root: PathBuf,
-    pub policy: Policy,
-    pub prompt_name: String,
     pub log_level: String,
+    /// Global hooks from config.json.
+    pub hooks: HookMap,
+    /// The agent in effect: the default agent, or a session's own copy.
+    pub agent: Agent,
+    /// Set when acting on a session, whose prompt.md is the system prompt.
+    pub session: Option<String>,
 }
 
 impl Settings {
-    /// Performs the prompt operation.
+    /// Returns the system prompt in effect.
     pub fn prompt(&self) -> io::Result<String> {
-        if let Some(id) = self.prompt_name.strip_prefix("session:") {
-            return fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md"));
+        match &self.session {
+            Some(id) => fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md")),
+            None => self.prompt_text(&self.agent.prompt),
         }
-        let name = &self.prompt_name;
+    }
+
+    /// Reads `prompts/<name>.md`, or `prompts/<name>.txt`.
+    pub fn prompt_text(&self, name: &str) -> io::Result<String> {
         let prompts = self.root.join("prompts");
-        let markdown = prompts.join(format!("{name}.md"));
-        let text = prompts.join(format!("{name}.txt"));
-        if markdown.exists() {
-            fs::read_to_string(markdown)
-        } else {
-            fs::read_to_string(text)
+        fs::read_to_string(prompts.join(format!("{name}.md")))
+            .or_else(|_| fs::read_to_string(prompts.join(format!("{name}.txt"))))
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::NotFound, format!("prompt not found: {name}"))
+            })
+    }
+
+    /// Hooks for an event: global hooks first, then the agent's own.
+    pub fn hooks(&self, event: &str) -> impl Iterator<Item = &HookDefinition> {
+        let global = self.hooks.get(event).into_iter().flatten();
+        global.chain(self.agent.hooks.get(event).into_iter().flatten())
+    }
+
+    /// Settings for acting on a session: its own agent copy and prompt. Every
+    /// path that touches a session uses this, so all of them see the same hooks.
+    pub fn for_session(&self, session: &Session) -> Settings {
+        Settings {
+            agent: session.metadata.agent.clone(),
+            session: Some(session.metadata.id.clone()),
+            ..self.clone()
         }
     }
 }
@@ -159,24 +116,6 @@ pub struct ResolvedConnection {
 }
 
 impl Settings {
-    /// Performs the active connection operation.
-    pub fn active_connection(&self) -> io::Result<Option<&str>> {
-        if self.policy.connections.is_empty() {
-            return Ok(None);
-        }
-        self.policy
-            .connections
-            .get(self.policy.active_connection)
-            .map(String::as_str)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "active connection index is out of range",
-                )
-            })
-            .map(Some)
-    }
-
     /// Performs the connection operation.
     pub fn connection(&self, name: &str) -> io::Result<Connection> {
         read_json(&self.root.join("connections").join(format!("{name}.json")))
@@ -325,23 +264,26 @@ impl Settings {
     pub fn load(root: impl Into<PathBuf>) -> io::Result<Self> {
         let root = root.into();
         let config: Config = read_json(&root.join("config.json"))?;
-        let policy: Policy = read_json(&root.join("policies/default.json"))?;
         Ok(Self {
+            agent: read_json(&root.join("agents/default.json"))?,
             root,
-            policy,
-            prompt_name: "default".into(),
             log_level: config.log_level.unwrap_or_else(|| "info".into()),
+            hooks: config.hooks,
+            session: None,
         })
     }
 }
 
+/// Reads a JSON file; errors name the file.
 pub fn read_json<T: for<'a> Deserialize<'a>>(path: &Path) -> io::Result<T> {
-    let bytes = fs::read(path)?;
-    serde_json::from_slice(&bytes).map_err(io::Error::other)
+    let context = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
+    let bytes = fs::read(path).map_err(|error| io::Error::new(error.kind(), context(&error)))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, context(&error)))
 }
 
 pub fn init(root: &Path) -> io::Result<()> {
-    for name in ["agents", "policies", "connections", "auth", "prompts"] {
+    for name in ["agents", "connections", "auth", "prompts"] {
         fs::create_dir_all(root.join(name))?;
     }
     write_default(
@@ -350,17 +292,12 @@ pub fn init(root: &Path) -> io::Result<()> {
 "#,
     )?;
     write_default(
-        &root.join("policies/default.json"),
-        br#"{"max_tokens":4096,"tools":[]}
-"#,
-    )?;
-    write_default(
         &root.join("prompts/default.txt"),
         b"You are a helpful assistant.",
     )?;
     write_default(
         &root.join("agents/default.json"),
-        br#"{"policy":"default","prompt":"default"}
+        br#"{"prompt":"default","max_tokens":120000}
 "#,
     )
 }

@@ -33,6 +33,7 @@ fn run_send(
 ) -> io::Result<String> {
     // Reconciling first means a dead worker's stale `running` status never blocks.
     let mut session = store.reconcile(id)?;
+    let settings = &settings.for_session(&session);
     if session.metadata.status == Status::Running {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
