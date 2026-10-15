@@ -46,10 +46,12 @@ impl Store {
         Ok(Session { metadata, events })
     }
 
-    /// Marks a session whose worker died as failed, answering any open tool calls.
-    pub fn reconcile(&self, id: &str) -> io::Result<Session> {
+    /// Marks a session whose worker died as failed, answering any open tool
+    /// calls. Also returns the index of the first event it added, if any.
+    pub fn reconcile(&self, id: &str) -> io::Result<(Session, Option<usize>)> {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
+        let before = session.events.len();
         if session.metadata.status == Status::Running
             && !session.metadata.pid.is_some_and(process_alive)
         {
@@ -65,8 +67,9 @@ impl Store {
                 token_usage: crate::model::TokenUsage::default(),
             });
             self.save_unlocked(&session)?;
+            return Ok((session, Some(before)));
         }
-        Ok(session)
+        Ok((session, None))
     }
 
     /// Persists data to storage.

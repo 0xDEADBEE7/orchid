@@ -265,7 +265,9 @@ impl Settings {
         let root = root.into();
         let config: Config = read_json(&root.join("config.json"))?;
         Ok(Self {
-            agent: read_json(&root.join("agents/default.json"))?,
+            // Sessions use their own agent copy, so a broken default agent only
+            // affects `create` (and is reported by `orchid agent`).
+            agent: read_json(&root.join("agents/default.json")).unwrap_or_default(),
             root,
             log_level: config.log_level.unwrap_or_else(|| "info".into()),
             hooks: config.hooks,

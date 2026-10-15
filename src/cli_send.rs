@@ -32,8 +32,11 @@ fn run_send(
     no_run: bool,
 ) -> io::Result<String> {
     // Reconciling first means a dead worker's stale `running` status never blocks.
-    let session = store.reconcile(id)?;
+    let (session, added) = store.reconcile(id)?;
     let settings = &settings.for_session(&session);
+    if let Some(from) = added {
+        let _ = orchid::hooks::fire_events(settings, &session, from);
+    }
     // Hooks for a user message run before it is stored or queued, so a block
     // (exit 2) keeps it out of the transcript.
     let event = Session::message("user", message.to_owned());

@@ -48,7 +48,7 @@ fn reconciles_dead_running_processes() {
     session.metadata.status = orchid::model::Status::Running;
     session.metadata.pid = Some(999_999);
     store.create(&session).unwrap();
-    let recovered = store.reconcile(&session.metadata.id).unwrap();
+    let (recovered, _) = store.reconcile(&session.metadata.id).unwrap();
     assert_eq!(recovered.metadata.status, orchid::model::Status::Failed);
 }
 
@@ -248,7 +248,8 @@ fn reconcile_answers_open_tool_calls_of_a_dead_worker() {
     session.metadata.pid = Some(u32::MAX - 1);
     let id = session.metadata.id.clone();
     store.create(&session).unwrap();
-    let reconciled = store.reconcile(&id).unwrap();
+    let (reconciled, added) = store.reconcile(&id).unwrap();
+    assert_eq!(added, Some(1));
     assert_eq!(reconciled.metadata.status, orchid::Status::Failed);
     assert!(reconciled.pending_tool_call_ids().is_empty());
 }

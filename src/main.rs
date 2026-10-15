@@ -230,11 +230,12 @@ fn await_sessions(store: &Store, settings: &Settings, args: &[String]) -> io::Re
         let sessions: Vec<_> = ids
             .iter()
             .map(|id| {
-                let before = store.load(id)?.events.len();
-                let session = store.reconcile(id)?;
-                if session.events.len() > before {
+                // Fire hooks only for events reconcile itself added; a live
+                // worker fires its own.
+                let (session, added) = store.reconcile(id)?;
+                if let Some(from) = added {
                     let settings = settings.for_session(&session);
-                    let _ = orchid::hooks::fire_events(&settings, &session, before);
+                    let _ = orchid::hooks::fire_events(&settings, &session, from);
                 }
                 Ok(session)
             })
