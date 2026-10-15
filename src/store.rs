@@ -138,32 +138,14 @@ impl Store {
         Ok(())
     }
 
-    /// Records a lifecycle message.
-    pub fn log(&self, id: &str, record: &LogRecord) -> io::Result<()> {
-        append_log(&self.path(id).join("logs.jsonl"), record)
-    }
-
-    /// Performs the log global operation.
-    pub fn log_global(&self, record: &LogRecord) -> io::Result<()> {
-        append_log(&self.root.join("logs.jsonl"), record)
-    }
-
-    /// Performs the log both operation.
+    /// Appends a log record to the session's and the global log, if its level
+    /// is at least the configured one.
     pub fn log_both(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
         if level_rank(&record.level) < level_rank(configured) {
             return Ok(());
         }
-        self.log(id, record)?;
-        self.log_global(record)
-    }
-
-    /// Performs the log filtered operation.
-    pub fn log_filtered(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
-        if level_rank(&record.level) >= level_rank(configured) {
-            self.log(id, record)
-        } else {
-            Ok(())
-        }
+        append_log(&self.path(id).join("logs.jsonl"), record)?;
+        append_log(&self.root.join("logs.jsonl"), record)
     }
 
     /// Lists the available entries.

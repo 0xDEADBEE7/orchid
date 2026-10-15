@@ -136,7 +136,7 @@ fn debug_logs_are_filtered_by_configured_level() {
         message: "transport".into(),
         fields: serde_json::json!({}),
     };
-    store.log_filtered(&id, &record, "info").unwrap();
+    store.log_both(&id, &record, "info").unwrap();
     assert!(
         std::fs::read_to_string(dir.path().join("sessions").join(id).join("logs.jsonl"))
             .unwrap()
