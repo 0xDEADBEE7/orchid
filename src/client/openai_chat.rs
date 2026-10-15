@@ -78,10 +78,9 @@ fn request_body(request: ClientRequest) -> Value {
         messages.push(json!({"role":"system", "content":request.system_prompt}));
     }
     for message in request.messages {
-        if let Some((call_id, content)) = message.tool_result {
-            messages.push(
-                json!({"role":"tool", "tool_call_id":call_id, "content":content.to_string()}),
-            );
+        if let Some(call_id) = message.tool_call_id {
+            messages
+                .push(json!({"role":"tool", "tool_call_id":call_id, "content":message.content}));
         } else if !message.tool_calls.is_empty() {
             let calls = message
                 .tool_calls
@@ -169,12 +168,9 @@ pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
         }
     }
     for (_, call) in calls {
-        let input = serde_json::from_str(&call.arguments).map_err(|error| {
-            ClientError::new(
-                ClientErrorKind::Protocol,
-                format!("invalid tool arguments: {error}"),
-            )
-        })?;
+        // Malformed arguments are passed through as a string; dispatch rejects
+        // them as a tool error the model can correct.
+        let input = serde_json::from_str(&call.arguments).unwrap_or(Value::String(call.arguments));
         events.push(ClientEvent::ToolCall(ToolCall {
             call_id: call.id,
             name: call.name,

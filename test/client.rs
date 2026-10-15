@@ -110,7 +110,7 @@ fn factory_selects_echo_and_returns_the_latest_message() {
                 role: "user".into(),
                 content: "hello".into(),
                 tool_calls: Vec::new(),
-                tool_result: None,
+                tool_call_id: None,
             }],
             tools: Vec::new(),
             params: Default::default(),

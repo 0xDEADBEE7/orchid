@@ -318,3 +318,56 @@ fn tool_failure_persists_correlated_error_result() {
         .unwrap();
     assert!(session.events.iter().any(|event| matches!(event, Event::ToolResult { call_id: id, content, .. } if id == &call_id && content.get("error").is_some())));
 }
+
+#[test]
+fn text_with_tool_calls_runs_the_calls_and_bad_arguments_become_tool_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    orchid::config::init(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("policies/default.json"),
+        r#"{"tools":["fs_read"]}"#,
+    )
+    .unwrap();
+    let settings = Settings::load(dir.path()).unwrap();
+    struct Preamble(Cell<bool>);
+    impl Provider for Preamble {
+        fn reply(&self, _: &str, _: &Session) -> io::Result<String> {
+            unreachable!()
+        }
+        fn stream(&self, _: &str, _: &Session) -> io::Result<Vec<StreamEvent>> {
+            if self.0.replace(true) {
+                return Ok(vec![StreamEvent::Text("done".into())]);
+            }
+            Ok(vec![
+                StreamEvent::Text("Let me check.".into()),
+                StreamEvent::ToolCall {
+                    name: "fs_read".into(),
+                    input: "{bad".into(),
+                },
+            ])
+        }
+    }
+    let mut session = Session::new(None, None, None);
+    let answer = run(&Preamble(Cell::new(false)), &settings, &mut session, "go").unwrap();
+    assert_eq!(answer, "done");
+    assert!(session
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::Message { content, .. } if content == "Let me check.")));
+    assert!(session
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::ToolResult { content, .. }
+        if content["error"].as_str().unwrap().contains("JSON object"))));
+}
+
+#[test]
+fn oversized_tool_output_keeps_head_and_tail() {
+    let big = format!("{}{}", "a".repeat(60_000), "z".repeat(10));
+    let clipped = orchid::tools::clip(serde_json::Value::String(big));
+    let text = clipped.as_str().unwrap();
+    assert!(text.len() < 50_100 && text.starts_with('a') && text.ends_with("zzzzzzzzzz"));
+    assert!(text.contains("characters truncated"));
+    let small = serde_json::json!({"ok": true});
+    assert_eq!(orchid::tools::clip(small.clone()), small);
+}

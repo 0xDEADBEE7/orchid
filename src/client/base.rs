@@ -10,7 +10,8 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
-    pub tool_result: Option<(String, Value)>,
+    /// Set on tool results: the call this message answers.
+    pub tool_call_id: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq)]
 /// Performs the ToolDefinition operation.

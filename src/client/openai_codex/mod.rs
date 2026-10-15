@@ -169,8 +169,8 @@ fn request_body(request: &ClientRequest) -> serde_json::Value {
             if !m.tool_calls.is_empty() {
                 return m.tool_calls.iter().map(|call| json!({"type":"function_call","call_id":call.call_id,"name":call.name,"arguments":call.input.to_string()})).collect::<Vec<_>>();
             }
-            if let Some((call_id, content)) = &m.tool_result {
-                return vec![json!({"type":"function_call_output","call_id":call_id,"output":content.to_string()})];
+            if let Some(call_id) = &m.tool_call_id {
+                return vec![json!({"type":"function_call_output","call_id":call_id,"output":m.content})];
             }
             vec![json!({"role":m.role,"content":[{"type":if m.role == "assistant" {"output_text"} else {"input_text"},"text":m.content}]})]
         }).collect::<Vec<_>>(),
@@ -383,7 +383,7 @@ fn tool_call(value: &serde_json::Value) -> Option<ToolCall> {
     Some(ToolCall {
         call_id: call_id.into(),
         name: name.into(),
-        input: serde_json::from_str(arguments).ok()?,
+        input: serde_json::from_str(arguments).unwrap_or_else(|_| arguments.into()),
     })
 }
 

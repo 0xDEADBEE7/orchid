@@ -40,13 +40,19 @@ pub fn run_with_progress<F: FnMut(&Session)>(
         session.metadata.token_estimate = input;
         record_usage(session, usage, input);
         progress(session);
+        // A reply may carry text and tool calls together (e.g. a preamble before a
+        // tool call). Keep the text, then run the calls; only a reply without calls
+        // ends the turn.
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
             progress(session);
-            return Ok(answer);
         }
         if calls.is_empty() {
-            return Err(io::Error::other("provider returned no text"));
+            return if answer.is_empty() {
+                Err(io::Error::other("provider returned no text"))
+            } else {
+                Ok(answer)
+            };
         }
         dispatch::execute(settings, session, calls, &mut progress)?;
     }

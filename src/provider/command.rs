@@ -54,34 +54,15 @@ fn run_session(
     session: Session,
     message: &str,
 ) -> io::Result<String> {
-    let configured = configured_provider(settings)?;
-    if !settings.policy.connections.is_empty() && configured.is_none() {
-        return finish_failure(
-            store,
-            settings,
-            id,
-            session,
-            io::Error::other("configured connection unavailable"),
-        );
-    }
-    let local = super::LocalProvider;
-    let provider: &dyn Provider = configured.as_ref().map_or(&local, |provider| provider);
-    log(
-        store,
-        settings,
-        id,
-        "debug",
-        if configured.is_some() {
-            "client selected"
-        } else {
-            "local client selected"
-        },
-    );
-    log(store, settings, id, "debug", "client request prepared");
-    log(store, settings, id, "debug", "client run started");
-    log(store, settings, id, "debug", "client request dispatched");
+    // Setup errors (missing connection, credential, unsupported interface) end the
+    // turn as a recorded failure instead of leaving the session marked running.
+    let provider = match configured_provider(settings) {
+        Ok(provider) => provider,
+        Err(error) => return finish_failure(store, settings, id, session, error),
+    };
+    log(store, settings, id, "debug", "client selected");
     let _ = crate::hooks::run(settings, "on-turn-start", id);
-    run_provider(store, settings, id, session, message, provider)
+    run_provider(store, settings, id, session, message, &provider)
 }
 
 /// Performs the run provider operation.
@@ -134,20 +115,24 @@ fn command_args(args: &[String]) -> io::Result<(String, String)> {
 }
 
 /// Performs the configured provider operation.
-fn configured_provider(settings: &Settings) -> io::Result<Option<super::ClientProvider>> {
-    let Some(name) = settings.active_connection()? else {
-        return Ok(None);
-    };
-    let resolved = settings.resolve_connection(name)?;
+fn configured_provider(settings: &Settings) -> io::Result<super::ClientProvider> {
+    let name = settings.active_connection()?.ok_or_else(|| {
+        io::Error::other(
+            "no connection configured: add connections/<name>.json and list it in the policy",
+        )
+    })?;
+    let resolved = settings
+        .resolve_connection(name)
+        .map_err(|error| io::Error::new(error.kind(), format!("connection {name}: {error}")))?;
     let client = crate::client::client_for(resolved.clone())
-        .map_err(|error| io::Error::other(error.to_string()))?;
-    Ok(Some(super::ClientProvider {
+        .map_err(|error| io::Error::other(format!("connection {name}: {error}")))?;
+    Ok(super::ClientProvider {
         client,
         model: resolved.connection.model,
         system_prompt: settings.prompt()?,
         tools: settings.policy.tools().to_vec(),
         params: resolved.params.into_iter().collect(),
-    }))
+    })
 }
 
 /// Performs the finish success operation.
@@ -228,7 +213,6 @@ fn finish_failure(
         &settings.log_level,
     );
     log(store, settings, id, "error", &message);
-    let _ = crate::hooks::run(settings, "on-error", id);
     Err(error)
 }
 

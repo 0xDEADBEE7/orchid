@@ -240,3 +240,30 @@ fn set_executable(_: &std::path::Path) {}
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
+
+#[test]
+fn worker_setup_error_fails_the_session_with_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    fs::write(
+        root.join("policies/default.json"),
+        r#"{"connections":["missing"]}"#,
+    )
+    .unwrap();
+    let created: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["create"]).stdout).unwrap();
+    let id = created["id"].as_str().unwrap();
+    assert!(run(binary, root, &["send", "--id", id, "hi"])
+        .status
+        .success());
+    assert!(run(binary, root, &["await", id, "--timeout", "10"])
+        .status
+        .success());
+    let session: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap();
+    assert_eq!(session["metadata"]["status"], "failed");
+    let reason = session["metadata"]["termination_reason"].as_str().unwrap();
+    assert!(reason.contains("connection missing"), "{reason}");
+}

@@ -52,14 +52,6 @@ pub enum StreamEvent {
     Malformed(String),
 }
 
-/// Performs the LocalProvider operation.
-pub struct LocalProvider;
-impl Provider for LocalProvider {
-    fn reply(&self, prompt: &str, _session: &Session) -> io::Result<String> {
-        Ok(format!("local client: {prompt}"))
-    }
-}
-
 /// Performs the ClientProvider operation.
 pub struct ClientProvider {
     pub client: Box<dyn crate::client::Client>,
@@ -103,21 +95,21 @@ pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
                 role: role.clone(),
                 content: content.clone(),
                 tool_calls: Vec::new(),
-                tool_result: None,
+                tool_call_id: None,
             }),
             crate::model::Event::ToolCall { calls, .. } => Some(crate::client::Message {
                 role: "assistant".into(),
                 content: String::new(),
                 tool_calls: calls.clone(),
-                tool_result: None,
+                tool_call_id: None,
             }),
             crate::model::Event::ToolResult {
                 call_id, content, ..
             } => Some(crate::client::Message {
                 role: "tool".into(),
-                content: content.to_string(),
+                content: crate::tools::text(&crate::tools::clip(content.clone())),
                 tool_calls: Vec::new(),
-                tool_result: Some((call_id.clone(), content.clone())),
+                tool_call_id: Some(call_id.clone()),
             }),
             _ => None,
         })

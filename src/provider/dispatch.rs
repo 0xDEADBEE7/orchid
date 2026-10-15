@@ -78,7 +78,7 @@ fn append_result(session: &mut Session, call_id: String, content: Value) {
         event_id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now(),
         call_id,
-        content,
+        content: crate::tools::clip(content),
         connection: None,
         token_usage: crate::model::TokenUsage::default(),
     });
@@ -86,6 +86,10 @@ fn append_result(session: &mut Session, call_id: String, content: Value) {
 
 /// Invokes a named tool.
 fn invoke(settings: &Settings, session: &Session, name: &str, input: &Value) -> io::Result<Value> {
+    if !input.is_object() {
+        let message = format!("tool arguments must be a JSON object, got: {input}");
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, message));
+    }
     match name {
         "bash" => crate::tools::bash_in(
             settings,

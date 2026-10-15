@@ -7,6 +7,31 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Largest tool output, in characters, kept in a session or sent to a model.
+const MAX_OUTPUT: usize = 50_000;
+
+/// Renders a tool result for a model: strings as-is, anything else as JSON.
+pub fn text(value: &Value) -> String {
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
+}
+
+/// Keeps the head and tail of oversized tool output.
+pub fn clip(value: Value) -> Value {
+    let text = text(&value);
+    let len = text.chars().count();
+    if len <= MAX_OUTPUT {
+        return value;
+    }
+    let head: String = text.chars().take(MAX_OUTPUT / 2).collect();
+    let tail: String = text.chars().skip(len - MAX_OUTPUT / 2).collect();
+    let cut = len - MAX_OUTPUT;
+    Value::String(format!(
+        "{head}\n[... {cut} characters truncated ...]\n{tail}"
+    ))
+}
+
 /// Performs the read operation.
 pub fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
     read_from(settings, paths, &settings.root)
