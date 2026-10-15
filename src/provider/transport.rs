@@ -1,5 +1,6 @@
 //! Provides the transport functionality.
 use super::{Credential, HttpProvider};
+use crate::client::openai_codex::compatibility;
 use reqwest::blocking::{Client, Response};
 use serde_json::Value;
 use std::{io, time::Duration};
@@ -18,7 +19,7 @@ impl Transport {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
-            .user_agent("codex_cli_rs/0.144.4 (orchid)")
+            .user_agent(compatibility::USER_AGENT)
             .build()
             .map_err(io::Error::other)?;
         Ok(Self { client, credential })
@@ -64,7 +65,7 @@ impl Transport {
                 .header("ChatGPT-Account-ID", account_id)
                 .header("originator", "codex_cli_rs")
                 .header("openai-beta", "responses=experimental")
-                .header("Version", "0.144.4")
+                .header("Version", compatibility::VERSION)
                 .header("Session_Id", uuid::Uuid::new_v4().to_string());
         }
         for (name, value) in &provider.headers {

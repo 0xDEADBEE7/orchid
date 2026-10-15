@@ -80,7 +80,7 @@ fn start_worker(
         }
     };
     session.metadata.pid = Some(child.id());
-    store.save(&session)?;
+    store.save(session)?;
     log(
         store,
         settings,

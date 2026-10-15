@@ -36,6 +36,13 @@ fn main() -> ExitCode {
 /// Runs the requested operation.
 fn run(args: Vec<String>) -> io::Result<String> {
     let (root, args) = root_arg(args);
+    if args.len() == 1 && matches!(args[0].as_str(), "--version" | "-V") {
+        return Ok(format!(
+            "orchid {} (codex compatibility {})",
+            env!("CARGO_PKG_VERSION"),
+            orchid::client::openai_codex::compatibility::VERSION
+        ));
+    }
     init(&root)?;
     let settings = Settings::load(&root)?;
     let store = Store::new(&root)?;

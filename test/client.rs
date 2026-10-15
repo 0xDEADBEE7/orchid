@@ -5,6 +5,83 @@ use orchid::provider::{ClientProvider, Provider};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
+fn codex_http_response(status: &str, body: &str) -> (ClientError, String) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nX-Request-Id: request-test\r\nConnection: close\r\n\r\n{body}", body.len());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut reader = BufReader::new(&stream);
+        let mut headers = String::new();
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            headers.push_str(&line);
+        }
+        let size: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length: ")
+                    .map(str::to_owned)
+            })
+            .unwrap()
+            .parse()
+            .unwrap();
+        reader.read_exact(&mut vec![0; size]).unwrap();
+        stream.write_all(response.as_bytes()).unwrap();
+        headers
+    });
+    let mut config = connection(
+        "codex",
+        Some(Credential::Codex {
+            access_token: "test-token".into(),
+            account_id: "test-account".into(),
+        }),
+    );
+    config.connection.base_url = format!("http://{address}");
+    let error = client_for(config)
+        .unwrap()
+        .stream(ClientRequest {
+            model: "gpt-6-astra".into(),
+            system_prompt: "smoke test".into(),
+            messages: vec![],
+            tools: vec![],
+            params: Default::default(),
+        })
+        .unwrap_err();
+    (error, server.join().unwrap())
+}
+
+#[test]
+fn codex_sends_current_headers_and_preserves_gateway_error() {
+    let (error, headers) = codex_http_response(
+        "400 Bad Request",
+        r#"{"detail":"model requires a newer version of Codex"}"#,
+    );
+    let headers = headers.to_ascii_lowercase();
+    assert!(headers.contains("version: 0.153.4\r\n"));
+    assert!(headers.contains("user-agent: codex_cli_rs/0.153.4 (orchid)\r\n"));
+    let message = error.to_string();
+    assert!(message.contains("400"));
+    assert!(message.contains("request-test"));
+    assert!(message.contains("model requires a newer version"));
+}
+
+#[test]
+fn codex_bounds_error_body_and_classifies_authentication() {
+    let (error, _) = codex_http_response("401 Unauthorized", &"x".repeat(10000));
+    assert_eq!(error.kind, orchid::client::ClientErrorKind::Authentication);
+    assert!(error.to_string().len() < 4300);
+}
+
 fn connection(interface: &str, credential: Option<Credential>) -> ResolvedConnection {
     ResolvedConnection {
         connection: Connection {

@@ -23,6 +23,29 @@ See [user-guide/](user-guide/index.md) for the full usage reference and [archite
 make build    # compiles to ./bin/orchid
 ```
 
+`orchid --version` reports the Orchid release and Codex compatibility version.
+Orchid 0.1.1 advertises Codex 0.153.4 in both HTTP clients; the previous 0.144.4
+headers caused the Astra gateway to reject requests with HTTP 400. Gateway
+errors now include a bounded response body and the request ID when available.
+
+### Astra smoke test
+
+After installing the release binary, run:
+
+```bash
+python3 scripts/smoke-astra.py
+# Or test a specific build:
+python3 scripts/smoke-astra.py --binary ./bin/orchid
+```
+
+The script uses the existing `codex-astra` connection and OAuth login from
+`~/.config/orchid` (override with `--config`). It creates an isolated configuration
+and session, disables tools and hooks, sends a small live request to `gpt-6-astra`,
+and requires the exact response `ORCHID_ASTRA_SMOKE_PASS`. Failures and timeouts
+produce a nonzero exit status. Evidence is retained in the printed temporary
+directory. Authentication storage is linked, not copied, so any OAuth refresh
+updates the existing login. No credentials are printed.
+
 ## Usage
 
 ```bash

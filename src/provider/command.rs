@@ -25,14 +25,13 @@ fn load_session(store: &crate::store::Store, settings: &Settings, id: &str) -> i
     );
     let _ = store.log_both(id, &record, &settings.log_level);
     log(store, settings, id, "debug", "worker loading session");
-    store.load(id).map_err(|error| {
+    store.load(id).inspect_err(|error| {
         let record = worker_record(
             "error",
             "worker failed to load session",
             serde_json::json!({"error":error.to_string()}),
         );
         let _ = store.log_both(id, &record, &settings.log_level);
-        error
     })
 }
 
@@ -59,7 +58,7 @@ fn run_session(
     if !settings.policy.connections.is_empty() && configured.is_none() {
         return finish_failure(
             store,
-            &settings,
+            settings,
             id,
             session,
             io::Error::other("configured connection unavailable"),

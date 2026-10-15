@@ -1,5 +1,6 @@
 //! Provides the mod functionality.
 pub mod auth;
+pub mod compatibility;
 
 use super::{Client, ClientError, ClientErrorKind, ClientEvent, ClientRequest};
 use crate::config::ResolvedConnection;
@@ -201,9 +202,9 @@ fn send_request(
         .header("ChatGPT-Account-ID", account)
         .header("originator", "codex_cli_rs")
         .header("openai-beta", "responses=experimental")
-        .header("Version", "0.144.4")
+        .header("Version", compatibility::VERSION)
         .header("Session_Id", Uuid::new_v4().to_string())
-        .header("User-Agent", "codex_cli_rs/0.144.4 (orchid)")
+        .header("User-Agent", compatibility::USER_AGENT)
         .header("Accept", "text/event-stream")
         .header("Content-Type", "application/json")
         .json(body);
@@ -233,7 +234,9 @@ fn stream_lines(response: reqwest::blocking::Response) -> Result<StreamLines, Cl
         .and_then(|value| value.to_str().ok())
         .unwrap_or("missing")
         .to_owned();
-    validate_status(status)?;
+    if !status.is_success() {
+        return Err(http_error(response));
+    }
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
         let mut reader = BufReader::new(response);
@@ -254,19 +257,32 @@ fn stream_lines(response: reqwest::blocking::Response) -> Result<StreamLines, Cl
     Ok((receiver, content_type, content_length))
 }
 
-/// Performs the validate status operation.
-fn validate_status(status: reqwest::StatusCode) -> Result<(), ClientError> {
-    if status.is_success() {
-        return Ok(());
-    }
-    Err(ClientError::new(
+/// Preserves bounded gateway error details and its request identifier.
+fn http_error(mut response: reqwest::blocking::Response) -> ClientError {
+    use std::io::Read;
+    let status = response.status();
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing")
+        .to_owned();
+    let mut bytes = Vec::new();
+    let detail = match (&mut response).take(4096).read_to_end(&mut bytes) {
+        Ok(_) => String::from_utf8_lossy(&bytes).trim().to_owned(),
+        Err(_) => "<unable to read error body>".to_owned(),
+    };
+    ClientError::new(
         if status.as_u16() == 401 || status.as_u16() == 403 {
             ClientErrorKind::Authentication
         } else {
             ClientErrorKind::Http
         },
-        format!("Codex HTTP response status {}", status.as_u16()),
-    ))
+        format!(
+            "Codex HTTP response status {} (request_id={request_id}): {detail}",
+            status.as_u16()
+        ),
+    )
 }
 
 /// Performs the merge params operation.
