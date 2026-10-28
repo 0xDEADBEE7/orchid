@@ -1,92 +1,125 @@
 //! Provides the lifecycle functionality.
 use super::{dispatch, Provider, StreamEvent};
 use crate::{
+    client::ClientError,
     config::Settings,
     model::{Session, Usage},
 };
 use serde_json::Value;
 use std::io;
-use tiktoken_rs::o200k_base;
 
 /// Runs the requested operation.
 pub fn run(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
-    prompt: &str,
 ) -> io::Result<String> {
-    run_with_progress(provider, settings, session, prompt, |_| {})
+    run_with_progress(provider, settings, session, |_| None, |_| Ok(()))
 }
 
-/// Performs the run with progress operation.
-pub fn run_with_progress<F: FnMut(&Session)>(
+/// Runs one turn: request, run tools, repeat until a reply has no tool calls.
+/// `progress` persists each step and may block (hook exit 2); `inbox` adds
+/// queued messages before each request, never between a call and its result.
+pub fn run_with_progress<F, I>(
     provider: &dyn Provider,
     settings: &Settings,
     session: &mut Session,
-    prompt: &str,
     mut progress: F,
-) -> io::Result<String> {
+    mut inbox: I,
+) -> io::Result<String>
+where
+    F: FnMut(&Session) -> Option<String>,
+    I: FnMut(&mut Session) -> io::Result<()>,
+{
     loop {
-        enforce_token_limit(session, settings.policy.max_tokens())?;
-        progress(session);
-        let (answer, usage, calls) = collect(provider.stream(prompt, session)?);
-        if malformed(&calls) {
-            return Err(io::Error::other("malformed provider content"));
-        }
+        inbox(session)?;
+        enforce_token_limit(session, settings.agent.max_tokens)?;
+        check(progress(session))?;
+        let (answer, usage, calls) = collect(stream_with_retries(provider, settings, session)?);
         let input = match usage.as_ref() {
             Some(tokens) => tokens.input,
             None => estimate_request_tokens(session, &settings.prompt()?),
         };
         session.metadata.token_estimate = input;
         record_usage(session, usage, input);
-        progress(session);
+        check(progress(session))?;
+        // A reply may carry text and tool calls together (e.g. a preamble before a
+        // tool call). Keep the text, then run the calls; only a reply without calls
+        // ends the turn.
         if !answer.is_empty() {
             session.append(Session::message("assistant", answer.clone()));
-            progress(session);
-            return Ok(answer);
+            check(progress(session))?;
         }
         if calls.is_empty() {
-            return Err(io::Error::other("provider returned no text"));
+            return if answer.is_empty() {
+                Err(io::Error::other("provider returned no text"))
+            } else {
+                Ok(answer)
+            };
         }
         dispatch::execute(settings, session, calls, &mut progress)?;
     }
 }
 
-/// Count the serialized JSONL transcript, including one newline per event.
-fn estimate_request_tokens(session: &Session, system_prompt: &str) -> u32 {
-    let tokenizer = match o200k_base() {
-        Ok(tokenizer) => tokenizer,
-        Err(_) => return 0,
-    };
-    let mut tokens = 0usize;
-    // Count the system message included by chat-compatible providers.
-    if !system_prompt.is_empty() {
-        let Ok(line) = serde_json::to_string(&serde_json::json!({
-            "role": "system",
-            "content": system_prompt
-        })) else {
-            return 0;
-        };
-        tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
+/// Turns a hook block (exit 2) into an error that ends the turn.
+pub(super) fn check(blocked: Option<String>) -> io::Result<()> {
+    match blocked {
+        Some(reason) => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("blocked by hook: {reason}"),
+        )),
+        None => Ok(()),
     }
-    // Estimate the same filtered transcript sent to clients. Internal event
-    // metadata (timestamps, IDs, token usage, and usage-only events) is not
-    // conversation context and must not inflate the fallback estimate.
-    for message in super::messages(session) {
-        let Ok(line) = serde_json::to_string(&message) else {
-            return 0;
-        };
-        tokens += tokenizer.encode_ordinary(&format!("{line}\n")).len();
-    }
-    tokens.min(u32::MAX as usize) as u32
 }
 
-/// Performs the malformed operation.
-fn malformed(calls: &[(String, Value)]) -> bool {
-    calls
-        .first()
-        .is_some_and(|(name, _)| name == "__malformed__")
+/// Requests a reply, retrying transient client failures (network errors,
+/// overload, 5xx) after 2, 4 and 8 seconds. Nothing is persisted until a reply
+/// is complete, so a retry repeats no side effects.
+fn stream_with_retries(
+    provider: &dyn Provider,
+    settings: &Settings,
+    session: &Session,
+) -> io::Result<Vec<StreamEvent>> {
+    let mut delay = 2;
+    loop {
+        match provider.stream(session) {
+            Err(error) if delay <= 8 && retryable(&error) => {
+                let fields =
+                    serde_json::json!({"error": error.to_string(), "retry_in_seconds": delay});
+                settings.log(
+                    &session.metadata.id,
+                    "warning",
+                    "transient provider error",
+                    fields,
+                );
+                std::thread::sleep(std::time::Duration::from_secs(delay));
+                delay *= 2;
+            }
+            result => return result,
+        }
+    }
 }
+
+/// Whether an error came from a client failure that may succeed on retry.
+fn retryable(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<ClientError>())
+        .is_some_and(ClientError::retryable)
+}
+
+/// Estimates input tokens as a quarter of the bytes of the system prompt and the
+/// serialized messages sent to clients; used only when the provider reports no usage.
+fn estimate_request_tokens(session: &Session, system_prompt: &str) -> u32 {
+    let messages: usize = super::messages(session)
+        .iter()
+        .map(|message| serde_json::to_string(message).map_or(0, |line| line.len() + 1))
+        .sum();
+    (system_prompt.len() + messages)
+        .div_ceil(4)
+        .min(u32::MAX as usize) as u32
+}
+
 /// Compare the configured limit only with the latest request's input usage.
 fn enforce_token_limit(session: &mut Session, limit: Option<i64>) -> io::Result<()> {
     let Some(limit) = limit.filter(|limit| *limit >= 0) else {
@@ -131,9 +164,6 @@ fn collect(events: Vec<StreamEvent>) -> (String, Option<Usage>, Vec<(String, Val
                 StreamEvent::Usage(tokens) => out.1 = Some(tokens),
                 StreamEvent::ToolCall { name, input } => out.2.push((name, input)),
                 StreamEvent::Done => {}
-                StreamEvent::Malformed(message) => {
-                    out.2.push(("__malformed__".into(), Value::String(message)))
-                }
             }
             out
         })

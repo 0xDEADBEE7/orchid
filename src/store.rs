@@ -1,11 +1,12 @@
 //! Provides the store functionality.
-use crate::model::{LogRecord, Session};
+use crate::model::{Event, EventKind, LogRecord, Session, Status};
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
+    process::{Command, Stdio},
 };
+
+mod queue;
 
 #[derive(Debug, Clone)]
 /// Performs the Store operation.
@@ -45,37 +46,25 @@ impl Store {
         Ok(Session { metadata, events })
     }
 
-    /// Performs the reconcile operation.
-    pub fn reconcile(&self, id: &str) -> io::Result<Session> {
+    /// Marks a session whose worker died as failed, answering any open tool
+    /// calls. Also returns the index of the first event it added, if any.
+    pub fn reconcile(&self, id: &str) -> io::Result<(Session, Option<usize>)> {
         let _lock = SessionLock::acquire(&self.path(id))?;
         let mut session = self.load(id)?;
-        if session.metadata.status == crate::model::Status::Running {
-            let alive = session
-                .metadata
-                .pid
-                .map(|pid| {
-                    std::process::Command::new("kill")
-                        .args(["-0", &pid.to_string()])
-                        .status()
-                        .map(|s| s.success())
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false);
-            if !alive {
-                session.metadata.status = crate::model::Status::Failed;
-                session.metadata.pid = None;
-                session.metadata.termination_reason = Some("worker process disappeared".into());
-                session.append(crate::model::Event::Failure {
-                    event_id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: chrono::Utc::now(),
-                    message: "worker process disappeared".into(),
-                    connection: None,
-                    token_usage: crate::model::TokenUsage::default(),
-                });
-                self.save_unlocked(&session)?;
-            }
+        let before = session.events.len();
+        if session.metadata.status == Status::Running
+            && !session.metadata.pid.is_some_and(process_alive)
+        {
+            session.metadata.status = Status::Failed;
+            session.metadata.pid = None;
+            session.metadata.termination_reason = Some("worker process disappeared".into());
+            session.close_pending("worker process disappeared");
+            let message = "worker process disappeared".into();
+            session.append(Event::new(EventKind::Failure { message }));
+            self.save_unlocked(&session)?;
+            return Ok((session, Some(before)));
         }
-        Ok(session)
+        Ok((session, None))
     }
 
     /// Persists data to storage.
@@ -97,21 +86,24 @@ impl Store {
     /// Performs the save unlocked operation.
     fn save_unlocked(&self, session: &Session) -> io::Result<()> {
         let mut session = session.clone();
-        self.preserve_external_policy(&mut session)?;
+        self.preserve_external_fields(&mut session)?;
         self.save_unlocked_with_prompt(&session, None)
     }
 
-    /// Performs the preserve external policy operation.
-    fn preserve_external_policy(&self, session: &mut Session) -> io::Result<()> {
+    /// Keeps fields that other commands (`set`, `session`) may have changed on disk
+    /// while a long-lived in-memory copy was held, e.g. by a worker.
+    fn preserve_external_fields(&self, session: &mut Session) -> io::Result<()> {
         let path = self.path(&session.metadata.id).join("metadata.json");
         if !path.exists() {
             return Ok(());
         }
         let current: crate::model::Metadata =
             serde_json::from_slice(&fs::read(path)?).map_err(io::Error::other)?;
-        if current.policy != session.metadata.policy {
-            session.metadata.policy = current.policy;
-        }
+        session.metadata.agent = current.agent;
+        session.metadata.agent_name = current.agent_name;
+        session.metadata.policy = current.policy;
+        session.metadata.label = current.label;
+        session.metadata.working_dir = current.working_dir;
         Ok(())
     }
 
@@ -133,32 +125,14 @@ impl Store {
         Ok(())
     }
 
-    /// Records a lifecycle message.
-    pub fn log(&self, id: &str, record: &LogRecord) -> io::Result<()> {
-        append_log(&self.path(id).join("logs.jsonl"), record)
-    }
-
-    /// Performs the log global operation.
-    pub fn log_global(&self, record: &LogRecord) -> io::Result<()> {
-        append_log(&self.root.join("logs.jsonl"), record)
-    }
-
-    /// Performs the log both operation.
+    /// Appends a log record to the session's and the global log, if its level
+    /// is at least the configured one.
     pub fn log_both(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
         if level_rank(&record.level) < level_rank(configured) {
             return Ok(());
         }
-        self.log(id, record)?;
-        self.log_global(record)
-    }
-
-    /// Performs the log filtered operation.
-    pub fn log_filtered(&self, id: &str, record: &LogRecord, configured: &str) -> io::Result<()> {
-        if level_rank(&record.level) >= level_rank(configured) {
-            self.log(id, record)
-        } else {
-            Ok(())
-        }
+        append_log(&self.path(id).join("logs.jsonl"), record)?;
+        append_log(&self.root.join("logs.jsonl"), record)
     }
 
     /// Lists the available entries.
@@ -219,44 +193,34 @@ impl Store {
     }
 }
 
-/// Performs the SessionLock operation.
+/// An exclusive flock on the session's lock file. The kernel releases it when the
+/// file is dropped or the process dies, so a killed writer never wedges a session.
+/// (A distinct filename from the old marker-file lock, which it replaces.)
 struct SessionLock {
-    path: PathBuf,
+    _file: fs::File,
 }
 
 impl SessionLock {
-    /// Performs the acquire operation.
+    /// Blocks until the session lock is held.
     fn acquire(dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
-        let path = dir.join(".lock");
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(_) => return Ok(Self { path }),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    if Instant::now() >= deadline {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "session write lock timed out",
-                        ));
-                    }
-                    thread::sleep(Duration::from_millis(5));
-                }
-                Err(error) => return Err(error),
-            }
-        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(".flock"))?;
+        file.lock()?;
+        Ok(Self { _file: file })
     }
 }
 
-impl Drop for SessionLock {
-    /// Releases resources and restores associated state.
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-    }
+/// Returns whether a process exists (signal 0), without writing to stderr.
+pub fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// Performs the append events operation.
@@ -274,9 +238,10 @@ fn append_events<T: serde::Serialize>(path: &Path, events: &[T]) -> io::Result<(
     append_serialized(path, &events[existing..])
 }
 
-/// Performs the event count operation.
+/// Counts stored events (non-blank lines) without parsing them.
 fn event_count(path: &Path) -> io::Result<usize> {
-    read_jsonl::<serde_json::Value>(path).map(|events| events.len())
+    let text = fs::read_to_string(path)?;
+    Ok(text.lines().filter(|line| !line.trim().is_empty()).count())
 }
 
 /// Performs the append serialized operation.
@@ -319,10 +284,14 @@ fn level_rank(level: &str) -> u8 {
     }
 }
 
-/// Performs the write json operation.
+/// Writes JSON to a temporary file and renames it, so readers never see a partial file.
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
-    let bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
-    fs::write(path, bytes)
+    let tmp = path.with_extension("json.tmp");
+    fs::write(
+        &tmp,
+        serde_json::to_vec_pretty(value).map_err(io::Error::other)?,
+    )?;
+    fs::rename(tmp, path)
 }
 
 /// Performs the read jsonl operation.
@@ -336,6 +305,9 @@ fn read_jsonl<T: serde::de::DeserializeOwned>(path: &Path) -> io::Result<Vec<T>>
 
 /// Performs the default root operation.
 pub fn default_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("ORCHID_CONFIG") {
+        return PathBuf::from(root);
+    }
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| home.join(".config").join("orchid"))

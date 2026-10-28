@@ -1,4 +1,5 @@
 //! Provides the cli send functionality.
+use crate::cli_args::{invalid, positional, value};
 use orchid::{
     config::Settings,
     model::{Session, Status},
@@ -8,6 +9,7 @@ use std::{
     env,
     fs::OpenOptions,
     io,
+    os::unix::process::CommandExt,
     process::{Command, Stdio},
 };
 
@@ -31,62 +33,55 @@ fn run_send(
     message: &str,
     no_run: bool,
 ) -> io::Result<String> {
-    let mut session = store.load(id)?;
-    if session.metadata.status == Status::Running {
-        return Err(io::Error::new(
-            io::ErrorKind::WouldBlock,
-            "session is already running",
-        ));
+    // Reconciling first means a dead worker's stale `running` status never blocks.
+    let (session, added) = store.reconcile(id)?;
+    let settings = &settings.for_session(&session);
+    if let Some(from) = added {
+        let _ = orchid::hooks::fire_events(settings, &session, from);
     }
-    orchid::hooks::append(
-        store,
-        settings,
-        &mut session,
-        Session::message("user", message.to_owned()),
-    )?;
+    // Hooks for a user message run before it is stored or queued, so a block
+    // (exit 2) keeps it out of the transcript.
+    let event = Session::message("user", message.to_owned());
+    let mut preview = session.clone();
+    preview.append(event.clone());
+    if let Some(reason) = orchid::hooks::fire_events(settings, &preview, session.events.len()) {
+        let reason = format!("blocked by hook: {reason}");
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, reason));
+    }
+    let event_id = event.event_id.clone();
+    // While a worker runs, the message is queued and delivered before its next request.
+    let Some(session) = store.deliver(id, event, !no_run)? else {
+        return Ok(serde_json::json!({"id":id,"status":"queued","event_id":event_id}).to_string());
+    };
     if no_run {
         return Ok(
             serde_json::json!({"id":id,"status":session.metadata.status,"no_run":true}).to_string(),
         );
     }
-    start_worker(store, settings, id, message, &mut session)
+    start_worker(store, settings, id)
 }
 
 /// Performs the start worker operation.
-fn start_worker(
-    store: &Store,
-    settings: &Settings,
-    id: &str,
-    message: &str,
-    session: &mut Session,
-) -> io::Result<String> {
-    // A synchronous hook may append another event through `send --no-run`.
-    // Refresh before changing the running state so the outer process never
-    // attempts to save a stale, shorter event stream.
-    *session = store.load(id)?;
-    session.metadata.status = Status::Running;
-    log(store, settings, id, "info", "send accepted");
-    let child = match spawn_worker(settings, id, message) {
+fn start_worker(store: &Store, settings: &Settings, id: &str) -> io::Result<String> {
+    settings.log(id, "info", "send accepted", serde_json::json!({}));
+    let child = match spawn_worker(settings, id) {
         Ok(child) => child,
         Err(error) => {
-            log(
-                store,
-                settings,
-                id,
-                "error",
-                &format!("worker spawn failed: {error}"),
-            );
+            let fields = serde_json::json!({"error": error.to_string()});
+            settings.log(id, "error", "worker spawn failed", fields);
+            store.update(id, |session| {
+                session.metadata.status = Status::Idle;
+                session.metadata.pid = None;
+            })?;
             return Err(error);
         }
     };
-    session.metadata.pid = Some(child.id());
-    store.save(&session)?;
-    log(
-        store,
-        settings,
+    store.update(id, |session| session.metadata.pid = Some(child.id()))?;
+    settings.log(
         id,
         "info",
-        &format!("worker spawned: {}", child.id()),
+        "worker spawned",
+        serde_json::json!({"pid": child.id()}),
     );
     Ok(serde_json::json!({"id":id,"status":Status::Running,"pid":child.id()}).to_string())
 }
@@ -104,23 +99,8 @@ fn request(args: &[String]) -> io::Result<(String, String)> {
     Ok((id, message))
 }
 
-/// Records a lifecycle message.
-fn log(store: &Store, settings: &Settings, id: &str, level: &str, message: &str) {
-    let _ = store.log_both(
-        id,
-        &orchid::model::LogRecord {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            level: level.into(),
-            message: message.into(),
-            fields: serde_json::json!({}),
-        },
-        &settings.log_level,
-    );
-}
-
 /// Performs the spawn worker operation.
-fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std::process::Child> {
+fn spawn_worker(settings: &Settings, id: &str) -> io::Result<std::process::Child> {
     let stderr_path = settings
         .root
         .join("sessions")
@@ -136,53 +116,12 @@ fn spawn_worker(settings: &Settings, id: &str, message: &str) -> io::Result<std:
         .arg("__run")
         .arg("--id")
         .arg(id)
-        .arg(message)
+        // A worker's turn is a fresh root for hook nesting, and it leads its own
+        // process group so `stop` can end its tool commands too.
+        .env_remove("ORCHID_HOOK_DEPTH")
+        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr)
         .spawn()
-}
-
-/// Performs the positional operation.
-fn positional(args: &[String]) -> Vec<String> {
-    let flags = [
-        "--id",
-        "--label",
-        "--working-dir",
-        "--agent",
-        "--timeout",
-        "--interval",
-    ];
-    let mut result = Vec::new();
-    let mut skip = false;
-    for arg in args {
-        if skip {
-            skip = false;
-            continue;
-        }
-        if flags.contains(&arg.as_str()) {
-            skip = true;
-            continue;
-        }
-        if !arg.starts_with('-') {
-            result.push(arg.clone());
-        }
-    }
-    result
-}
-
-/// Returns the named argument value, if present.
-fn value(args: &[String], name: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == name)
-        .map(|w| w[1].clone())
-        .or_else(|| {
-            args.iter()
-                .find_map(|x| x.strip_prefix(&format!("{name}=")).map(str::to_string))
-        })
-}
-
-/// Creates an invalid-input error.
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message)
 }

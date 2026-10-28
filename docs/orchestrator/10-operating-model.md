@@ -3,8 +3,23 @@
 Use this default lifecycle:
 
 ```text
-inspect → plan → delegate → await → inspect → validate → integrate → report
+inspect → plan → delegate → (end turn) → react to <subagent> reports → inspect → validate → integrate → report
 ```
+
+Delegate without blocking. Start workers, tell the user what is running, and
+end your turn. The user can keep talking to you while workers run. When a
+worker's turn ends, its result arrives as a user message:
+
+```text
+<subagent id="<session-id>" status="idle|failed|terminated|cancelled">last message or reason</subagent>
+```
+
+Several reports may arrive together. Do not call `orchid await` with long
+timeouts: it blocks your turn and the user's messages queue behind it.
+
+In your bash tool, `$ORCHID_BIN` is the orchid binary and `ORCHID_CONFIG` and
+`ORCHID_SESSION_ID` are set; sessions you create are linked to you, which is
+how their reports find you.
 
 Use sequential execution by default. Choose parallel execution only when the
 user requests it or tasks are clearly independent and isolated.

@@ -10,92 +10,31 @@ fn run(binary: &str, root: &std::path::Path, args: &[&str]) -> std::process::Out
 }
 
 #[test]
-fn tool_call_persists_result_and_hook_can_invoke_it() {
+fn a_hook_exiting_2_keeps_a_user_message_out_of_the_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     orchid::config::init(root).unwrap();
     let binary = env!("CARGO_BIN_EXE_orchid");
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"tools":["bash"],"hooks":{"events":{"on-init":[{"script":"hook.sh","mode":"sync"}]}}}"#,
+        root.join("deny.sh"),
+        "#!/bin/sh\necho 'not today' >&2\nexit 2\n",
     )
     .unwrap();
-    let hook = format!(
-        "#!/bin/sh\n{} --config {} tool-call --id \"$ORCHID_SESSION_ID\" --input '{{\"call_id\":\"hook-call\",\"name\":\"bash\",\"input\":{{\"cmd\":\"printf hook > hook-output\"}}}}'\n",
-        shell_quote(binary),
-        shell_quote(root.to_str().unwrap()),
-    );
-    fs::write(root.join("hook.sh"), hook).unwrap();
-    set_executable(&root.join("hook.sh"));
-
-    let created = run(binary, root, &["create"]);
-    assert!(
-        created.status.success(),
-        "{}",
-        String::from_utf8_lossy(&created.stderr)
-    );
-    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    set_executable(&root.join("deny.sh"));
+    fs::write(
+        root.join("config.json"),
+        r#"{"hooks":{"on-event":[{"script":"deny.sh"}]}}"#,
+    )
+    .unwrap();
+    let created: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["create"]).stdout).unwrap();
     let id = created["id"].as_str().unwrap();
-
-    let direct = run(
-        binary,
-        root,
-        &[
-            "tool-call",
-            "--id",
-            id,
-            "--input",
-            r#"{"call_id":"direct-call","name":"bash","input":{"cmd":"printf direct > direct-output"}}"#,
-        ],
-    );
-    assert!(
-        direct.status.success(),
-        "{}",
-        String::from_utf8_lossy(&direct.stderr)
-    );
-    assert!(direct.stdout.is_empty());
-    assert_eq!(
-        fs::read_to_string(root.join("direct-output")).unwrap(),
-        "direct"
-    );
-    let direct_events =
-        fs::read_to_string(root.join("sessions").join(id).join("events.jsonl")).unwrap();
-    assert!(direct_events
-        .lines()
-        .any(|line| line.contains("direct-call")));
-
-    let hooked = run(binary, root, &["create"]);
-    assert!(hooked.status.success());
-    let hooked: serde_json::Value = serde_json::from_slice(&hooked.stdout).unwrap();
-    let hooked_id = hooked["id"].as_str().unwrap();
-    let sent = run(
-        binary,
-        root,
-        &["send", "--no-run", "--id", hooked_id, "start"],
-    );
-    assert!(
-        sent.status.success(),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&sent.stderr),
-        String::from_utf8_lossy(&sent.stdout)
-    );
-    assert_eq!(
-        fs::read_to_string(root.join("hook-output")).unwrap(),
-        "hook"
-    );
-
-    let events =
-        fs::read_to_string(root.join("sessions").join(hooked_id).join("events.jsonl")).unwrap();
-    let values: Vec<serde_json::Value> = events
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    assert!(values
-        .iter()
-        .any(|event| event["type"] == "tool_call" && event["calls"][0]["call_id"] == "hook-call"));
-    assert!(values
-        .iter()
-        .any(|event| event["type"] == "tool_result" && event["call_id"] == "hook-call"));
+    let sent = run(binary, root, &["send", "--no-run", "--id", id, "hello"]);
+    assert!(!sent.status.success());
+    assert!(String::from_utf8_lossy(&sent.stderr).contains("blocked by hook: not today"));
+    let session: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap();
+    assert!(session["events"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -106,8 +45,8 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     let binary = env!("CARGO_BIN_EXE_orchid");
 
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"max_tokens":120000,"tools":["bash"]}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":120000,"tools":["bash"]}"#,
     )
     .unwrap();
     let created = run(binary, root, &["create"]);
@@ -116,17 +55,17 @@ fn session_metadata_keeps_an_independent_agent_policy_snapshot() {
     let id = created["id"].as_str().unwrap();
 
     fs::write(
-        root.join("policies/default.json"),
-        r#"{"max_tokens":4096,"tools":[]}"#,
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","max_tokens":4096,"tools":[]}"#,
     )
     .unwrap();
     let loaded = run(binary, root, &["get", id]);
     assert!(loaded.status.success());
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(loaded["metadata"]["policy"]["max_tokens"], 120000);
-    assert_eq!(loaded["metadata"]["policy"]["tools"][0], "bash");
-    assert!(loaded["metadata"].get("agent").is_none());
-    fs::write(root.join("prompts/default.txt"), "A changed source prompt.").unwrap();
+    assert_eq!(loaded["metadata"]["agent"]["max_tokens"], 120000);
+    assert_eq!(loaded["metadata"]["agent"]["tools"][0], "bash");
+    assert_eq!(loaded["metadata"]["agent_name"], "default");
+    fs::write(root.join("prompts/default.md"), "A changed source prompt.").unwrap();
     assert_eq!(
         fs::read_to_string(root.join("sessions").join(id).join("prompt.md")).unwrap(),
         "You are a helpful assistant."
@@ -167,7 +106,7 @@ fn list_returns_only_session_ids_and_labels() {
 
 #[cfg(unix)]
 #[test]
-fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
+fn stop_kills_worker_marks_session_cancelled_and_allows_follow_up() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     orchid::config::init(root).unwrap();
@@ -198,13 +137,13 @@ fn stop_kills_worker_marks_session_idle_and_allows_follow_up() {
         String::from_utf8_lossy(&stopped.stdout)
     );
     let stopped: serde_json::Value = serde_json::from_slice(&stopped.stdout).unwrap();
-    assert_eq!(stopped["status"], "idle");
+    assert_eq!(stopped["status"], "cancelled");
     assert!(worker.try_wait().unwrap().is_some());
 
     let loaded = run(binary, root, &["get", id]);
     assert!(loaded.status.success());
     let loaded: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(loaded["metadata"]["status"], "idle");
+    assert_eq!(loaded["metadata"]["status"], "cancelled");
     assert_eq!(loaded["metadata"]["pid"], serde_json::Value::Null);
     assert_eq!(
         loaded["metadata"]["termination_reason"],
@@ -237,6 +176,132 @@ fn set_executable(path: &std::path::Path) {
 #[cfg(not(unix))]
 fn set_executable(_: &std::path::Path) {}
 
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+#[test]
+fn worker_setup_error_fails_the_session_with_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    fs::write(
+        root.join("agents/default.json"),
+        r#"{"prompt":"default","connection":"missing"}"#,
+    )
+    .unwrap();
+    let created: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["create"]).stdout).unwrap();
+    let id = created["id"].as_str().unwrap();
+    assert!(run(binary, root, &["send", "--id", id, "hi"])
+        .status
+        .success());
+    // await exits 1 for a failed session and reports the reason.
+    let awaited = run(binary, root, &["await", id, "--timeout", "10"]);
+    assert_eq!(awaited.status.code(), Some(1));
+    let awaited: serde_json::Value = serde_json::from_slice(&awaited.stdout).unwrap();
+    assert_eq!(awaited["sessions"][0]["status"], "failed");
+    let session: serde_json::Value =
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap();
+    assert_eq!(session["metadata"]["status"], "failed");
+    let reason = session["metadata"]["termination_reason"].as_str().unwrap();
+    assert!(reason.contains("connection missing"), "{reason}");
+}
+
+#[test]
+fn stop_on_idle_session_is_a_no_op_and_working_dirs_are_absolute() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    assert!(
+        !run(binary, root, &["create", "--working-dir", "/no/such/dir"])
+            .status
+            .success()
+    );
+    let created = Command::new(binary)
+        .current_dir(root)
+        .args([
+            "--config",
+            root.to_str().unwrap(),
+            "create",
+            "--working-dir",
+            "prompts",
+        ])
+        .output()
+        .unwrap();
+    let id = serde_json::from_slice::<serde_json::Value>(&created.stdout).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let get = |id: &str| -> serde_json::Value {
+        serde_json::from_slice(&run(binary, root, &["get", id]).stdout).unwrap()
+    };
+    let working_dir = get(&id)["metadata"]["working_dir"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(std::path::Path::new(&working_dir).is_absolute() && working_dir.ends_with("prompts"));
+    let stopped = run(binary, root, &["stop", &id]);
+    assert!(stopped.status.success());
+    assert_eq!(get(&id)["events"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn auth_add_writes_a_connection_wires_the_default_agent_and_tests_it() {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0u8; 65536];
+        let read = stream.read(&mut request).unwrap();
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\ndata: [DONE]\n\n";
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(reply.as_bytes()).unwrap();
+        String::from_utf8_lossy(&request[..read]).into_owned()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    orchid::config::init(root).unwrap();
+    let binary = env!("CARGO_BIN_EXE_orchid");
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let added = run(
+        binary,
+        root,
+        &[
+            "auth",
+            "add",
+            "local",
+            "--base-url",
+            &base,
+            "--model",
+            "m",
+            "--header",
+            "x-team=core",
+        ],
+    );
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    let added: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    assert_eq!(
+        (added["default"].as_bool(), added["test"]["reply"].as_str()),
+        (Some(true), Some("OK"))
+    );
+    let request = server.join().unwrap();
+    assert!(request.starts_with("POST /v1/chat/completions") && request.contains("x-team: core"));
+    let agent: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("agents/default.json")).unwrap())
+            .unwrap();
+    assert_eq!(agent["connection"], "local");
+    assert!(!run(
+        binary,
+        root,
+        &["auth", "add", "local", "--base-url", &base, "--model", "m"]
+    )
+    .status
+    .success());
 }

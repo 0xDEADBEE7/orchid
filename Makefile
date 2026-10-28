@@ -1,4 +1,4 @@
-.PHONY: help build pack install-bin test lint check metrics clean
+.PHONY: help build pack install-bin test lint check metrics clean prompts
 
 RELEASE_BINARY := target/release/orchid
 STAGED_BINARY := bin/orchid
@@ -13,6 +13,7 @@ help:
 	@echo "  make lint    - Run clippy and fmt check"
 	@echo "  make check   - lint + test"
 	@echo "  make metrics - Run LoC, file-size, and assay metrics"
+	@echo "  make prompts - Regenerate the orchestrator prompt from docs/orchestrator/"
 
 build:
 	cargo build --release
@@ -38,5 +39,10 @@ check: lint test
 
 metrics:
 	./.scripts/metrics.sh
+
+prompts:
+	@{ printf '%s\n\n' '<!-- Generated from docs/orchestrator/*.md. Do not edit directly. -->'; \
+	  sep=; for f in docs/orchestrator/*.md; do printf "$$sep"; cat "$$f"; sep='\n\n---\n\n'; done; \
+	  printf '\n'; } > docs/resources/config/prompts/orchestrator.md
 
 .DEFAULT_GOAL := help

@@ -41,18 +41,8 @@ impl Client for OpenAiChatClient {
                 format!("OpenAI request failed: {error}"),
             )
         })?;
-        let status = response.status();
-        if !status.is_success() {
-            let kind = if status.as_u16() == 401 || status.as_u16() == 403 {
-                ClientErrorKind::Authentication
-            } else {
-                ClientErrorKind::Http
-            };
-            let detail = response.text().unwrap_or_default();
-            return Err(ClientError::new(
-                kind,
-                format!("OpenAI HTTP status {status}: {detail}"),
-            ));
+        if !response.status().is_success() {
+            return Err(super::base::http_error("OpenAI", response));
         }
         let text = response
             .text()
@@ -61,11 +51,14 @@ impl Client for OpenAiChatClient {
     }
 }
 
-/// Builds the API endpoint URL.
-fn endpoint(base_url: &str) -> String {
+/// Builds the endpoint URL: a full `.../chat/completions` URL (query string
+/// included) is used as given; `.../v1` and bare hosts get the standard path.
+pub fn endpoint(base_url: &str) -> String {
     let base = base_url.trim_end_matches('/');
-    if base.ends_with("/chat/completions") {
+    if base.contains("/chat/completions") {
         base.into()
+    } else if base.ends_with("/v1") {
+        format!("{base}/chat/completions")
     } else {
         format!("{base}/v1/chat/completions")
     }
@@ -78,10 +71,9 @@ fn request_body(request: ClientRequest) -> Value {
         messages.push(json!({"role":"system", "content":request.system_prompt}));
     }
     for message in request.messages {
-        if let Some((call_id, content)) = message.tool_result {
-            messages.push(
-                json!({"role":"tool", "tool_call_id":call_id, "content":content.to_string()}),
-            );
+        if let Some(call_id) = message.tool_call_id {
+            messages
+                .push(json!({"role":"tool", "tool_call_id":call_id, "content":message.content}));
         } else if !message.tool_calls.is_empty() {
             let calls = message
                 .tool_calls
@@ -99,7 +91,9 @@ fn request_body(request: ClientRequest) -> Value {
             messages.push(json!({"role":message.role, "content":message.content}));
         }
     }
-    let mut body = json!({"model":request.model, "messages":messages, "stream":true});
+    // Ask for a final usage chunk so token limits use reported, not estimated, counts.
+    let mut body = json!({"model":request.model, "messages":messages, "stream":true,
+        "stream_options":{"include_usage":true}});
     if !request.tools.is_empty() {
         body["tools"] = Value::Array(request.tools.into_iter().map(|tool| json!({
             "type":"function",
@@ -136,6 +130,15 @@ pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
                 format!("invalid OpenAI stream event: {error}"),
             )
         })?;
+        // Some gateways report failures inside a 200 stream.
+        if let Some(error) = value.get("error").filter(|error| error.is_object()) {
+            let message = error["message"].as_str().unwrap_or("no message");
+            let kind = super::base::error_kind(error);
+            return Err(ClientError::new(
+                kind,
+                format!("OpenAI stream error: {message}"),
+            ));
+        }
         if let Some(usage) = value.get("usage").filter(|usage| !usage.is_null()) {
             events.push(ClientEvent::Usage(Usage {
                 input: u32_value(usage.get("prompt_tokens")),
@@ -169,12 +172,9 @@ pub fn parse_sse(input: &str) -> Result<Vec<ClientEvent>, ClientError> {
         }
     }
     for (_, call) in calls {
-        let input = serde_json::from_str(&call.arguments).map_err(|error| {
-            ClientError::new(
-                ClientErrorKind::Protocol,
-                format!("invalid tool arguments: {error}"),
-            )
-        })?;
+        // Malformed arguments are passed through as a string; dispatch rejects
+        // them as a tool error the model can correct.
+        let input = serde_json::from_str(&call.arguments).unwrap_or(Value::String(call.arguments));
         events.push(ClientEvent::ToolCall(ToolCall {
             call_id: call.id,
             name: call.name,

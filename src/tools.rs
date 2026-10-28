@@ -1,5 +1,5 @@
 //! Provides the tools functionality.
-use crate::{config::Settings, model::Event};
+use crate::config::Settings;
 use serde_json::Value;
 use std::process::Command;
 use std::{
@@ -7,9 +7,29 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Performs the read operation.
-pub fn read(settings: &Settings, paths: &[String]) -> io::Result<Value> {
-    read_from(settings, paths, &settings.root)
+/// Largest tool output, in characters, kept in a session or sent to a model.
+const MAX_OUTPUT: usize = 50_000;
+
+/// Renders a tool result for a model: strings as-is, anything else as JSON.
+pub fn text(value: &Value) -> String {
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
+}
+
+/// Keeps the head and tail of oversized tool output.
+pub fn clip(value: Value) -> Value {
+    let text = text(&value);
+    let len = text.chars().count();
+    if len <= MAX_OUTPUT {
+        return value;
+    }
+    let head: String = text.chars().take(MAX_OUTPUT / 2).collect();
+    let tail: String = text.chars().skip(len - MAX_OUTPUT / 2).collect();
+    let cut = len - MAX_OUTPUT;
+    Value::String(format!(
+        "{head}\n[... {cut} characters truncated ...]\n{tail}"
+    ))
 }
 
 /// Reads files relative to a base directory.
@@ -20,7 +40,7 @@ pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Resu
     }
     let mut result = serde_json::Map::new();
     for input in paths {
-        match safe_path_at(settings, input, base)
+        match safe_path_at(input, base)
             .and_then(|path| fs::read_to_string(&path).map(|s| (path, s)))
         {
             Ok((path, content)) => {
@@ -39,15 +59,10 @@ pub fn read_from(settings: &Settings, paths: &[String], base: &Path) -> io::Resu
     Ok(Value::Object(result))
 }
 
-/// Performs the edit operation.
-pub fn edit(settings: &Settings, path: &str, edits: &Value) -> io::Result<Value> {
-    edit_from(settings, path, edits, &settings.root)
-}
-
 /// Applies edits to a file relative to a base directory.
 pub fn edit_from(settings: &Settings, path: &str, edits: &Value, base: &Path) -> io::Result<Value> {
     require(settings, "fs_edit")?;
-    let path = safe_path_at(settings, path, base)?;
+    let path = safe_path_at(path, base)?;
     let edits = edits
         .as_array()
         .ok_or_else(|| invalid("fs_edit edits must be an array"))?;
@@ -95,36 +110,6 @@ fn apply_edit(content: String, edit: &Value) -> io::Result<String> {
     })
 }
 
-/// Performs the event operation.
-pub fn event(name: &str, input: Value, result: Value) -> [Event; 2] {
-    [
-        Event::ToolCall {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            calls: vec![crate::model::ToolCall {
-                call_id: uuid::Uuid::new_v4().to_string(),
-                name: name.into(),
-                input,
-            }],
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        },
-        Event::ToolResult {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            call_id: String::new(),
-            content: result,
-            connection: None,
-            token_usage: crate::model::TokenUsage::default(),
-        },
-    ]
-}
-
-/// Performs the bash operation.
-pub fn bash(settings: &Settings, command: &str) -> io::Result<Value> {
-    bash_in(settings, command, &settings.root)
-}
-
 /// Runs a shell command in a working directory.
 pub fn bash_in(settings: &Settings, command: &str, working_dir: &Path) -> io::Result<Value> {
     require(settings, "bash")?;
@@ -132,96 +117,43 @@ pub fn bash_in(settings: &Settings, command: &str, working_dir: &Path) -> io::Re
         .arg("-c")
         .arg(command)
         .current_dir(working_dir)
+        .envs(settings.child_env())
         .output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Ok(Value::String(if stderr.is_empty() {
-        stdout.into()
-    } else if stdout.is_empty() {
-        stderr.into()
-    } else {
-        format!("{}{}", stdout, stderr)
-    }))
+    Ok(Value::String(format!("{stdout}{stderr}")))
 }
 
 /// Checks whether a tool is allowed.
 fn require(settings: &Settings, tool: &str) -> io::Result<()> {
-    if settings
-        .policy
-        .tools()
-        .iter()
-        .any(|allowed| allowed == tool)
-    {
+    if settings.agent.tools.iter().any(|allowed| allowed == tool) {
         Ok(())
     } else {
         Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("tool denied by policy: {tool}"),
+            format!("tool not enabled for this agent: {tool}"),
         ))
     }
 }
 
-/// Resolves a path within policy scope.
-fn safe_path_at(settings: &Settings, input: &str, base_path: &Path) -> io::Result<PathBuf> {
-    let base = Path::new(base_path);
-    let path = if Path::new(input).is_absolute() {
-        PathBuf::from(input)
-    } else {
-        base.join(input)
-    };
+/// Resolves a path, which must stay inside the session's working directory.
+/// Narrower rules (e.g. allowed subdirectories) belong in an on-tool-call hook.
+fn safe_path_at(input: &str, base: &Path) -> io::Result<PathBuf> {
+    let path = base.join(input);
     let base = base.canonicalize()?;
     let candidate = path
         .parent()
         .unwrap_or(&path)
         .canonicalize()?
         .join(path.file_name().ok_or_else(|| invalid("path is empty"))?);
-    let allowed = settings.policy.paths().is_empty()
-        || settings.policy.paths().iter().any(|path| {
-            let path = base
-                .join(path)
-                .canonicalize()
-                .unwrap_or_else(|_| base.join(path));
-            candidate.starts_with(path)
-        });
-    if candidate.starts_with(&base) && allowed {
+    if candidate.starts_with(&base) {
         Ok(candidate)
     } else {
-        Err(invalid("path is outside policy scope"))
+        Err(invalid("path is outside the working directory"))
     }
 }
 
 /// Creates an invalid-input error.
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
-}
-
-pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
-    let name = args
-        .first()
-        .ok_or_else(|| invalid("tool requires a name"))?;
-    let input = args.get(1..).unwrap_or_default().join(" ");
-    let result = run_named(settings, name, &input)?;
-    serde_json::to_string(&serde_json::json!({"result":result})).map_err(io::Error::other)
-}
-
-/// Runs a named tool.
-fn run_named(settings: &Settings, name: &str, input: &str) -> io::Result<Value> {
-    match name {
-        "bash" => bash(settings, input),
-        "fs_read" => read(settings, &[input.to_owned()]),
-        "fs_edit" => edit_input(settings, input),
-        _ => Err(invalid("unknown tool")),
-    }
-}
-
-/// Performs the edit input operation.
-fn edit_input(settings: &Settings, input: &str) -> io::Result<Value> {
-    let (path, content) = input
-        .split_once(' ')
-        .ok_or_else(|| invalid("fs_edit requires path and content"))?;
-    edit(
-        settings,
-        path,
-        &serde_json::json!([{"old_string":"","new_string":content}]),
-    )
 }

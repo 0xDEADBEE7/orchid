@@ -55,22 +55,27 @@ pub fn load(root: &Path, name: &str) -> Result<CodexTokens, String> {
 pub fn save(root: &Path, name: &str, tokens: &CodexTokens) -> Result<(), String> {
     let path = token_path(root, name);
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(
-        &path,
-        serde_json::to_vec(tokens).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    // Write a private temporary file, then rename, so readers never see a partial file.
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_vec(tokens).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
             .map_err(|e| e.to_string())?;
     }
-    Ok(())
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-/// Performs the access token operation.
+/// Returns a valid access token, refreshing it at most once across concurrent workers.
 pub fn access_token(root: &Path, name: &str) -> Result<CodexTokens, String> {
+    load(root, name)?;
+    // A refresh token is single-use, so refreshes are serialised with an flock that the
+    // kernel releases when the process exits. Tokens are re-read once the lock is held.
+    let lock = std::fs::File::create(token_path(root, name).with_extension("lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
     let mut tokens = load(root, name)?;
     if tokens.expires_at > chrono::Utc::now().timestamp() + 60 {
         return Ok(tokens);
@@ -140,7 +145,8 @@ impl OAuthFlow {
         let url = format!("{AUTHORIZE_URL}?response_type=code&client_id={client_id}&redirect_uri={REDIRECT_URI}&scope=openid%20profile%20email%20offline_access&state={state}&code_challenge={challenge}&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true");
         let listener = TcpListener::bind("127.0.0.1:1455")
             .map_err(|e| format!("callback bind failed: {e}"))?;
-        let _ = std::process::Command::new("open").arg(url).status();
+        eprintln!("Open this URL to sign in:\n{url}");
+        let _ = std::process::Command::new("open").arg(&url).status();
         Ok(Self {
             state,
             verifier,

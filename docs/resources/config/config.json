@@ -1,3 +1,6 @@
 {
-  "log_level": "debug"
+  "log_level": "info",
+  "hooks": {
+    "on-turn-end": [{"script": "hooks/notify-parent.sh"}]
+  }
 }

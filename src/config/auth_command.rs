@@ -1,73 +1,72 @@
-//! Provides the auth command functionality.
-use super::{read_json, Settings};
-use serde_json::Value;
+//! `orchid auth`: add (guided, see setup.rs), test, and list connections; log
+//! in to Codex.
+use super::Settings;
+use super::{prompt::invalid, setup::add};
+use crate::client::{ClientEvent, ClientRequest, Message};
+use serde_json::json;
 use std::{fs, io};
 
 /// Runs the requested operation.
 pub(super) fn run(settings: &Settings, args: &[String]) -> io::Result<String> {
+    let given = args.get(1).filter(|name| !name.starts_with('-'));
+    let name = || given.ok_or_else(|| invalid("auth requires a connection name"));
     match args.first().map(String::as_str) {
         None | Some("list") => list(settings),
-        Some("validate") => validate(settings, args.get(1)),
-        Some("login") => login(settings, args.get(1)),
-        Some(_) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "unknown auth command",
-        )),
-    }
-}
-
-/// Lists the available entries.
-fn list(settings: &Settings) -> io::Result<String> {
-    let names = fs::read_dir(settings.root.join("auth"))?
-        .filter_map(Result::ok)
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect::<Vec<_>>();
-    serde_json::to_string(&serde_json::json!({"auth":names})).map_err(io::Error::other)
-}
-
-/// Validates the requested configuration.
-fn validate(settings: &Settings, name: Option<&String>) -> io::Result<String> {
-    let name = name.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "auth validate requires a name")
-    })?;
-    if settings
-        .root
-        .join("auth/tokens")
-        .join(format!("{name}.json"))
-        .exists()
-    {
-        crate::client::openai_codex::auth::access_token(&settings.root, name).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "Codex credential unavailable")
-        })?;
-        return Ok(serde_json::json!({"valid":true,"type":"openai_codex_oauth"}).to_string());
-    }
-    let _: Value = read_json(&settings.root.join("auth").join(format!("{name}.json")))?;
-    Ok(serde_json::json!({"valid":true}).to_string())
-}
-
-/// Starts the authentication flow.
-fn login(settings: &Settings, name: Option<&String>) -> io::Result<String> {
-    let name = name
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "auth login requires a name"))?;
-    if name == "codex"
-        || settings
-            .root
-            .join("auth/tokens")
-            .join(format!("{name}.json"))
-            .exists()
-    {
-        return crate::client::openai_codex::auth::login(&settings.root, name)
+        Some("add") => add(
+            settings,
+            given.map(String::as_str),
+            &args[1 + usize::from(given.is_some())..],
+        ),
+        Some("test") => test(settings, name()?),
+        Some("login") => crate::client::openai_codex::auth::login(&settings.root, name()?)
             .map_err(io::Error::other)
-            .map(|value| value.to_string());
+            .map(|value| value.to_string()),
+        Some(other) => Err(invalid(&format!(
+            "unknown auth command: {other} (use list, add, test, login)"
+        ))),
     }
-    let key = std::env::var("ORCHID_API_KEY")
-        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "ORCHID_API_KEY is required"))?;
-    let body = serde_json::to_vec(&serde_json::json!({"type":"api_key","value":key}))
-        .map_err(io::Error::other)?;
-    fs::create_dir_all(settings.root.join("auth"))?;
-    fs::write(
-        settings.root.join("auth").join(format!("{name}.json")),
-        body,
-    )?;
-    Ok(serde_json::json!({"name":name}).to_string())
+}
+
+/// Lists connections and Codex logins.
+fn list(settings: &Settings) -> io::Result<String> {
+    let names = |dir: &str| -> Vec<String> {
+        let mut names: Vec<_> = fs::read_dir(settings.root.join(dir))
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter_map(|file| file.strip_suffix(".json").map(str::to_owned))
+            .collect();
+        names.sort();
+        names
+    };
+    Ok(json!({"connections": names("connections"), "logins": names("auth/tokens")}).to_string())
+}
+
+/// Sends one tiny request through the connection's real client.
+pub(super) fn test(settings: &Settings, name: &str) -> io::Result<String> {
+    let context =
+        |error: &dyn std::fmt::Display| io::Error::other(format!("connection {name}: {error}"));
+    let resolved = settings.resolve_connection(name).map_err(|e| context(&e))?;
+    let client = crate::client::client_for(resolved.clone()).map_err(|e| context(&e))?;
+    let request = ClientRequest {
+        model: resolved.connection.model,
+        system_prompt: String::new(),
+        messages: vec![Message {
+            role: "user".into(),
+            content: "Reply with OK.".into(),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        }],
+        tools: Vec::new(),
+        params: resolved.params.into_iter().collect(),
+    };
+    let events = client.stream(request).map_err(|e| context(&e))?;
+    let reply: String = events
+        .iter()
+        .filter_map(|event| match event {
+            ClientEvent::TextDelta(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    Ok(json!({"name": name, "ok": true, "reply": reply}).to_string())
 }

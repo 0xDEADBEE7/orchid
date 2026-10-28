@@ -1,91 +1,59 @@
 //! Provides the dispatch functionality.
-use super::Settings;
-use crate::model::{Event, Session};
+use crate::config::Settings;
+use crate::model::{Event, EventKind, Session, ToolCall};
 use serde_json::Value;
 use std::io;
 
-/// Executes requested tool calls.
-pub fn execute<F: FnMut(&Session)>(
+/// Executes requested tool calls. Each call is stored, then on-event and the
+/// on-tool-call gate run; a block (hook exit 2) replaces the tool's result with
+/// an error the model can react to. Tool failures are likewise fed back to the
+/// model rather than failing the turn.
+pub fn execute<F: FnMut(&Session) -> Option<String>>(
     settings: &Settings,
     session: &mut Session,
     calls: Vec<(String, Value)>,
-    progress: F,
-) -> io::Result<String> {
-    execute_with_ids(
-        settings,
-        session,
-        calls.into_iter().map(|(name, input)| (name, input, None)),
-        progress,
-    )
-}
-
-/// Performs the execute with ids operation.
-pub fn execute_with_ids<
-    F: FnMut(&Session),
-    I: IntoIterator<Item = (String, Value, Option<String>)>,
->(
-    settings: &Settings,
-    session: &mut Session,
-    calls: I,
-    mut progress: F,
-) -> io::Result<String> {
-    let mut output = Vec::new();
-    for (name, input, requested_id) in calls {
-        let call_id = requested_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    progress: &mut F,
+) -> io::Result<()> {
+    for (name, input) in calls {
+        let call_id = uuid::Uuid::new_v4().to_string();
         append_call(session, &call_id, &name, &input);
-        progress(session);
-        match invoke(settings, session, &name, &input) {
-            Ok(value) => {
-                output.push(value.to_string());
-                append_result(session, call_id, value);
-                progress(session);
-            }
-            Err(error) => {
-                append_result(
-                    session,
-                    call_id,
-                    serde_json::json!({"error":error.to_string()}),
-                );
-                progress(session);
-                // Tool failures are part of the model interaction, rather than
-                // failures of the worker itself. Feed the structured error back
-                // to the provider so it can repair malformed arguments, choose
-                // another tool, or explain the problem to the user.
-            }
-        }
+        let blocked = progress(session).or_else(|| {
+            let call = session.events.last()?;
+            crate::hooks::fire(settings, "on-tool-call", call, session)
+        });
+        let result = match blocked {
+            Some(reason) => serde_json::json!({"error": format!("blocked by hook: {reason}")}),
+            None => invoke(settings, session, &name, &input)
+                .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()})),
+        };
+        append_result(session, call_id, result);
+        super::lifecycle::check(progress(session))?;
     }
-    Ok(output.join("\n"))
+    Ok(())
 }
 
 /// Performs the append call operation.
 fn append_call(session: &mut Session, call_id: &str, name: &str, input: &Value) {
-    session.append(Event::ToolCall {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        calls: vec![crate::model::ToolCall {
-            call_id: call_id.into(),
-            name: name.into(),
-            input: input.clone(),
-        }],
-        connection: None,
-        token_usage: crate::model::TokenUsage::default(),
-    });
+    let call = ToolCall {
+        call_id: call_id.into(),
+        name: name.into(),
+        input: input.clone(),
+    };
+    session.append(Event::new(EventKind::ToolCall { calls: vec![call] }));
 }
 
 /// Performs the append result operation.
 fn append_result(session: &mut Session, call_id: String, content: Value) {
-    session.append(Event::ToolResult {
-        event_id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now(),
-        call_id,
-        content,
-        connection: None,
-        token_usage: crate::model::TokenUsage::default(),
-    });
+    let content = crate::tools::clip(content);
+    session.append(Event::new(EventKind::ToolResult { call_id, content }));
 }
 
 /// Invokes a named tool.
 fn invoke(settings: &Settings, session: &Session, name: &str, input: &Value) -> io::Result<Value> {
+    if !input.is_object() {
+        let message = format!("tool arguments must be a JSON object, got: {input}");
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, message));
+    }
     match name {
         "bash" => crate::tools::bash_in(
             settings,

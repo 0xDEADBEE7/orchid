@@ -1,4 +1,5 @@
 //! Provides the config functionality.
+use crate::{agent::Agent, model::Session};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -8,6 +9,8 @@ use std::{
 };
 
 mod auth_command;
+mod prompt;
+mod setup;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credential {
@@ -23,91 +26,21 @@ pub enum Credential {
 pub struct Config {
     #[serde(default)]
     pub log_level: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub log_level: Option<String>,
+    /// Hooks that run for every agent.
     #[serde(default)]
-    pub active_connection: usize,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub connections: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub paths: Vec<String>,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub hooks: Hooks,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub permissions: Permissions,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub env: HashMap<String, String>,
+    pub hooks: HookMap,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Hooks {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<u64>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub events: HashMap<String, Vec<HookDefinition>>,
-}
+/// Hook scripts by event name, run in order.
+pub type HookMap = HashMap<String, Vec<HookDefinition>>;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HookDefinition {
     pub script: String,
-    pub mode: HookMode,
-    #[serde(default)]
-    pub timeout_seconds: Option<u64>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum HookMode {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
-pub struct Permissions {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub paths: Vec<String>,
-}
-
-/// Performs the is default operation.
-fn is_default<T: Default + PartialEq>(value: &T) -> bool {
-    value == &T::default()
-}
-
-impl Policy {
-    /// Builds definitions for enabled tools.
-    pub fn tools(&self) -> &[String] {
-        if self.permissions.tools.is_empty() {
-            &self.tools
-        } else {
-            &self.permissions.tools
-        }
-    }
-    /// Extracts paths from input.
-    pub fn paths(&self) -> &[String] {
-        if self.permissions.paths.is_empty() {
-            &self.paths
-        } else {
-            &self.permissions.paths
-        }
-    }
-    /// Performs the max tokens operation.
-    pub fn max_tokens(&self) -> Option<i64> {
-        self.max_tokens
-    }
+    /// Seconds before the hook is killed (default 30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -131,26 +64,67 @@ pub struct Connection {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub root: PathBuf,
-    pub policy_name: String,
-    pub policy: Policy,
-    pub prompt_name: String,
     pub log_level: String,
+    /// Global hooks from config.json.
+    pub hooks: HookMap,
+    /// The agent in effect: the default agent, or a session's own copy.
+    pub agent: Agent,
+    /// Set when acting on a session, whose prompt.md is the system prompt.
+    pub session: Option<String>,
 }
 
 impl Settings {
-    /// Performs the prompt operation.
+    /// Returns the system prompt in effect.
     pub fn prompt(&self) -> io::Result<String> {
-        if let Some(id) = self.prompt_name.strip_prefix("session:") {
-            return fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md"));
+        match &self.session {
+            Some(id) => fs::read_to_string(self.root.join("sessions").join(id).join("prompt.md")),
+            None => self.prompt_text(&self.agent.prompt),
         }
-        let name = &self.prompt_name;
+    }
+
+    /// Reads `prompts/<name>.md`, or `prompts/<name>.txt`.
+    pub fn prompt_text(&self, name: &str) -> io::Result<String> {
         let prompts = self.root.join("prompts");
-        let markdown = prompts.join(format!("{name}.md"));
-        let text = prompts.join(format!("{name}.txt"));
-        if markdown.exists() {
-            fs::read_to_string(markdown)
-        } else {
-            fs::read_to_string(text)
+        fs::read_to_string(prompts.join(format!("{name}.md")))
+            .or_else(|_| fs::read_to_string(prompts.join(format!("{name}.txt"))))
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::NotFound, format!("prompt not found: {name}"))
+            })
+    }
+
+    /// Hooks for an event: global hooks first, then the agent's own.
+    pub fn hooks(&self, event: &str) -> impl Iterator<Item = &HookDefinition> {
+        let global = self.hooks.get(event).into_iter().flatten();
+        global.chain(self.agent.hooks.get(event).into_iter().flatten())
+    }
+
+    /// Environment for tool commands and hooks, so they can call back into
+    /// orchid (`$ORCHID_BIN`) for the right configuration and session.
+    pub fn child_env(&self) -> Vec<(&'static str, std::ffi::OsString)> {
+        let mut env = vec![("ORCHID_CONFIG", self.root.clone().into_os_string())];
+        if let Ok(bin) = std::env::current_exe() {
+            env.push(("ORCHID_BIN", bin.into_os_string()));
+        }
+        if let Some(id) = &self.session {
+            env.push(("ORCHID_SESSION_ID", id.into()));
+        }
+        env
+    }
+
+    /// Appends a record to the session's and the global log (best effort).
+    pub fn log(&self, id: &str, level: &str, message: &str, fields: Value) {
+        let record = crate::model::LogRecord::new(level, message, fields);
+        let _ = crate::store::Store::new(&self.root)
+            .and_then(|store| store.log_both(id, &record, &self.log_level));
+    }
+
+    /// Settings for acting on a session: its own agent copy and prompt. Every
+    /// path that touches a session uses this, so all of them see the same hooks.
+    pub fn for_session(&self, session: &Session) -> Settings {
+        Settings {
+            agent: session.metadata.agent.clone(),
+            session: Some(session.metadata.id.clone()),
+            ..self.clone()
         }
     }
 }
@@ -164,24 +138,6 @@ pub struct ResolvedConnection {
 }
 
 impl Settings {
-    /// Performs the active connection operation.
-    pub fn active_connection(&self) -> io::Result<Option<&str>> {
-        if self.policy.connections.is_empty() {
-            return Ok(None);
-        }
-        self.policy
-            .connections
-            .get(self.policy.active_connection)
-            .map(String::as_str)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "active connection index is out of range",
-                )
-            })
-            .map(Some)
-    }
-
     /// Performs the connection operation.
     pub fn connection(&self, name: &str) -> io::Result<Connection> {
         read_json(&self.root.join("connections").join(format!("{name}.json")))
@@ -230,12 +186,11 @@ impl Settings {
         let profile = self.root.join("auth").join(format!("{name}.json"));
         if profile.exists() {
             let value: Value = read_json(&profile)?;
-            let kind = value["type"].as_str().unwrap_or("api_key");
-            if kind == "api_key" {
-                let reference = value["value"]
-                    .as_str()
-                    .ok_or_else(|| safe_config_error("API key credential unavailable"))?;
-                return Ok(Some(Credential::ApiKey(resolve_secret(reference)?)));
+            // API-key profiles were replaced by `api_key` on the connection.
+            if value["type"].as_str().unwrap_or("api_key") == "api_key" {
+                return Err(safe_config_error(&format!(
+                    "auth profile {name} holds an API key; set the connection's \"api_key\" to its env./file. reference instead"
+                )));
             }
         }
         Ok(Some(self.codex_credential(name)?))
@@ -268,7 +223,7 @@ fn echo_connection() -> Connection {
 }
 
 /// Performs the validate connection operation.
-fn validate_connection(connection: &Connection) -> io::Result<()> {
+pub(crate) fn validate_connection(connection: &Connection) -> io::Result<()> {
     if connection.interface.is_empty()
         || connection.base_url.is_empty()
         || connection.model.is_empty()
@@ -279,7 +234,7 @@ fn validate_connection(connection: &Connection) -> io::Result<()> {
     }
     if matches!(
         connection.interface.as_str(),
-        "local" | "openai" | "anthropic" | "codex" | "openai-codex" | "echo"
+        "local" | "openai" | "codex" | "openai-codex" | "echo"
     ) {
         Ok(())
     } else {
@@ -296,7 +251,7 @@ fn resolve_headers(headers: &HashMap<String, String>) -> io::Result<HashMap<Stri
 }
 /// Performs the resolve inline operation.
 fn resolve_inline(reference: &str) -> io::Result<String> {
-    if reference.starts_with("env.") {
+    if reference.starts_with("env.") || reference.starts_with("file.") {
         return resolve_secret(reference);
     }
     Ok(reference.to_owned())
@@ -304,17 +259,19 @@ fn resolve_inline(reference: &str) -> io::Result<String> {
 
 /// Performs the resolve secret operation.
 fn resolve_secret(reference: &str) -> io::Result<String> {
+    let missing = || safe_config_error(&format!("credential {reference} is unset or empty"));
     let value = if let Some(name) = reference.strip_prefix("env.") {
-        std::env::var(name).map_err(|_| safe_config_error("required credential is unavailable"))?
+        std::env::var(name).map_err(|_| missing())?
     } else if let Some(path) = reference.strip_prefix("file.") {
-        fs::read_to_string(path)
-            .map_err(|_| safe_config_error("required credential is unavailable"))?
+        fs::read_to_string(path).map_err(|_| missing())?
     } else {
-        return Err(safe_config_error("invalid credential reference"));
+        return Err(safe_config_error(
+            "credentials must be env.NAME or file.PATH references",
+        ));
     };
     let value = value.trim_end_matches('\n').to_owned();
     if value.is_empty() {
-        Err(safe_config_error("required credential is unavailable"))
+        Err(missing())
     } else {
         Ok(value)
     }
@@ -330,25 +287,28 @@ impl Settings {
     pub fn load(root: impl Into<PathBuf>) -> io::Result<Self> {
         let root = root.into();
         let config: Config = read_json(&root.join("config.json"))?;
-        let policy_name = "default".to_owned();
-        let policy: Policy = read_json(&root.join("policies").join(format!("{policy_name}.json")))?;
         Ok(Self {
+            // Sessions use their own agent copy, so a broken default agent only
+            // affects `create` (and is reported by `orchid agent`).
+            agent: read_json(&root.join("agents/default.json")).unwrap_or_default(),
             root,
-            policy_name,
-            policy,
-            prompt_name: "default".into(),
             log_level: config.log_level.unwrap_or_else(|| "info".into()),
+            hooks: config.hooks,
+            session: None,
         })
     }
 }
 
+/// Reads a JSON file; errors name the file.
 pub fn read_json<T: for<'a> Deserialize<'a>>(path: &Path) -> io::Result<T> {
-    let bytes = fs::read(path)?;
-    serde_json::from_slice(&bytes).map_err(io::Error::other)
+    let context = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
+    let bytes = fs::read(path).map_err(|error| io::Error::new(error.kind(), context(&error)))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, context(&error)))
 }
 
 pub fn init(root: &Path) -> io::Result<()> {
-    for name in ["agents", "policies", "connections", "auth", "prompts"] {
+    for name in ["agents", "connections", "auth", "prompts"] {
         fs::create_dir_all(root.join(name))?;
     }
     write_default(
@@ -356,18 +316,15 @@ pub fn init(root: &Path) -> io::Result<()> {
         br#"{"log_level":"debug"}
 "#,
     )?;
-    write_default(
-        &root.join("policies/default.json"),
-        br#"{"max_tokens":4096,"tools":[]}
-"#,
-    )?;
-    write_default(
-        &root.join("prompts/default.txt"),
-        b"You are a helpful assistant.",
-    )?;
+    if !root.join("prompts/default.txt").exists() {
+        write_default(
+            &root.join("prompts/default.md"),
+            b"You are a helpful assistant.",
+        )?;
+    }
     write_default(
         &root.join("agents/default.json"),
-        br#"{"policy":"default","prompt":"default"}
+        br#"{"prompt":"default","max_tokens":120000}
 "#,
     )
 }
@@ -378,23 +335,6 @@ fn write_default(path: &Path, content: &[u8]) -> io::Result<()> {
         fs::write(path, content)?;
     }
     Ok(())
-}
-
-/// Performs the empty env operation.
-pub fn empty_env() -> HashMap<String, String> {
-    HashMap::new()
-}
-
-pub fn command(settings: &Settings, args: &[String]) -> io::Result<String> {
-    match args.first().map(String::as_str) {
-        None | Some("show") => serde_json::to_string(&settings.policy).map_err(io::Error::other),
-        Some("validate") => Ok(serde_json::json!({"valid":true}).to_string()),
-        Some("list") => Ok(serde_json::json!({"policies":[settings.policy_name]}).to_string()),
-        Some(name) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("unknown config command: {name}"),
-        )),
-    }
 }
 
 pub fn auth(settings: &Settings, args: &[String]) -> io::Result<String> {

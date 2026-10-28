@@ -5,6 +5,83 @@ use orchid::provider::{ClientProvider, Provider};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
+fn codex_http_response(status: &str, body: &str) -> (ClientError, String) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nX-Request-Id: request-test\r\nConnection: close\r\n\r\n{body}", body.len());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut reader = BufReader::new(&stream);
+        let mut headers = String::new();
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            headers.push_str(&line);
+        }
+        let size: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length: ")
+                    .map(str::to_owned)
+            })
+            .unwrap()
+            .parse()
+            .unwrap();
+        reader.read_exact(&mut vec![0; size]).unwrap();
+        stream.write_all(response.as_bytes()).unwrap();
+        headers
+    });
+    let mut config = connection(
+        "codex",
+        Some(Credential::Codex {
+            access_token: "test-token".into(),
+            account_id: "test-account".into(),
+        }),
+    );
+    config.connection.base_url = format!("http://{address}");
+    let error = client_for(config)
+        .unwrap()
+        .stream(ClientRequest {
+            model: "gpt-6-astra".into(),
+            system_prompt: "smoke test".into(),
+            messages: vec![],
+            tools: vec![],
+            params: Default::default(),
+        })
+        .unwrap_err();
+    (error, server.join().unwrap())
+}
+
+#[test]
+fn codex_sends_current_headers_and_preserves_gateway_error() {
+    let (error, headers) = codex_http_response(
+        "400 Bad Request",
+        r#"{"detail":"model requires a newer version of Codex"}"#,
+    );
+    let headers = headers.to_ascii_lowercase();
+    assert!(headers.contains("version: 0.153.4\r\n"));
+    assert!(headers.contains("user-agent: codex_cli_rs/0.153.4 (orchid)\r\n"));
+    let message = error.to_string();
+    assert!(message.contains("400"));
+    assert!(message.contains("request-test"));
+    assert!(message.contains("model requires a newer version"));
+}
+
+#[test]
+fn codex_bounds_error_body_and_classifies_authentication() {
+    let (error, _) = codex_http_response("401 Unauthorized", &"x".repeat(10000));
+    assert_eq!(error.kind, orchid::client::ClientErrorKind::Authentication);
+    assert!(error.to_string().len() < 4300);
+}
+
 fn connection(interface: &str, credential: Option<Credential>) -> ResolvedConnection {
     ResolvedConnection {
         connection: Connection {
@@ -33,7 +110,7 @@ fn factory_selects_echo_and_returns_the_latest_message() {
                 role: "user".into(),
                 content: "hello".into(),
                 tool_calls: Vec::new(),
-                tool_result: None,
+                tool_call_id: None,
             }],
             tools: Vec::new(),
             params: Default::default(),
@@ -99,7 +176,7 @@ fn configured_provider_sends_persisted_user_message_once() {
     let mut session = Session::new(None, None, None);
     session.append(Session::message("user", "only once".into()));
 
-    provider.stream("only once", &session).unwrap();
+    provider.stream(&session).unwrap();
 
     let requests = requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -136,4 +213,37 @@ fn codex_sse_maps_extracted_json_payload() {
             ClientEvent::Done,
         ]
     );
+}
+
+#[test]
+fn transient_statuses_and_stream_errors_are_retryable() {
+    use orchid::client::base::{status_kind, ClientErrorKind::*};
+    for status in [408, 429, 500, 502, 503, 504, 529] {
+        assert_eq!(status_kind(status, ""), Unavailable, "{status}");
+    }
+    for status in [400, 404, 501, 505] {
+        assert_eq!(status_kind(status, ""), Http, "{status}");
+    }
+    assert_eq!(status_kind(401, ""), Authentication);
+    assert_eq!(status_kind(429, r#"{"type":"usage_limit_reached"}"#), Http);
+    let in_band = "data: {\"error\":{\"code\":502,\"message\":\"upstream down\"}}\n";
+    assert!(orchid::client::openai_chat::parse_sse(in_band)
+        .unwrap_err()
+        .retryable());
+}
+
+#[test]
+fn chat_endpoint_accepts_v1_bases_and_full_urls() {
+    use orchid::client::openai_chat::endpoint;
+    assert_eq!(
+        endpoint("http://h:1234"),
+        "http://h:1234/v1/chat/completions"
+    );
+    assert_eq!(
+        endpoint("https://api.openai.com/v1/"),
+        "https://api.openai.com/v1/chat/completions"
+    );
+    let azure =
+        "https://r.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-10-21";
+    assert_eq!(endpoint(azure), azure);
 }

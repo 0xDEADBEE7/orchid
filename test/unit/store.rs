@@ -1,7 +1,7 @@
 use orchid::{model::Session, Store};
 
 #[test]
-fn worker_save_does_not_restore_an_externally_edited_policy() {
+fn worker_save_does_not_restore_an_externally_edited_agent() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let session = Session::new(None, None, None);
@@ -10,17 +10,17 @@ fn worker_save_does_not_restore_an_externally_edited_policy() {
 
     store
         .update(&id, |session| {
-            session.metadata.policy.max_tokens = Some(120_000)
+            session.metadata.agent.max_tokens = Some(120_000)
         })
         .unwrap();
 
     let mut stale = store.load(&id).unwrap();
-    stale.metadata.policy.max_tokens = Some(1);
+    stale.metadata.agent.max_tokens = Some(1);
     stale.metadata.token_estimate = 60_000;
     store.save(&stale).unwrap();
 
     assert_eq!(
-        store.load(&id).unwrap().metadata.policy.max_tokens,
+        store.load(&id).unwrap().metadata.agent.max_tokens,
         Some(120_000)
     );
 }
@@ -48,7 +48,7 @@ fn reconciles_dead_running_processes() {
     session.metadata.status = orchid::model::Status::Running;
     session.metadata.pid = Some(999_999);
     store.create(&session).unwrap();
-    let recovered = store.reconcile(&session.metadata.id).unwrap();
+    let (recovered, _) = store.reconcile(&session.metadata.id).unwrap();
     assert_eq!(recovered.metadata.status, orchid::model::Status::Failed);
 }
 
@@ -79,8 +79,7 @@ fn events_capture_the_active_connection() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path()).unwrap();
     let mut session = Session::new(None, None, None);
-    session.metadata.policy.connections = vec!["cheap".into(), "premium".into()];
-    session.metadata.policy.active_connection = 1;
+    session.metadata.agent.connection = "premium".into();
     session.append(Session::message("user", "hello".into()));
     store.create(&session).unwrap();
 
@@ -113,13 +112,8 @@ fn legacy_events_without_a_connection_still_deserialize() {
         }
     }))
     .unwrap();
-    assert!(matches!(
-        event,
-        orchid::model::Event::Message {
-            connection: None,
-            ..
-        }
-    ));
+    assert!(event.connection.is_none());
+    assert!(matches!(event.kind, orchid::EventKind::Message { .. }));
 }
 
 #[test]
@@ -136,7 +130,7 @@ fn debug_logs_are_filtered_by_configured_level() {
         message: "transport".into(),
         fields: serde_json::json!({}),
     };
-    store.log_filtered(&id, &record, "info").unwrap();
+    store.log_both(&id, &record, "info").unwrap();
     assert!(
         std::fs::read_to_string(dir.path().join("sessions").join(id).join("logs.jsonl"))
             .unwrap()
@@ -165,4 +159,152 @@ fn concurrent_appends_are_serialized_across_store_clones() {
         worker.join().unwrap();
     }
     assert_eq!(store.load(&id).unwrap().events.len(), 8);
+}
+
+#[test]
+fn messages_queue_while_a_worker_owns_the_session_and_drain_in_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    // A marker file left by the old lock implementation must not wedge writes.
+    std::fs::write(dir.path().join("sessions").join(&id).join(".lock"), "").unwrap();
+    // The first delivery claims the session for this (live) process.
+    let mut owned = store
+        .deliver(&id, Session::message("user", "one".into()), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(owned.metadata.pid, Some(std::process::id()));
+    for text in ["two", "three"] {
+        assert!(store
+            .deliver(&id, Session::message("user", text.into()), false)
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(store.load(&id).unwrap().events.len(), 1);
+    store.drain(&mut owned).unwrap();
+    let texts: Vec<_> = owned
+        .events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            orchid::EventKind::Message { content, .. } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, ["one", "two", "three"]);
+    // Messages queued with --no-run never start another turn by themselves.
+    assert!(!store.finish(&mut owned, orchid::Status::Idle).unwrap());
+    let done = store.load(&id).unwrap();
+    assert_eq!(
+        (done.metadata.status, done.metadata.pid, done.events.len()),
+        (orchid::Status::Idle, None, 3)
+    );
+}
+
+#[test]
+fn stale_saves_keep_label_and_working_dir_set_meanwhile() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let stale = store.load(&id).unwrap();
+    store
+        .update(&id, |s| {
+            s.metadata.label = Some("renamed".into());
+            s.metadata.working_dir = Some("/tmp".into());
+        })
+        .unwrap();
+    store.save(&stale).unwrap();
+    let saved = store.load(&id).unwrap().metadata;
+    assert_eq!(
+        (saved.label.as_deref(), saved.working_dir.as_deref()),
+        (Some("renamed"), Some("/tmp"))
+    );
+}
+
+#[test]
+fn reconcile_answers_open_tool_calls_of_a_dead_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let mut session = Session::new(None, None, None);
+    let calls = vec![orchid::model::ToolCall {
+        call_id: "c1".into(),
+        name: "bash".into(),
+        input: serde_json::json!({}),
+    }];
+    session.append(orchid::Event::new(orchid::EventKind::ToolCall { calls }));
+    session.metadata.status = orchid::Status::Running;
+    session.metadata.pid = Some(u32::MAX - 1);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let (reconciled, added) = store.reconcile(&id).unwrap();
+    assert_eq!(added, Some(1));
+    assert_eq!(reconciled.metadata.status, orchid::Status::Failed);
+    assert!(reconciled.pending_tool_call_ids().is_empty());
+}
+
+#[test]
+fn stored_event_lines_round_trip_including_retired_types() {
+    // One real line of each type (content redacted), as written by earlier versions.
+    let usage = r#"{"marginal_input":927,"cumulative_input":927,"cumulative_output":47,"cumulative_cached_input":0,"requests":1,"method":"provider_reported"}"#;
+    let lines = [
+        format!(
+            r#"{{"type":"message","event_id":"a","timestamp":"2026-08-09T06:15:51.590698Z","role":"user","content":"x","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"tool_call","event_id":"b","timestamp":"2026-08-09T06:15:54.922837Z","calls":[{{"call_id":"c","name":"bash","input":{{"cmd":"x"}}}}],"token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"tool_result","event_id":"d","timestamp":"2026-08-09T06:15:54.928810Z","call_id":"c","content":"x","connection":"codex","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"failure","event_id":"e","timestamp":"2026-07-29T08:12:34.672475Z","message":"x","token_usage":{usage}}}"#
+        ),
+        format!(
+            r#"{{"type":"termination","event_id":"f","timestamp":"2026-08-09T08:35:20.680714Z","reason":"x","token_usage":{usage}}}"#
+        ),
+    ];
+    for line in &lines {
+        let original: serde_json::Value = serde_json::from_str(line).unwrap();
+        let event: orchid::Event = serde_json::from_str(line).unwrap();
+        let mut expected = original.clone();
+        expected
+            .as_object_mut()
+            .unwrap()
+            .entry("connection")
+            .or_insert(serde_json::Value::Null);
+        assert_eq!(serde_json::to_value(&event).unwrap(), expected, "{line}");
+    }
+    let retired = format!(
+        r#"{{"type":"usage","event_id":"g","timestamp":"2026-08-05T18:06:13.945391Z","input":927,"output":47,"token_usage":{usage}}}"#
+    );
+    let event: orchid::Event = serde_json::from_str(&retired).unwrap();
+    assert_eq!(event.kind, orchid::EventKind::Other);
+}
+
+#[test]
+fn a_queued_run_request_continues_a_turn_but_never_a_failed_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path()).unwrap();
+    let session = Session::new(None, None, None);
+    let id = session.metadata.id.clone();
+    store.create(&session).unwrap();
+    let message = |text: &str| Session::message("user", text.into());
+    let mut owned = store.deliver(&id, message("one"), true).unwrap().unwrap();
+    store.deliver(&id, message("two"), true).unwrap();
+    assert!(store.finish(&mut owned, orchid::Status::Idle).unwrap());
+    assert_eq!(
+        store.load(&id).unwrap().metadata.status,
+        orchid::Status::Running
+    );
+    // A failed turn keeps queued messages in the transcript and releases the session.
+    store.deliver(&id, message("three"), true).unwrap();
+    assert!(!store.finish(&mut owned, orchid::Status::Failed).unwrap());
+    let done = store.load(&id).unwrap();
+    assert_eq!(
+        (done.metadata.status, done.metadata.pid, done.events.len()),
+        (orchid::Status::Failed, None, 3)
+    );
 }

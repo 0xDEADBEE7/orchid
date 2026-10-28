@@ -1,8 +1,5 @@
 //! Provides the mod functionality.
-use crate::{
-    config::Settings,
-    model::{Session, Usage},
-};
+use crate::model::{EventKind, Session, Usage};
 use serde_json::Value;
 use std::io;
 
@@ -10,37 +7,13 @@ mod command;
 mod defs;
 pub mod dispatch;
 mod lifecycle;
-mod sse;
 pub use command::run_command as command;
 pub use defs::tools as tool_definitions;
 pub use lifecycle::{run, run_with_progress};
-pub use sse::parse as parse_sse;
 
 pub trait Provider {
-    /// Performs the reply operation.
-    fn reply(&self, prompt: &str, session: &Session) -> io::Result<String>;
-    fn stream(&self, prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
-        Ok(vec![StreamEvent::Text(self.reply(prompt, session)?)])
-    }
-}
-
-/// Performs the usage operation.
-fn usage(value: &Value) -> Option<Usage> {
-    Some(Usage {
-        input: value
-            .pointer("/usage/prompt_tokens")
-            .or_else(|| value.pointer("/usage/input_tokens"))?
-            .as_u64()? as u32,
-        output: value
-            .pointer("/usage/completion_tokens")
-            .or_else(|| value.pointer("/usage/output_tokens"))?
-            .as_u64()? as u32,
-        cached_input: value
-            .pointer("/usage/prompt_tokens_details/cached_tokens")
-            .or_else(|| value.pointer("/usage/input_tokens_details/cached_tokens"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32,
-    })
+    /// Requests the next reply for the session's transcript.
+    fn stream(&self, session: &Session) -> io::Result<Vec<StreamEvent>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,15 +22,6 @@ pub enum StreamEvent {
     Usage(Usage),
     ToolCall { name: String, input: Value },
     Done,
-    Malformed(String),
-}
-
-/// Performs the LocalProvider operation.
-pub struct LocalProvider;
-impl Provider for LocalProvider {
-    fn reply(&self, prompt: &str, _session: &Session) -> io::Result<String> {
-        Ok(format!("local client: {prompt}"))
-    }
 }
 
 /// Performs the ClientProvider operation.
@@ -69,26 +33,12 @@ pub struct ClientProvider {
     pub params: serde_json::Map<String, Value>,
 }
 impl Provider for ClientProvider {
-    /// Performs the reply operation.
-    fn reply(&self, prompt: &str, session: &Session) -> io::Result<String> {
-        let events = self.stream(prompt, session)?;
-        Ok(events
-            .into_iter()
-            .filter_map(|event| {
-                if let StreamEvent::Text(text) = event {
-                    Some(text)
-                } else {
-                    None
-                }
-            })
-            .collect())
-    }
     /// Streams events for a request.
-    fn stream(&self, _prompt: &str, session: &Session) -> io::Result<Vec<StreamEvent>> {
+    fn stream(&self, session: &Session) -> io::Result<Vec<StreamEvent>> {
         let messages = messages(session);
         self.client
             .stream(request(self, messages))
-            .map_err(|error| io::Error::other(error.to_string()))
+            .map_err(io::Error::other)
             .map(stream_events)
     }
 }
@@ -98,26 +48,24 @@ pub(crate) fn messages(session: &Session) -> Vec<crate::client::Message> {
     session
         .events
         .iter()
-        .filter_map(|event| match event {
-            crate::model::Event::Message { role, content, .. } => Some(crate::client::Message {
+        .filter_map(|event| match &event.kind {
+            EventKind::Message { role, content } => Some(crate::client::Message {
                 role: role.clone(),
                 content: content.clone(),
                 tool_calls: Vec::new(),
-                tool_result: None,
+                tool_call_id: None,
             }),
-            crate::model::Event::ToolCall { calls, .. } => Some(crate::client::Message {
+            EventKind::ToolCall { calls } => Some(crate::client::Message {
                 role: "assistant".into(),
                 content: String::new(),
                 tool_calls: calls.clone(),
-                tool_result: None,
+                tool_call_id: None,
             }),
-            crate::model::Event::ToolResult {
-                call_id, content, ..
-            } => Some(crate::client::Message {
+            EventKind::ToolResult { call_id, content } => Some(crate::client::Message {
                 role: "tool".into(),
-                content: content.to_string(),
+                content: crate::tools::text(&crate::tools::clip(content.clone())),
                 tool_calls: Vec::new(),
-                tool_result: Some((call_id.clone(), content.clone())),
+                tool_call_id: Some(call_id.clone()),
             }),
             _ => None,
         })
@@ -163,12 +111,4 @@ fn stream_events(events: Vec<crate::client::ClientEvent>) -> Vec<StreamEvent> {
             crate::client::ClientEvent::ReasoningDelta(_) => None,
         })
         .collect()
-}
-/// Performs the tool allowed operation.
-pub fn tool_allowed(settings: &Settings, name: &str) -> bool {
-    settings.policy.tools().iter().any(|tool| tool == name)
-}
-/// Performs the tool result operation.
-pub fn tool_result(value: impl Into<Value>) -> Value {
-    value.into()
 }
