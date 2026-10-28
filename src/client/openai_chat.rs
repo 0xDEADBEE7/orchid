@@ -26,7 +26,7 @@ impl Client for OpenAiChatClient {
             .timeout(None)
             .build()
             .map_err(|error| ClientError::new(ClientErrorKind::Transport, error.to_string()))?
-            .post(endpoint(&self.connection.connection.base_url))
+            .post(endpoint(&self.connection.connection.base_url)?)
             .header("Accept", "text/event-stream")
             .json(&request_body(request));
         if let Some(Credential::ApiKey(key)) = &self.connection.credential {
@@ -51,17 +51,9 @@ impl Client for OpenAiChatClient {
     }
 }
 
-/// Builds the endpoint URL: a full `.../chat/completions` URL (query string
-/// included) is used as given; `.../v1` and bare hosts get the standard path.
-pub fn endpoint(base_url: &str) -> String {
-    let base = base_url.trim_end_matches('/');
-    if base.contains("/chat/completions") {
-        base.into()
-    } else if base.ends_with("/v1") {
-        format!("{base}/chat/completions")
-    } else {
-        format!("{base}/v1/chat/completions")
-    }
+/// Resolves a Chat Completions base URL or full endpoint.
+pub fn endpoint(base_url: &str) -> Result<String, ClientError> {
+    super::endpoint::resolve(base_url, super::endpoint::Api::Chat)
 }
 
 /// Performs the request body operation.

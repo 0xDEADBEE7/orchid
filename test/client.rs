@@ -236,14 +236,14 @@ fn transient_statuses_and_stream_errors_are_retryable() {
 fn chat_endpoint_accepts_v1_bases_and_full_urls() {
     use orchid::client::openai_chat::endpoint;
     assert_eq!(
-        endpoint("http://h:1234"),
+        endpoint("http://h:1234").unwrap(),
         "http://h:1234/v1/chat/completions"
     );
     assert_eq!(
-        endpoint("https://api.openai.com/v1/"),
+        endpoint("https://api.openai.com/v1/").unwrap(),
         "https://api.openai.com/v1/chat/completions"
     );
     let azure =
         "https://r.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-10-21";
-    assert_eq!(endpoint(azure), azure);
+    assert_eq!(endpoint(azure).unwrap(), azure);
 }
