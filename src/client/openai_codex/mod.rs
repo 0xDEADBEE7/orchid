@@ -114,10 +114,10 @@ fn send_request(
     account: &str,
     body: &serde_json::Value,
 ) -> Result<reqwest::blocking::Response, ClientError> {
-    let url = format!(
-        "{}/responses",
-        connection.connection.base_url.trim_end_matches('/')
-    );
+    let url = super::endpoint::resolve(
+        &connection.connection.base_url,
+        super::endpoint::Api::Responses,
+    )?;
     let http = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(None)

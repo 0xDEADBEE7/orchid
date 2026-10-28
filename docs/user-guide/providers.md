@@ -47,9 +47,16 @@ may also be `env.NAME` or `file.PATH`.
 | Azure OpenAI (v1 API) | `https://<resource>.openai.azure.com/openai/v1` | `AZURE_OPENAI_API_KEY` (sent as the `api-key` header) |
 | Company gateway (Portkey, LiteLLM, …) | the gateway's OpenAI-compatible URL | as required, plus `--header` for gateway headers |
 
-A base URL ending in `/v1`, or a bare host, gets `/chat/completions` (or
-`/v1/chat/completions`) appended. A full URL containing `/chat/completions`,
-including a query string such as Azure's `?api-version=…`, is used as given.
+For OpenAI-compatible clients, a base path ending in `/v1` gets
+`/chat/completions` appended; other base paths get `/v1/chat/completions`.
+Codex appends `/responses`. Full endpoint paths ending in the client's expected
+endpoint (with an optional trailing slash) are used as given. Query strings
+are preserved, and appended paths go before the query string.
+
+A full `/responses`, `/chat/completions`, or `/messages` endpoint belonging to
+a different API is rejected as a configuration error. Setting the URL does not
+switch request formats: the OpenAI-compatible client uses Chat Completions;
+Codex uses Responses.
 
 Example for a gateway that needs its own headers:
 
