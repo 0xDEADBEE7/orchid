@@ -89,3 +89,29 @@ fn fs_edit_reports_ambiguous_batch_edit_index() {
     .unwrap_err();
     assert!(error.to_string().contains("edit[0]"));
 }
+
+#[test]
+fn bash_runs_the_roots_env_bash_first_and_finds_it_each_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, work) = (dir.path().join("config"), dir.path().join("work"));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(&work).unwrap();
+    let settings = with_tools(&root, &["bash"]);
+    let probe = r#"echo "[$AGENT_SETUP] $(greet 2>/dev/null) ${PWD##*/}""#;
+    let run = || orchid::tools::bash_in(&settings, probe, &work).unwrap();
+    assert_eq!(
+        run(),
+        Value::String("[]  work\n".into()),
+        "no file, no setup"
+    );
+    // Exports and functions, as a bashrc has them, in the command's directory.
+    let env_file = root.join(orchid::config::ENV_FILE);
+    std::fs::write(
+        &env_file,
+        "export AGENT_SETUP=loaded\ngreet() { echo hi; }\n",
+    )
+    .unwrap();
+    assert_eq!(run(), Value::String("[loaded] hi work\n".into()));
+    std::fs::write(&env_file, "export AGENT_SETUP=changed\n").unwrap();
+    assert_eq!(run(), Value::String("[changed]  work\n".into()));
+}

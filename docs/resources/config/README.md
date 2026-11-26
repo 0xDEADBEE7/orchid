@@ -15,6 +15,7 @@ orchid --config ./config agent
 - `agents/default.json` — the default agent: prompt, connection, tools, token cap, optional hooks.
 - `connections/codex.json` — Codex connection; run `orchid auth login codex` once.
 - `prompts/default.md` — default system prompt.
+- `env.bash` (optional, not included): shell setup that bash runs before each tool command and bash hook. See [shell setup](../../user-guide/configuration.md#shell-setup).
 
 Add credentials separately with environment-backed references or `orchid auth login`. Runtime session data is created under `./config/sessions/` and should not be copied into this template.
 
