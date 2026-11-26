@@ -31,6 +31,10 @@ pub struct Config {
     pub hooks: HookMap,
 }
 
+/// The optional shell setup in the root that bash runs before each tool
+/// command and bash hook ([`Settings::child_env`]).
+pub const ENV_FILE: &str = "env.bash";
+
 /// Hook scripts by event name, run in order.
 pub type HookMap = HashMap<String, Vec<HookDefinition>>;
 
@@ -99,7 +103,11 @@ impl Settings {
     }
 
     /// Environment for tool commands and hooks, so they can call back into
-    /// orchid (`$ORCHID_BIN`) for the right configuration and session.
+    /// orchid (`$ORCHID_BIN`) for the right configuration and session. With an
+    /// [`ENV_FILE`] in the root, `BASH_ENV` names it, so bash runs it before a
+    /// command or a bash script: the user's shell setup, as a bashrc gives a
+    /// terminal. It's looked for each time, so a new or changed file counts
+    /// from the next command.
     pub fn child_env(&self) -> Vec<(&'static str, std::ffi::OsString)> {
         let mut env = vec![("ORCHID_CONFIG", self.root.clone().into_os_string())];
         if let Ok(bin) = std::env::current_exe() {
@@ -107,6 +115,10 @@ impl Settings {
         }
         if let Some(id) = &self.session {
             env.push(("ORCHID_SESSION_ID", id.into()));
+        }
+        let setup = self.root.join(ENV_FILE);
+        if setup.is_file() {
+            env.push(("BASH_ENV", setup.into_os_string()));
         }
         env
     }

@@ -34,7 +34,9 @@ Each hook gets one JSON object on stdin:
 
 `event` is the stored event plus `name` and `event_type`; `session` is what
 `orchid get <id>` prints. Environment: `ORCHID_CONFIG`, `ORCHID_SESSION_ID`,
-`ORCHID_HOOK_EVENT`, `ORCHID_HOOK_DEPTH`. Hooks run in the session's working
+`ORCHID_HOOK_EVENT`, `ORCHID_HOOK_DEPTH`, and `BASH_ENV` when the root has an
+`env.bash`, which a bash hook runs first (see
+[Shell setup](configuration.md#shell-setup)). Hooks run in the session's working
 directory (the config root if none). Script paths are relative to the config
 root; a bare name not found there is looked up on `PATH`.
 

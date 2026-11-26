@@ -146,3 +146,38 @@ fn hooks_run_from_session_working_directory() {
         dir.path().join("work").canonicalize().unwrap()
     );
 }
+
+#[test]
+fn a_bash_hook_runs_the_roots_env_bash_first_and_a_sh_hook_does_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = settings(dir.path());
+    fs::write(
+        dir.path().join(orchid::config::ENV_FILE),
+        "export AGENT_SETUP=loaded\n",
+    )
+    .unwrap();
+    for (name, shell) in [
+        ("bash.sh", "/bin/bash"),
+        ("env.sh", "/usr/bin/env bash"),
+        ("sh.sh", "/bin/sh"),
+    ] {
+        let body = format!("#!{shell}\necho \"[$AGENT_SETUP]\" > {name}.out\n");
+        fs::write(dir.path().join(name), body).unwrap();
+        fs::set_permissions(dir.path().join(name), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let hook = |script: &str| HookDefinition {
+        script: script.into(),
+        timeout: Some(5),
+    };
+    let hooks = vec![hook("bash.sh"), hook("env.sh"), hook("sh.sh")];
+    settings.hooks.insert("on-event".into(), hooks);
+    let mut session = Session::new(None, None, None);
+    let event = Session::message("user", "hello".into());
+    session.append(event.clone());
+    assert!(fire(&settings, "on-event", &event, &session).is_none());
+    let out = |name: &str| fs::read_to_string(dir.path().join(format!("{name}.out"))).unwrap();
+    assert_eq!(out("bash.sh"), "[loaded]\n");
+    assert_eq!(out("env.sh"), "[loaded]\n");
+    // bash as `sh` ignores BASH_ENV.
+    assert_eq!(out("sh.sh"), "[]\n");
+}
